@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 250" fill="none" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Eve: the mascot. Chibi companion with an eigenvector ahoge and heart-lit eyes. -->
+  <defs>
+    <linearGradient id="iris" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6b4fd8"/>
+      <stop offset="1" stop-color="#ff5fa2"/>
+    </linearGradient>
+  </defs>
+  <!-- body -->
+  <path d="M78 196c4-18 22-28 42-28s38 10 42 28l4 26c1 9-6 16-15 16H89c-9 0-16-7-15-16z" fill="#b9a6ff" stroke="#3a2436" stroke-width="5"/>
+  <path d="M104 172l16 16 16-16" fill="#fff" stroke="#3a2436" stroke-width="4"/>
+  <circle cx="120" cy="204" r="6" fill="#ff5fa2" stroke="#3a2436" stroke-width="3"/>
+  <!-- back hair -->
+  <path d="M40 120c-6 40 2 76 22 86 8 4 14-4 12-12l-6-30M200 120c6 40-2 76-22 86-8 4-14-4-12-12l6-30" fill="#ff9cc4" stroke="#3a2436" stroke-width="5"/>
+  <!-- face -->
+  <ellipse cx="120" cy="118" rx="74" ry="66" fill="#fff3ec" stroke="#3a2436" stroke-width="5"/>
+  <!-- bangs -->
+  <path d="M46 116c-4-44 30-74 74-74s78 30 74 74c-10-8-18-22-20-34-8 14-22 22-36 24 4-8 4-16 2-22-12 14-32 24-52 24 6-6 8-14 8-20-12 10-28 18-50 28z" fill="#ff9cc4" stroke="#3a2436" stroke-width="5"/>
+  <path d="M84 62c10-6 22-9 34-9" stroke="#fff" stroke-width="5" opacity=".7"/>
+  <!-- eigenvector ahoge -->
+  <path d="M122 44c-4-14 2-26 14-32" stroke="#3a2436" stroke-width="5"/>
+  <path d="M128 6l14 4-6 13" fill="#ff5fa2" stroke="#3a2436" stroke-width="4"/>
+  <!-- bow -->
+  <g transform="translate(176 58) rotate(18)">
+    <path d="M0 0l-20-12v24zM0 0l20-12v24z" fill="#ff5fa2" stroke="#3a2436" stroke-width="4"/>
+    <circle r="6" fill="#ff5fa2" stroke="#3a2436" stroke-width="4"/>
+  </g>
+  <!-- eyes: .pupil groups follow the cursor -->
+  <g>
+    <ellipse cx="90" cy="126" rx="17" ry="21" fill="#3a2436"/>
+    <g class="pupil">
+      <ellipse cx="90" cy="129" rx="12" ry="15" fill="url(#iris)"/>
+      <path d="M90 136c-6-4-8-7-6-10 1-2 4-2 6 1 2-3 5-3 6-1 2 3 0 6-6 10z" fill="#ffd6e8"/>
+      <circle cx="84" cy="119" r="5.5" fill="#fff"/>
+      <circle cx="96" cy="138" r="2.5" fill="#fff"/>
+    </g>
+    <ellipse cx="150" cy="126" rx="17" ry="21" fill="#3a2436"/>
+    <g class="pupil">
+      <ellipse cx="150" cy="129" rx="12" ry="15" fill="url(#iris)"/>
+      <path d="M150 136c-6-4-8-7-6-10 1-2 4-2 6 1 2-3 5-3 6-1 2 3 0 6-6 10z" fill="#ffd6e8"/>
+      <circle cx="144" cy="119" r="5.5" fill="#fff"/>
+      <circle cx="156" cy="138" r="2.5" fill="#fff"/>
+    </g>
+  </g>
+  <!-- blush + mouth -->
+  <ellipse cx="68" cy="152" rx="12" ry="7" fill="#ff9cc4" opacity=".75"/>
+  <ellipse cx="172" cy="152" rx="12" ry="7" fill="#ff9cc4" opacity=".75"/>
+  <path d="M110 154c3 5 7 5 10 0 3 5 7 5 10 0" stroke="#3a2436" stroke-width="4"/>
+</svg>

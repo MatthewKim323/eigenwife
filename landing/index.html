@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>eigenwife · your type, compiled</title>
+<meta name="description" content="A persistent AI companion compiled from your attention. She shares your gaze, remembers your life, and runs on her own computer.">
+<meta property="og:title" content="eigenwife · your type, compiled">
+<meta property="og:description" content="A persistent AI companion compiled from your attention.">
+<link rel="icon" href="eve.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@500;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-eye" viewBox="0 0 48 48"><path d="M4 24c6-10 12-15 20-15s14 5 20 15c-6 10-12 15-20 15S10 34 4 24z" fill="#fff" stroke="currentColor" stroke-width="4" stroke-linejoin="round"/><circle cx="24" cy="24" r="8" fill="currentColor"/><circle cx="21" cy="21" r="2.6" fill="#fff"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 48 48"><path d="M24 4c2 11 7 16 20 20-13 4-18 9-20 20-2-11-7-16-20-20 13-4 18-9 20-20z" fill="currentColor" stroke="#3a2436" stroke-width="3.5" stroke-linejoin="round"/></symbol>
+    <symbol id="i-heart" viewBox="0 0 48 48"><path d="M24 42C8 31 3 22 7 14c3-6 11-7 17 0 6-7 14-6 17 0 4 8-1 17-17 28z" fill="currentColor" stroke="#3a2436" stroke-width="3.5" stroke-linejoin="round"/></symbol>
+    <symbol id="i-cursor" viewBox="0 0 48 48"><path d="M10 6l28 16-12 3 7 13-6 3-7-13-10 8z" fill="currentColor" stroke="#3a2436" stroke-width="3.5" stroke-linejoin="round"/></symbol>
+    <symbol id="i-vec" viewBox="0 0 48 48"><path d="M8 40L36 12" stroke="#3a2436" stroke-width="5" stroke-linecap="round"/><path d="M26 10h12v12z" fill="currentColor" stroke="#3a2436" stroke-width="3.5" stroke-linejoin="round"/></symbol>
+    <symbol id="i-ramen" viewBox="0 0 48 48"><path d="M16 6l6 18M26 4l2 20" stroke="#3a2436" stroke-width="3.5" stroke-linecap="round"/><path d="M5 24h38c0 10-8 17-19 17S5 34 5 24z" fill="currentColor" stroke="#3a2436" stroke-width="3.5" stroke-linejoin="round"/><circle cx="18" cy="31" r="3" fill="#fff"/></symbol>
+    <symbol id="i-cal" viewBox="0 0 48 48"><rect x="6" y="9" width="36" height="32" rx="7" fill="#fff" stroke="#3a2436" stroke-width="3.5"/><path d="M6 19h36" stroke="#3a2436" stroke-width="3.5"/><path d="M6 16v-0c0-4 3-7 7-7h22c4 0 7 3 7 7" fill="currentColor"/><path d="M16 5v8M32 5v8" stroke="#3a2436" stroke-width="3.5" stroke-linecap="round"/><path d="M18 30l4 4 8-8" stroke="currentColor" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-bubble" viewBox="0 0 48 48"><path d="M8 8h32c3 0 5 2 5 5v16c0 3-2 5-5 5H22l-10 8v-8H8c-3 0-5-2-5-5V13c0-3 2-5 5-5z" fill="currentColor" stroke="#3a2436" stroke-width="3.5" stroke-linejoin="round"/><circle cx="16" cy="21" r="2.5" fill="#3a2436"/><circle cx="24" cy="21" r="2.5" fill="#3a2436"/><circle cx="32" cy="21" r="2.5" fill="#3a2436"/></symbol>
+  </defs>
+</svg>
+
+<nav class="nav">
+  <a class="nav-logo" href="#top" aria-label="eigenwife home"><span class="nav-eve" data-eve></span><span>eigenwife</span></a>
+  <div class="nav-links">
+    <a href="#acts">how</a>
+    <a href="#compile">try it</a>
+    <a href="#stack">stack</a>
+    <a href="#demo">demo</a>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <div class="hero-copy">
+    <p class="chip mono"><span class="dot"></span><span>LATENT PARTNER MODEL · <span id="hero-pct">31</span>%</span></p>
+    <h1 class="wordmark" aria-label="eigenwife">
+      <span>e</span><span>i</span><span>g</span><span>e</span><span>n</span><span class="w2">w</span><span class="w2">i</span><span class="w2">f</span><span class="w2">e</span>
+    </h1>
+    <p class="tagline">your type, <em>compiled.</em></p>
+    <p class="lede">Dating apps ask what your type is. We don't think you know. So we watch what actually gets your attention, compile it into a person, and then she moves in: shares your gaze, remembers your life, and does things on her own computer.</p>
+    <div class="ctas">
+      <a class="btn btn-hot" href="#demo">watch the demo</a>
+      <a class="btn" href="#compile">compile your type</a>
+    </div>
+  </div>
+  <div class="hero-art">
+    <div class="eve-big sticker" data-eve data-follow></div>
+    <div class="float f1 sticker"><svg><use href="#i-eye"/></svg></div>
+    <div class="float f2 sticker"><svg><use href="#i-heart"/></svg></div>
+    <div class="float f3 sticker"><svg><use href="#i-spark"/></svg></div>
+    <div class="float f4 sticker"><svg><use href="#i-vec"/></svg></div>
+    <p class="speech sticker">apparently I'm your type.</p>
+  </div>
+</header>
+
+<section class="thesis">
+  <p class="kicker mono">the meme is "AI girlfriend." the actual thesis:</p>
+  <blockquote>Persistent multimodal agents should <mark>share attention</mark> with humans, maintain <mark>long-term memory</mark>, and <mark>act continuously</mark> in the world instead of waiting for explicit prompts.</blockquote>
+</section>
+
+<section class="acts" id="acts">
+  <h2 class="section-title">four acts</h2>
+  <p class="section-sub">starts as a joke dating app. ends looking like a prototype for ambient AGI.</p>
+  <div class="act-grid">
+    <article class="act sticker-card" style="--c: var(--pink)">
+      <div class="act-top"><span class="act-n mono">ACT I</span><svg class="act-icon"><use href="#i-eye"/></svg></div>
+      <h3>Eigenvector</h3>
+      <p class="act-say">"learn me"</p>
+      <p>A fake dating app. Webcam eye tracking measures what you fixate on, revisit, and skip. Attention becomes reward, reward weights candidate traits, and a latent preference vector converges.</p>
+      <code class="mono">P = Σ rᵢ·Cᵢ / Σ rᵢ</code>
+    </article>
+    <article class="act sticker-card" style="--c: var(--lilac)">
+      <div class="act-top"><span class="act-n mono">ACT II</span><svg class="act-icon"><use href="#i-spark"/></svg></div>
+      <h3>Emergence</h3>
+      <p class="act-say">"become someone"</p>
+      <p>Convergence detected. The recommendation steps out of the card onto your desktop, her personality seeded by your own vector. She shares your gaze: say "thoughts?" and she knows what "this" is.</p>
+      <code class="mono">humor .86 · sarcasm .76 · chaos .61</code>
+    </article>
+    <article class="act sticker-card" style="--c: var(--mint)">
+      <div class="act-top"><span class="act-n mono">ACT III</span><svg class="act-icon"><use href="#i-heart"/></svg></div>
+      <h3>Companionship</h3>
+      <p class="act-say">"understand me"</p>
+      <p>Memory, continuity, initiative. A reflex layer decides when to speak (mostly: don't). She remembers the $28 ramen you complained about last Tuesday.</p>
+      <code class="mono">IGNORE 0.91 · COMMENT 0.78</code>
+    </article>
+    <article class="act sticker-card" style="--c: var(--butter)">
+      <div class="act-top"><span class="act-n mono">ACT IV</span><svg class="act-icon"><use href="#i-cursor"/></svg></div>
+      <h3>Agency</h3>
+      <p class="act-say">"do things for me"</p>
+      <p>"Just figure out tonight." She fans out into a visible swarm (memory, places, calendar), then actually does it on her own computer. 7:30, cheap ramen, you're free. Done.</p>
+      <code class="mono">EXTERNAL_SIDE_EFFECT → ask</code>
+    </article>
+  </div>
+</section>
+
+<section class="compile" id="compile">
+  <h2 class="section-title">compile your type</h2>
+  <p class="section-sub">No webcam here, so your cursor stands in for your eyes. Hover (or tap) whoever you're drawn to. Linger. We're watching.</p>
+  <div class="compile-wrap">
+    <div class="profiles" id="profiles"></div>
+    <aside class="model sticker-card">
+      <p class="mono model-head">LATENT PARTNER MODEL</p>
+      <div class="meter"><div class="meter-fill" id="meter"></div></div>
+      <p class="mono model-pct" id="pct">0%</p>
+      <div id="traits" class="traits"></div>
+      <div class="converged" id="converged" hidden>
+        <div class="eve-mini sticker" data-eve></div>
+        <div>
+          <p class="mono hot">CONVERGENCE DETECTED</p>
+          <p class="converged-say" id="converged-say">wow. so this is what your eyes have been telling on you for?</p>
+          <button class="btn btn-small" id="recompile">recompile</button>
+        </div>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<section class="stack" id="stack">
+  <h2 class="section-title">how do you build a person?</h2>
+  <p class="section-sub">one faculty per sponsor, one shared event bus.</p>
+  <div class="faculty-grid">
+    <div class="faculty sticker-card"><svg><use href="#i-eye"/></svg><p class="mono">perception</p><h4>eye tracking + Firecrawl</h4><p>where you look, and what it is</p></div>
+    <div class="faculty sticker-card"><svg><use href="#i-spark"/></svg><p class="mono">reflex</p><h4>Jev</h4><p>fast bounded judgments: speak or shut up</p></div>
+    <div class="faculty sticker-card"><svg><use href="#i-heart"/></svg><p class="mono">memory</p><h4>Moss</h4><p>episodic + preference memory</p></div>
+    <div class="faculty sticker-card"><svg><use href="#i-bubble"/></svg><p class="mono">personality</p><h4>Featherless</h4><p>cheap, frequent, in-character lines</p></div>
+    <div class="faculty sticker-card"><svg><use href="#i-vec"/></svg><p class="mono">reasoning</p><h4>Claude + Codex Astra</h4><p>planning and computer use, only when needed</p></div>
+    <div class="faculty sticker-card"><svg><use href="#i-cursor"/></svg><p class="mono">orchestration</p><h4>Jabby</h4><p>event bus, routing, tools, state</p></div>
+    <div class="faculty sticker-card"><svg><use href="#i-ramen"/></svg><p class="mono">workspace</p><h4>Open Swarm</h4><p>her desk: visible multi-agent thinking</p></div>
+    <div class="faculty sticker-card"><svg><use href="#i-cal"/></svg><p class="mono">persistence + action</p><h4>Zo</h4><p>her own computer. she lives there.</p></div>
+  </div>
+</section>
+
+<section class="arch">
+  <h2 class="section-title">three systems, one loop</h2>
+  <p class="section-sub">observe, decide, act, observe again. knowing when not to talk is part of the intelligence.</p>
+  <div class="layers">
+    <div class="layer sticker-card" style="--c: var(--pink)">
+      <p class="mono">SYSTEM 0 · sensors</p>
+      <p>gaze, voice, screen, browser, timers → one event stream</p>
+      <code class="mono">GAZE_FIXATION ramen-card-3 · 2841ms</code>
+    </div>
+    <div class="layer sticker-card" style="--c: var(--lilac)">
+      <p class="mono">SYSTEM 1 · reflex</p>
+      <p>every event gets a verdict in milliseconds. 80 to 95% are IGNORE.</p>
+      <div class="verdicts mono">
+        <span class="v on">IGNORE</span><span class="v">GLANCE</span><span class="v">REACT</span><span class="v">COMMENT</span><span class="v">ASK</span><span class="v">HELP</span><span class="v">ACT</span><span class="v">ESCALATE</span>
+      </div>
+    </div>
+    <div class="layer sticker-card" style="--c: var(--mint)">
+      <p class="mono">SYSTEM 2 · frontier</p>
+      <p>memory recall, planning, computer use. never for "should she laugh?"</p>
+      <code class="mono">remembered · 4ms · likes spicy · $28 ramen incident</code>
+    </div>
+  </div>
+</section>
+
+<section class="demo" id="demo">
+  <h2 class="section-title">the demo</h2>
+  <p class="section-sub">two minutes. first thirty seconds absurd, next sixty impressive.</p>
+  <div class="video sticker-card">
+    <div class="video-inner">
+      <div class="eve-mini sticker" data-eve data-follow></div>
+      <p class="mono">DEMO RENDERING...</p>
+      <p class="video-sub">drops after judging</p>
+    </div>
+  </div>
+  <ol class="beats mono">
+    <li><span>0:00</span> profiles. your eyes do the swiping.</li>
+    <li><span>0:23</span> EIGENWOMAN CONVERGED. glitch.</li>
+    <li><span>0:38</span> "thoughts?" she knows which ramen.</li>
+    <li><span>0:48</span> memory flash: the $28 bowl incident.</li>
+    <li><span>1:05</span> swarm fans out. calendar, places, plan.</li>
+    <li><span>1:28</span> "7:30. cheap ramen. you're free. done."</li>
+    <li><span>1:36</span> you open the dating app again. "...seriously?"</li>
+  </ol>
+</section>
+
+<footer class="footer">
+  <p class="footer-big">she doesn't live in this webpage.</p>
+  <p class="footer-sub">she has her own computer.</p>
+  <p class="status mono"><span class="dot"></span>EVE ONLINE · UPTIME <span id="uptime">05:31:14</span> · MEMORIES 142 · TASKS 3</p>
+  <p class="fine">eigenwife is a hackathon project. all dating profiles are fictional.</p>
+</footer>
+
+<script src="main.js" type="module"></script>
+</body>
+</html>
