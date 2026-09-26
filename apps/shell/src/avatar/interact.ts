@@ -80,13 +80,13 @@ export interface TouchController {
   /** Pointer went onto her pixels. */
   enter(): void;
   /** A click (not a drag). Returns the region it hit, or null. */
-  click(p: Pt, box: Box, painted: boolean): "head" | "body" | null;
+  click(p: Pt, box: Box, painted: boolean): import("./touch").Region | null;
   dragStart(): void;
   drop(): void;
 }
 
 /** Everything is rate limited and subtle; asleep, she doesn't react at all. */
-export type TouchSay = (kind: "pat" | "poke" | "annoyed" | "drag" | "drop", region?: "head" | "body", count?: number) => void;
+export type TouchSay = (kind: import("./touch").ClickKind | "drag" | "drop", region?: import("./touch").Region, count?: number) => void;
 
 export function createTouchController(slot: FramingSlot, emitTouch: TouchSay): TouchController {
   const hover = new HoverLimiter();
@@ -104,7 +104,7 @@ export function createTouchController(slot: FramingSlot, emitTouch: TouchSay): T
     },
     click(p, box, painted) {
       if (asleep()) return null;
-      const region = regionAt(p, head(box), painted);
+      const region = regionAt(p, head(box), painted, { ears: !!activeModel.ears });
       if (!region) return null;
       const now = performance.now();
       const r = pokes.click(region, now);

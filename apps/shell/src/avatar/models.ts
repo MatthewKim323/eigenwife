@@ -100,6 +100,8 @@ export interface ModelDef {
   accents?: Record<string, string>;
   /** Head hit ellipse for pats (touch.ts), fractions of model height. Default DEFAULT_HEAD. */
   headShape?: HeadShape;
+  /** Has clickable ears above the head (cat ears). */
+  ears?: boolean;
 }
 
 export interface WardrobeEntry {
@@ -256,6 +258,7 @@ export const HARU: ModelDef = {
 export const ALEXIA: ModelDef = {
   id: "alexia",
   name: "Alexia",
+  ears: true,
   url: "/avatar/local/alexia/Alexia.model3.json",
   params: STANDARD_PARAMS,
   faceRest: {

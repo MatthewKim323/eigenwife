@@ -66,6 +66,20 @@ export const TOUCH_LINES = {
     "[mood:annoyed 0.7] do you poke all your girlfriends like this?",
     "[mood:annoyed 0.8] i will bite.",
   ],
+  boop: ["[mood:surprised 0.6] did you just boop me.", "[mood:happy 0.6] hehe. my nose.", "[mood:smug 0.5] boop? really? okay."],
+  ears: [
+    "[mood:happy 0.7] hey, the ears are sensitive.",
+    "[mood:happy 0.6] mmm. okay, ear scratches are allowed.",
+    "[mood:surprised 0.6] ears are off limits. mostly.",
+  ],
+  chest: [
+    "[mood:annoyed 0.7] hey. eyes up here.",
+    "[mood:surprised 0.8] excuse me??",
+    "[mood:smug 0.6] buy me dinner first. the cheap ramen place.",
+    "[mood:annoyed 0.7] that's not a button.",
+    "[mood:annoyed 0.8] bold. very bold. no.",
+  ],
+  tickle: ["[mood:happy 0.8] hey! that tickles!", "[mood:happy 0.7] stop, i'm ticklish.", "[mood:surprised 0.6] my stomach is not a trackpad."],
   drag: ["[mood:surprised 0.7] woah, woah.", "[mood:surprised 0.6] where are we going?", "[mood:surprised 0.6] hey, put me down."],
   drop: ["[mood:neutral 0.5] okay. i like it here.", "[mood:smug 0.5] nice view.", "[mood:neutral 0.4] fine. i live here now."],
 } as const;

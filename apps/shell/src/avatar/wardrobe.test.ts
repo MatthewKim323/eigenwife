@@ -180,10 +180,32 @@ describe("touch", () => {
     expect(head.cx).toBe(100 + 280 * 0.5);
     expect(inEllipse({ x: head.cx, y: head.cy }, head)).toBe(true);
     expect(regionAt({ x: head.cx, y: head.cy }, head, false)).toBe("head");
-    expect(regionAt({ x: head.cx, y: head.cy + head.ry * 3 }, head, true)).toBe("body");
+    expect(regionAt({ x: head.cx + head.rx * 2, y: head.cy + head.ry * 3 }, head, true)).toBe("body"); // arm
     expect(regionAt({ x: head.cx, y: head.cy + head.ry * 3 }, head, false)).toBeNull();
     const r = bodyRect(head, box);
     expect(r.y + r.h).toBe(box.y + box.h);
+  });
+
+  test("zones: head, face, ears (only with ears), chest, belly, body", () => {
+    const at = (fx: number, fy: number, ears = false) => regionAt({ x: head.cx + head.rx * fx, y: head.cy + head.ry * fy }, head, true, { ears });
+    expect(at(0, -0.5)).toBe("head");
+    expect(at(0, 0.5)).toBe("face");
+    expect(at(1.2, -1.2, true)).toBe("ears");
+    expect(at(1.2, -1.2, false)).not.toBe("ears");
+    expect(at(0, 2.2)).toBe("chest"); // chin + ~0.6 head heights
+    expect(at(0, 5)).toBe("belly"); // chin + 2 head heights
+    expect(at(0, 9)).toBe("body"); // legs
+    expect(at(2.2, 2.2)).toBe("body"); // arm, beside the chest band
+  });
+
+  test("chest runs out of patience at 2; each zone has its own reaction", () => {
+    const p = new PokeCounter();
+    expect(p.click("chest", 0)).toMatchObject({ kind: "chest" });
+    expect(p.click("chest", 1000)).toMatchObject({ kind: "annoyed", emit: true });
+    const q = new PokeCounter();
+    expect(q.click("face", 0)?.kind).toBe("boop");
+    expect(q.click("belly", 5000)?.kind).toBe("tickle");
+    expect(q.click("ears", 10_000)?.kind).toBe("ears");
   });
 
   test("pokes: pat on the head, poke on the body, annoyed at 3 in 4s, core told at most every 20s", () => {

@@ -193,7 +193,11 @@ export interface EventMap {
   /** The user clicked her (desktop overlay / shell column). count = pokes in the last few seconds. */
   "avatar.poke": { region: "head" | "body"; count: number };
   /** Every touch reaction in the overlay / shell column (she answers each with a short line). */
-  "avatar.touch": { kind: "pat" | "poke" | "annoyed" | "drag" | "drop"; region?: "head" | "body"; count?: number };
+  "avatar.touch": {
+    kind: "pat" | "poke" | "annoyed" | "drag" | "drop" | "boop" | "ears" | "chest" | "tickle";
+    region?: "head" | "face" | "ears" | "chest" | "belly" | "body";
+    count?: number;
+  };
   "memory.recall": { query: string; hits: MemoryHit[]; ms: number; by: string };
   "memory.write": { record: MemoryRecord; policy: MemoryWritePolicy };
   "relationship.update": { state: RelationshipState; delta: Partial<RelationshipState>; reason: string };

@@ -73,16 +73,27 @@ export function bodyRect(head: Ellipse, box: Box): Box {
   return { x: head.cx - w / 2, y: top, w, h: Math.max(0, box.y + box.h - top) };
 }
 
-export type Region = "head" | "body";
+export type Region = "head" | "face" | "ears" | "chest" | "belly" | "body";
 
 /**
- * Which part of her is under the pointer. `painted` = her pixels are there
+ * Which part of her is under the pointer, derived from her head ellipse (so it
+ * scales with every dock and model). `painted` = her pixels are there
  * (overlay: alpha hit test; shell column: the body rect). Head wins inside the
- * head ellipse, even over transparent gaps in the hair.
+ * head ellipse, even over transparent gaps in the hair. `ears` only for models
+ * that have them (Alexia's cat ears sit above the head ellipse).
  */
-export function regionAt(p: Pt, head: Ellipse, painted: boolean): Region | null {
-  if (inEllipse(p, head)) return "head";
-  return painted ? "body" : null;
+export function regionAt(p: Pt, head: Ellipse, painted: boolean, opts: { ears?: boolean } = {}): Region | null {
+  const dx = p.x - head.cx;
+  const dy = p.y - head.cy;
+  const hh = head.ry * 2;
+  if (opts.ears && dy < -head.ry * 0.55 && Math.abs(dx) > head.rx * 0.35 && Math.abs(dx) < head.rx * 1.9 && dy > -head.ry * 2.2) return "ears";
+  if (inEllipse(p, head)) return dy > head.ry * 0.05 ? "face" : "head";
+  if (!painted) return null;
+  const chin = head.cy + head.ry;
+  const y = p.y - chin;
+  if (y > hh * 0.15 && y < hh * 1.25 && Math.abs(dx) < head.rx * 1.25) return "chest";
+  if (y >= hh * 1.25 && y < hh * 2.3 && Math.abs(dx) < head.rx * 1.05) return "belly";
+  return "body";
 }
 
 export type HoverReaction = "smile" | "hm";
@@ -99,7 +110,18 @@ export class HoverLimiter {
   }
 }
 
-export type ClickReaction = { kind: "pat" | "poke" | "annoyed"; region: Region; count: number; emit: boolean };
+export type ClickKind = "pat" | "poke" | "annoyed" | "boop" | "ears" | "chest" | "tickle";
+export type ClickReaction = { kind: ClickKind; region: Region; count: number; emit: boolean };
+
+/** What a single click on a region is. */
+export const REGION_KIND: Record<Region, Exclude<ClickKind, "annoyed">> = {
+  head: "pat",
+  face: "boop",
+  ears: "ears",
+  chest: "chest",
+  belly: "tickle",
+  body: "poke",
+};
 
 /** Counts clicks in a sliding window and decides pat / poke / annoyed, plus whether to tell the core. */
 export class PokeCounter {
@@ -118,12 +140,14 @@ export class PokeCounter {
     this.lastClick = now;
     this.times.push(now);
     const count = this.count(now);
-    if (count >= this.opts.annoyedAt) {
+    // Boundaries: she runs out of patience faster when it's the chest.
+    const annoyedAt = region === "chest" ? Math.min(2, this.opts.annoyedAt) : this.opts.annoyedAt;
+    if (count >= annoyedAt) {
       const emit = now - this.lastEmit >= this.opts.emitGapMs;
       if (emit) this.lastEmit = now;
       return { kind: "annoyed", region, count, emit };
     }
-    return { kind: region === "head" ? "pat" : "poke", region, count, emit: false };
+    return { kind: REGION_KIND[region], region, count, emit: false };
   }
 }
 
@@ -166,6 +190,26 @@ export function playTouch(ev: TouchEvent, rig: TouchTarget, now: number, look: (
     case "annoyed":
       rig.setMood("annoyed", 0.75, now, 2600);
       look(900);
+      return;
+    case "boop":
+      rig.blink.trigger(now);
+      rig.setMood("happy", 0.45, now, 1200);
+      return;
+    case "ears":
+      rig.setMood("happy", 0.6, now, 1600);
+      rig.wardrobe.accent("blush", now, 1600);
+      rig.closeEyes(now, 900);
+      return;
+    case "chest":
+      // Flustered, then a boundary: blush + annoyed, eyes back on him.
+      rig.setMood("annoyed", 0.7, now, 2200);
+      rig.wardrobe.accent("blush", now, 2200);
+      rig.bounce(now);
+      look(1000);
+      return;
+    case "tickle":
+      rig.setMood("happy", 0.8, now, 1400);
+      rig.bounce(now);
       return;
     case "drag-start":
       rig.setMood("surprised", 1, now, 60_000);
