@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import type { EventMap, EventType, GazeTarget, ReflexDecision } from "@eigenwife/protocol";
 import type { CoreContext } from "../src/context";
 import type { JevDecider } from "../src/reflex/jev";
-import { ACK_LINES, RELAPSE_LINE, reflexModule } from "../src/reflex/module";
+import { ACK_LINES, BIRTH_LINE, RELAPSE_LINE, reflexModule } from "../src/reflex/module";
 import { emitAt, FakeAgency, FakeBrains, FakeClock, fakeContext, FakeMemory, FakeSpeech, settle, startModules } from "../src/reflex/testing";
 
 const persona = {
@@ -18,9 +18,10 @@ const persona = {
 };
 const ramen: GazeTarget = { key: "menu_ramen", label: "Garlic Knockout Ramen, $21, 4.6 stars", kind: "menu-item", meta: { price: 21, spicy: true } };
 
-async function rig(opts: { jev?: JevDecider; services?: ("speech" | "brains" | "memory" | "agency")[] } = {}) {
+async function rig(opts: { jev?: JevDecider; services?: ("speech" | "brains" | "memory" | "agency")[]; demo?: boolean } = {}) {
   const clock = new FakeClock(Date.now());
   const ctx = fakeContext();
+  ctx.config.demo = opts.demo ?? false;
   const want = new Set(opts.services ?? ["speech", "brains", "memory", "agency"]);
   const speech = new FakeSpeech(ctx, clock);
   const brains = new FakeBrains((r) => (r.behavior === "report" ? "booked. ramen at 8, you're welcome." : `(${r.behavior}) sure`));
@@ -83,8 +84,34 @@ test("deixis: 'thoughts?' puts the gaze target in the persona prompt, recalls me
   await r.stop();
 });
 
-test("ESCALATE: acknowledges, runs the task through agency, reports the result", async () => {
+test("companion.born in demo mode: the scripted, pre-rendered birth line", async () => {
+  const r = await rig({ demo: true });
+  r.emit("companion.born", { persona });
+  await settle(10);
+  expect(r.speech.said[0]!.text).toBe(BIRTH_LINE);
+  expect(r.brains.requests.length).toBe(0);
+  await r.stop();
+});
+
+test("ESCALATE: a short task summary is spoken verbatim, never paraphrased", async () => {
   const r = await bornRig();
+  r.agency.result = { ok: true, summary: "7:30 at Menya Kaze, $18. Not booking it then." };
+  r.emit("voice.final", { text: "can you figure out dinner for tonight?" });
+  await settle(10);
+  await Bun.sleep(20);
+  await settle(10);
+  expect(r.brains.requests.find((q) => q.behavior === "report")).toBeUndefined();
+  expect(r.speech.said.at(-1)!.text).toBe("7:30 at Menya Kaze, $18. Not booking it then.");
+  await r.stop();
+});
+
+test("ESCALATE: acknowledges, runs the task through agency, reports a long result via persona", async () => {
+  const r = await bornRig();
+  r.agency.result = {
+    ok: true,
+    summary:
+      "booked Ramen Nagi for 8pm, $18 bowls, 10 min walk, and I also checked three other places nearby but they were either over budget or had a forty minute wait, so Nagi it is, and I set a reminder",
+  };
   const e = r.emit("voice.final", { text: "can you figure out dinner for tonight?" });
   await settle(10);
   expect(r.decisions.at(-1)!.decision).toBe("ESCALATE");
@@ -94,6 +121,7 @@ test("ESCALATE: acknowledges, runs the task through agency, reports the result",
   await settle(10);
   const report = r.brains.requests.find((q) => q.behavior === "report")!;
   expect(report.extra).toContain("booked Ramen Nagi for 8pm");
+  expect(report.extra).toContain("ground truth");
   expect(report.userText).toBe("can you figure out dinner for tonight?");
   expect(r.speech.said.at(-1)!.text).toBe("booked. ramen at 8, you're welcome.");
   expect(r.memory.observed.at(-1)!.event).toContain("task done");

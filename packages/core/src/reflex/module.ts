@@ -29,7 +29,9 @@ const URGENCY_RANK: Record<Urgency, number> = { immediate: 0, soon: 1, later: 2 
 
 /** The acknowledgement before a task. Scripted: fast, and cacheable by the speech layer. */
 export const ACK_LINES = ["on it.", "okay. give me a sec.", "leave it to me.", "on it. don't move."];
-export const RELAPSE_LINE = "...seriously?";
+// Same text as the speech module's scripted lines, so the pre-rendered audio is a cache hit.
+export const RELAPSE_LINE = "[mood:annoyed 0.8] ...seriously?";
+export const BIRTH_LINE = "[mood:smug 0.6] so. apparently this is your type.";
 
 const FALLBACK: Record<string, string> = {
   greet: "hi. it's me. i watched you swipe, so we need to talk.",
@@ -281,13 +283,13 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
     return lines.join("\n");
   }
 
-  async function say(text: string | AsyncIterable<string>, t: Trigger | null, parent: string | undefined, mood?: Mood): Promise<string | null> {
+  async function say(text: string | AsyncIterable<string>, t: Trigger | null, parent: string | undefined, mood?: Mood, forceInterrupt = false): Promise<string | null> {
     const speech = ctx.tryUse("speech");
     if (!speech) {
       log("no speech service: would have said", typeof text === "string" ? `"${text}"` : "(stream)");
       return null;
     }
-    const interrupt = !!t && t.urgency === "immediate" && !t.ambient && speech.speaking();
+    const interrupt = forceInterrupt ? speech.speaking() : !!t && t.urgency === "immediate" && !t.ambient && speech.speaking();
     const r = await speech.say(text, { parent, interrupt, priority: t?.urgency === "immediate" ? "high" : "normal", brain: "persona", mood });
     return r.text;
   }
@@ -304,7 +306,10 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
     const brains = ctx.tryUse("brains");
     const fallback = t.rule === "task_done" ? `${t.data.ok ? "done" : "that didn't work"}. ${String(t.data.summary ?? "")}`.trim() : (FALLBACK[behavior] ?? "mhm.");
     let src: string | AsyncIterable<string>;
-    if (brains) {
+    if (t.rule === "companion_born" && ctx.config.demo) {
+      // The birth line is the demo's biggest laugh: scripted, pre-rendered, never improvised.
+      src = BIRTH_LINE;
+    } else if (brains) {
       src = guarded(
         brains.persona({ event: t.description, behavior, userText, extra, marks: true, maxWords: maxWordsFor(behavior, !t.ambient, rel) }),
         fallback,
@@ -334,7 +339,8 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
     let args: Record<string, unknown> = {};
     let description = "";
     if (t.rule === "relapse") {
-      await say(RELAPSE_LINE, t, t.parent, "annoyed");
+      // The punchline cuts off whatever she was saying.
+      await say(RELAPSE_LINE, t, t.parent, "annoyed", true);
       args = { app: String(t.data.app ?? "Eigen") };
       description = `close ${args.app}: user relapsed onto the dating app`;
     } else if (v.intent?.command) {
@@ -396,8 +402,22 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
       const rel = relationship();
       const brains = ctx.tryUse("brains");
       const fallback = `${res.ok ? "done." : "that didn't work."} ${res.summary}`.trim();
+      // A short summary is already in her voice and is the ground truth (e.g. the
+      // user declined the booking): say it verbatim instead of letting the persona
+      // brain paraphrase it into something that never happened.
+      const words = res.summary.trim().split(/\s+/).filter(Boolean).length;
+      if (res.summary.trim() && words <= 32) {
+        const said = await say(res.summary.trim(), null, t.parent, res.ok ? "happy" : "sad");
+        await observe(userText, said, `task ${res.ok ? "done" : "failed"}: ${goal}. ${res.summary}`);
+        return;
+      }
       const memories = await recall(goal, t.parent);
-      const extra = extraFor(t, undefined, memories, [`task: ${goal}`, `outcome: ${res.ok ? "success" : "failed"}`, `result: ${res.summary}`]);
+      const extra = extraFor(t, undefined, memories, [
+        `task: ${goal}`,
+        `outcome: ${res.ok ? "success" : "failed"}`,
+        `result: ${res.summary}`,
+        "the result above is the ground truth. only report what it says. never claim something was booked, sent or bought unless the result says so.",
+      ]);
       const src = brains
         ? guarded(
             brains.persona({ event: `the task "${goal}" ${res.ok ? "finished" : "failed"}`, behavior: "report", userText, extra, marks: true, maxWords: maxWordsFor("report", true, rel) }),
