@@ -27,6 +27,11 @@ def calibration_file() -> Path:
     return home() / "calibration.npz"
 
 
+def correction_file() -> Path:
+    """Drift correction from the in-app quick calibration (eye serve), layered on the calibration."""
+    return home() / "correction.json"
+
+
 def config_file() -> Path:
     return home() / "config.json"
 

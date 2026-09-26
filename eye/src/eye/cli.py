@@ -12,6 +12,7 @@ HELP = """webcam eye cursor for macOS
   eye debug        camera preview with landmarks and live blink signals
   eye calibrate    fullscreen calibration (~1 min)
   eye run          start the eye cursor
+  eye serve        stream gaze events to apps over a localhost websocket
 
 gestures (defaults, see ~/.eye/config.json):
   wink left        left click (twice quickly = double click)
@@ -110,6 +111,29 @@ def cmd_run(args) -> int:
     return 0
 
 
+def cmd_serve(args) -> int:
+    from . import calibration, config, screen, server
+
+    settings = config.load()
+    display = screen.pick(args.display if args.display is not None else settings.display)
+    calib = calibration.load()
+    if calib is None:
+        print("no calibration yet: gestures only, no gaze. run `eye calibrate`")
+    elif calib.meta["display"]["name"] != display.name:
+        print(f"warning: calibrated on {calib.meta['display']['name']}, serving for {display.name}")
+    server.run(
+        settings,
+        display,
+        calib,
+        camera=args.camera,
+        host=args.host,
+        port=args.port,
+        fresh=args.fresh,
+        sounds=settings.sounds and not args.quiet,
+    )
+    return 0
+
+
 def cmd_fit(args) -> int:
     from . import calibration, paths
     from .screen import Display
@@ -163,6 +187,15 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--dry-run", action="store_true", help="track and draw, but never move or click")
     p.add_argument("--debug", action="store_true", help="draw the raw gaze estimate on the overlay")
     p.set_defaults(fn=cmd_run)
+
+    p = sub.add_parser("serve", help="stream gaze events to apps (no mouse control)")
+    p.add_argument("--camera")
+    p.add_argument("--display")
+    p.add_argument("--host", default="127.0.0.1")
+    p.add_argument("--port", type=int, default=8765)
+    p.add_argument("--fresh", action="store_true", help="ignore the saved drift correction")
+    p.add_argument("--quiet", action="store_true", help="no gesture sounds")
+    p.set_defaults(fn=cmd_serve)
 
     p = sub.add_parser("fit", help="refit the gaze model from a saved calibration session")
     p.add_argument("session", nargs="?", help="session .npz (default: newest)")

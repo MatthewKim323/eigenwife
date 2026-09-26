@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>eye serve</title>
+<style>
+  :root { --bg: #0b0b10; --card: #15151d; --line: #262633; --dim: #8a8aa0; --fg: #f2f2f7; --hot: #ff5c93; --ok: #6ee7b7; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.4 -apple-system, system-ui, sans-serif; height: 100vh; overflow: hidden; }
+  .mono { font-family: ui-monospace, Menlo, monospace; font-size: 12px; letter-spacing: .04em; }
+  header { display: flex; gap: 10px; align-items: center; padding: 14px 20px; border-bottom: 1px solid var(--line); }
+  header .chip { padding: 4px 9px; border-radius: 99px; background: var(--card); color: var(--dim); }
+  header .chip.on { color: var(--ok); }
+  header .grow { flex: 1; }
+  button { background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; padding: 7px 12px; font: inherit; cursor: pointer; }
+  button:hover { border-color: var(--dim); }
+  main { display: grid; grid-template-columns: 1fr 300px; height: calc(100vh - 57px); }
+  .profile { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 28px; padding: 28px; }
+  .region { position: relative; border-radius: 18px; background: var(--card); border: 2px solid transparent; display: flex; align-items: center; justify-content: center; padding: 28px; transition: border-color .15s, box-shadow .15s; }
+  .region.photo { background: linear-gradient(135deg, #2a2440, #3b2238 60%, #1e2a3a); }
+  .region .tag { position: absolute; top: 12px; left: 14px; color: var(--dim); }
+  .region p { font-size: 22px; margin: 0; max-width: 20ch; }
+  .region.looking { border-color: #ffffff40; }
+  .region.fixed { border-color: var(--hot); box-shadow: 0 0 40px #ff5c9333; }
+  .region.confirmed { animation: pop .5s ease-out; }
+  @keyframes pop { 0% { box-shadow: 0 0 0 0 #ff5c93cc; } 100% { box-shadow: 0 0 0 40px #ff5c9300; } }
+  aside { border-left: 1px solid var(--line); padding: 20px; overflow: auto; }
+  aside h2 { font-size: 11px; letter-spacing: .2em; color: var(--dim); font-weight: 600; margin: 0 0 10px; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
+  td { padding: 5px 0; border-bottom: 1px solid var(--line); }
+  td:not(:first-child) { text-align: right; }
+  #log { white-space: pre-wrap; color: var(--dim); }
+  #dot { position: fixed; width: 22px; height: 22px; margin: -11px 0 0 -11px; border-radius: 50%; border: 2px solid var(--hot); pointer-events: none; z-index: 10; transition: left .06s linear, top .06s linear; display: none; }
+  #dot.blink { border-style: dashed; opacity: .5; }
+</style>
+</head>
+<body>
+<header class="mono">
+  <span id="conn" class="chip">offline</span>
+  <span id="face" class="chip">no face</span>
+  <span id="acc" class="chip">uncalibrated</span>
+  <span class="grow"></span>
+  <button id="calib">quick calibrate</button>
+  <button id="reset">reset stats</button>
+</header>
+<main>
+  <section class="profile">
+    <div class="region photo" data-gaze="photo_1"><span class="tag mono">photo_1</span></div>
+    <div class="region" data-gaze="prompt_1"><span class="tag mono">prompt_1</span><p>my most controversial opinion: tabs are better than spaces</p></div>
+    <div class="region" data-gaze="prompt_2"><span class="tag mono">prompt_2</span><p>looking for someone to split a $21 ramen with</p></div>
+    <div class="region photo" data-gaze="photo_2"><span class="tag mono">photo_2</span></div>
+  </section>
+  <aside class="mono">
+    <h2>ATTENTION</h2>
+    <table id="stats"></table>
+    <h2>EVENTS</h2>
+    <div id="log"></div>
+  </aside>
+</main>
+<div id="dot"></div>
+<script type="module">
+  import { EyeClient } from "./eye-client.js";
+
+  const eye = new EyeClient();
+  window.eye = eye;
+  const $ = (id) => document.getElementById(id);
+  const lines = [];
+  const log = (s) => { lines.unshift(s); lines.length = Math.min(lines.length, 14); $("log").textContent = lines.join("\n"); };
+
+  eye.on("status", (s) => {
+    $("conn").textContent = s.connected ? "eye serve" : "offline";
+    $("conn").classList.toggle("on", s.connected);
+    $("face").textContent = s.face ? "face" : "no face";
+    $("face").classList.toggle("on", s.face);
+    $("acc").textContent = !s.calibrated ? "uncalibrated" : `calib ${s.accuracyDeg?.toFixed(1)}°${s.corrected ? " +drift fix" : ""}`;
+    $("acc").classList.toggle("on", s.calibrated);
+  });
+  eye.on("gaze", (g) => {
+    const dot = $("dot");
+    dot.style.display = "block";
+    dot.style.left = `${g.x}px`;
+    dot.style.top = `${g.y}px`;
+    dot.classList.toggle("blink", g.blink);
+  });
+  eye.on("enter", ({ el }) => el.classList.add("looking"));
+  eye.on("leave", ({ el }) => el.classList.remove("looking", "fixed"));
+  eye.on("fixation", ({ el, key }) => { if (el) el.classList.add("fixed"); });
+  eye.on("fixation_end", ({ el, key, ms }) => { if (key) log(`${key.padEnd(10)} ${(ms / 1000).toFixed(1)}s`); });
+  eye.on("gesture", ({ kind, key }) => { if (!kind.startsWith("tier")) log(`GESTURE ${kind}${key ? " @ " + key : ""}`); });
+  eye.on("confirm", ({ el }) => { if (!el) return; el.classList.remove("confirmed"); void el.offsetWidth; el.classList.add("confirmed"); });
+
+  const render = () => {
+    const rows = Object.entries(eye.stats()).sort((a, b) => b[1].dwellMs - a[1].dwellMs);
+    $("stats").innerHTML = rows.map(([k, s]) => `<tr><td>${k}</td><td>${(s.dwellMs / 1000).toFixed(1)}s</td><td>${s.revisits ? "rev " + s.revisits : ""}</td></tr>`).join("");
+  };
+  setInterval(render, 250);
+
+  $("calib").onclick = async () => {
+    const r = await eye.calibrate();
+    log(r.ok ? `CALIBRATED ${r.beforeDeg}° -> ${r.afterDeg}° (held out ${r.looDeg ?? "?"}°)${r.applied ? "" : " not applied"}` : `CALIBRATION FAILED ${r.error}`);
+  };
+  $("reset").onclick = () => { eye.resetStats(); render(); };
+</script>
+</body>
+</html>
