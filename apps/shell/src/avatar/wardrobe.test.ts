@@ -256,6 +256,31 @@ describe("look arbiter", () => {
     expect(a.resolve(5001, { head, spread }).kind).toBe("cursor");
   });
 
+  test("her own cursor outranks the user's cursor and gaze while she acts, and rides its glide", () => {
+    const a = new LookArbiter(rng(3), 0, quiet);
+    a.cursor({ x: 10, y: 10 }, 0);
+    a.gaze({ x: 900, y: 20 }, 0);
+    a.agent({ x: 100, y: 500, action: "move", ms: 0 }, 0);
+    expect(a.resolve(1, { head, spread })).toMatchObject({ kind: "agent", point: { x: 100, y: 500 }, headGain: LOOK_ARB.agentHeadGain });
+    // glance/hold still win (shared attention beats her own work)
+    expect(a.resolve(1, { head, spread, hold: { x: 1, y: 1 } }).kind).toBe("hold");
+    // A glide: halfway she looks between the two points, at the end exactly at the target.
+    a.agent({ x: 1100, y: 500, action: "move", ms: 600 }, 100);
+    const mid = a.resolve(400, { head, spread }).point!;
+    expect(mid.x).toBeGreaterThan(100);
+    expect(mid.x).toBeLessThan(1100);
+    expect(a.resolve(700, { head, spread }).point).toEqual({ x: 1100, y: 500 });
+    a.agent({ x: 1100, y: 500, action: "click" }, 800);
+    expect(a.agentLive(800)).toBe(true);
+    // idle: a short linger, then back to the normal order (gaze is stale by now, the cursor too).
+    a.agent({ x: 1100, y: 500, action: "idle" }, 900);
+    expect(a.resolve(900 + LOOK_ARB.agentLingerMs - 1, { head, spread }).kind).toBe("agent");
+    expect(a.resolve(900 + LOOK_ARB.agentLingerMs + 1, { head, spread }).kind).not.toBe("agent");
+    // No idle ever arrives: it lets go on its own.
+    a.agent({ x: 5, y: 5, action: "click" }, 10_000);
+    expect(a.resolve(10_000 + LOOK_ARB.agentHoldMs + 200, { head, spread }).kind).not.toBe("agent");
+  });
+
   test("idle: back at the user, with an occasional short glance, never while tracking", () => {
     const a = new LookArbiter(rng(7), 0);
     const kinds: string[] = [];

@@ -24,6 +24,7 @@ import {
   Tray,
   type MenuItemConstructorOptions,
 } from "electron";
+import { startCursorLayer, type CursorLayer } from "./cursor/layer";
 import { heartBitmap } from "./icon";
 import {
   attentionEnvelope,
@@ -51,6 +52,7 @@ const EVE_HOME = process.env.EVE_HOME || join(homedir(), ".eve");
 const STATE_PATH = join(EVE_HOME, "overlay.json");
 const URL = overlayUrl(process.env);
 const CORE_HTTP = `http://${new globalThis.URL(URL).searchParams.get("core") || "127.0.0.1:7777"}`;
+const CORE_HOST = new globalThis.URL(CORE_HTTP).host;
 const fsio = { readFileSync, writeFileSync, mkdirSync, existsSync };
 
 const log = (...a: unknown[]) => console.log(`[overlay ${new Date().toLocaleTimeString()}]`, ...a);
@@ -60,6 +62,8 @@ let state: OverlayState = loadState(STATE_PATH, fsio);
 const capturableEnv = process.env.EVE_OVERLAY_CAPTURABLE === "1";
 let win: BrowserWindow | null = null;
 let tray: Tray | null = null;
+// Eve's own cursor over every display (docs/AGENT_CURSOR.md). EVE_CURSOR_LAYER=0 turns it off.
+let cursorLayer: CursorLayer | null = null;
 let interactive = false;
 let drag: { timer: ReturnType<typeof setInterval>; dx: number; dy: number; until: number } | null = null;
 let loadRetry: ReturnType<typeof setTimeout> | undefined;
@@ -264,6 +268,7 @@ function setSize(size: SizeName) {
 
 function setCapturable(c: boolean) {
   win?.setContentProtection(!c);
+  cursorLayer?.setCapturable(c || capturableEnv);
   persist({ capturable: c });
   refreshTray();
 }
@@ -429,6 +434,7 @@ if (!app.requestSingleInstanceLock()) {
     // IPC is registered at module load, before the first loadURL.
     createWindow();
     refreshTray();
+    if (process.env.EVE_CURSOR_LAYER !== "0") cursorLayer = startCursorLayer({ coreHost: CORE_HOST, capturable: () => state.capturable || capturableEnv, log });
     registerHotkeys();
     // The tray's Outfit submenu mirrors the core (spoken changes show up here too).
     void refreshOutfit();
@@ -449,6 +455,7 @@ if (!app.requestSingleInstanceLock()) {
 
   app.on("will-quit", () => {
     globalShortcut.unregisterAll();
+    cursorLayer?.stop();
     stopDrag();
   });
   // Closing the window isn't quitting: she lives in the tray.

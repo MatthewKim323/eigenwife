@@ -5,7 +5,7 @@
   "description": "Eve on the real desktop: a transparent, click-through Electron window around the shell's ?mode=overlay.",
   "main": "dist/main.cjs",
   "scripts": {
-    "build": "bun build src/main.ts --target=node --format=cjs --external electron --outfile dist/main.cjs && bun build src/preload.ts --target=node --format=cjs --external electron --outfile dist/preload.cjs",
+    "build": "bun build src/main.ts --target=node --format=cjs --external electron --outfile dist/main.cjs && bun build src/preload.ts --target=node --format=cjs --external electron --outfile dist/preload.cjs && bun build src/cursor/preload.ts --target=node --format=cjs --external electron --outfile dist/cursor-preload.cjs && bun build src/cursor/renderer.ts --target=browser --format=iife --outfile dist/cursor/renderer.js && cp src/cursor/index.html dist/cursor/index.html",
     "start": "bun run build && bun run ensure-electron && electron .",
     "typecheck": "tsc -p . --noEmit",
     "test": "bun test src",

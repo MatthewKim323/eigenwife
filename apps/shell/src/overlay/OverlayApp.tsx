@@ -97,6 +97,8 @@ export function OverlayApp() {
   const touch = useTouchController("overlay");
   // The global cursor (main polls it ~30Hz while she's visible): she follows it anywhere on screen.
   useEffect(() => bridge.onCursor((p) => avatarRuntime.look.cursor(p, performance.now())), []);
+  // Her own cursor (docs/AGENT_CURSOR.md): while she acts, she watches it instead of yours.
+  useEvent("agent.cursor", (e) => avatarRuntime.look.agent(e.data, performance.now()));
 
   // --- renderer: Live2D with a readable drawing buffer, tachie fallback ---------
   useEffect(() => {

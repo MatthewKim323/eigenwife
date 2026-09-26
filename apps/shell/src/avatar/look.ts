@@ -1,3 +1,4 @@
+import { glideAt, makeGlide, type Glide } from "@eigenwife/protocol";
 import type { Rand } from "./motion-math";
 
 /**
@@ -8,6 +9,8 @@ import type { Rand } from "./motion-math";
  * Priority, highest first:
  *   glance  an explicit, short shared-attention target (avatar.look, a new gaze.target element)
  *   hold    a sustained target (watching the swarm while acting)
+ *   agent   her OWN cursor while she's doing something (agent.cursor), sampled on
+ *           the same glide the cursor layer draws, so her eyes ride along with it
  *   gaze    the user's real gaze point (gaze.point), while fresh
  *   cursor  the mouse, anywhere on screen, until it rests for CURSOR_IDLE_MS
  *   idle    back to the user (camera, top-center), with an occasional glance around
@@ -20,7 +23,7 @@ export interface Pt {
   y: number;
 }
 
-export type LookKind = "glance" | "hold" | "gaze" | "cursor" | "idle-glance" | "user";
+export type LookKind = "glance" | "hold" | "agent" | "gaze" | "cursor" | "idle-glance" | "user";
 
 export interface LookChoice {
   kind: LookKind;
@@ -43,6 +46,11 @@ export const LOOK_ARB = {
   idleGlanceMs: [500, 900] as [number, number],
   /** Head gain while tracking the cursor / gaze. */
   trackHeadGain: 0.5,
+  /** Her own cursor keeps her eyes this long after its last action (idle ends it sooner). */
+  agentHoldMs: 3500,
+  /** After agent "idle", a short linger before she looks back. */
+  agentLingerMs: 500,
+  agentHeadGain: 0.65,
 };
 
 export class LookArbiter {
@@ -50,6 +58,7 @@ export class LookArbiter {
   private gz: { p: Pt; at: number } | null = null;
   private nextIdleGlance: number;
   private idleGlance: { p: Pt; until: number } | null = null;
+  private ag: { glide: Glide; until: number } | null = null;
 
   constructor(
     private rand: Rand = Math.random,
@@ -75,6 +84,30 @@ export class LookArbiter {
     this.gz = { p: { ...p }, at: now };
   }
 
+  /**
+   * Her own cursor (agent.cursor, screen points). While she's acting it
+   * outranks the user's cursor and gaze: she watches what she's doing.
+   */
+  agent(e: { x: number; y: number; action: string; ms?: number }, now: number) {
+    if (e.action === "idle") {
+      if (this.ag) this.ag.until = Math.min(this.ag.until, now + this.opts.agentLingerMs);
+      return;
+    }
+    const to = { x: e.x, y: e.y };
+    const from = this.ag ? glideAt(this.ag.glide, now) : null;
+    const glide = e.action === "move" ? makeGlide(from, to, now, e.ms) : makeGlide(from, to, now, from ? 120 : 0);
+    this.ag = { glide, until: now + glide.ms + this.opts.agentHoldMs };
+  }
+
+  clearAgent() {
+    this.ag = null;
+  }
+
+  /** Is she watching her own cursor right now? */
+  agentLive(now: number): boolean {
+    return !!this.ag && now <= this.ag.until;
+  }
+
   /** Gaze lost / tracker gone. */
   clearGaze() {
     this.gz = null;
@@ -88,6 +121,10 @@ export class LookArbiter {
   resolve(now: number, s: { glance?: Pt | null; hold?: Pt | null; head: Pt; spread: Pt }): LookChoice {
     if (s.glance) return { kind: "glance", point: s.glance, headGain: 1 };
     if (s.hold) return { kind: "hold", point: s.hold, headGain: 1 };
+    if (this.ag && now <= this.ag.until) {
+      this.bumpIdle(now);
+      return { kind: "agent", point: glideAt(this.ag.glide, now), headGain: this.opts.agentHeadGain };
+    }
     const track = this.opts.trackHeadGain;
     if (this.gz && now - this.gz.at <= this.opts.gazeFreshMs) {
       this.bumpIdle(now);

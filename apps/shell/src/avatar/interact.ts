@@ -72,7 +72,7 @@ export function resolveFocus(now: number, space: LookSpace): { focus: Focus; hea
   });
   if (!choice.point) return { focus: space.user(), headGain: choice.headGain, choice };
   const f = screenToFocus(choice.point, space.head, space.size.w, space.size.h);
-  const tracked = choice.kind === "cursor" || choice.kind === "gaze" || choice.kind === "idle-glance";
+  const tracked = choice.kind === "agent" || choice.kind === "cursor" || choice.kind === "gaze" || choice.kind === "idle-glance";
   return { focus: tracked ? clampFocus(f) : f, headGain: choice.headGain, choice };
 }
 
