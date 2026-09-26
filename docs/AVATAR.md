@@ -26,7 +26,7 @@ Eve's face, body, voice and ears in the shell. Owner paths: `apps/shell/src/avat
 
 ### Per-frame pipeline (`avatar/rig.ts`)
 
-`motion -> face rest -> emotion pose -> blink -> look-at -> mouth -> breath`, every frame, with param ids from the model def:
+`motion -> face rest -> emotion pose -> wardrobe -> blink -> look-at -> mouth -> breath`, every frame, with param ids from the model def:
 
 | Stage | Numbers |
 |---|---|
@@ -51,6 +51,15 @@ Emotion poses: Haru's own expression (loaded from its exp3.json, SDK blend modes
 | sad | F08 (displeased) | brows up-in (Form -0.6, Angle 0.8, Y -0.3), AngleY -12, EyeBallY -0.4 |
 
 Haru's head reads AngleX/Y strongly but AngleZ weakly, so tilts also add `ParamBodyAngleZ`.
+
+### Wardrobe, touch, cursor
+
+Full details in [WARDROBE.md](WARDROBE.md).
+
+- **Outfits** (`avatar/wardrobe.ts`, `ModelDef.wardrobe`): persistent expression toggles (Alexia: cat hoodie hood down/up, sunglasses on/pushed up, lollipop, one violet eye) applied right after the mood poses, ~250ms fades, one item per slot. Moods never clear them and face rest never pins them. While a slot is worn it owns its params, so Alexia's smug sunglasses flourish only shows when she wears nothing on her eyes. The core owns what she has on (`avatar.outfit`); she only changes when asked.
+- **Touch** (`avatar/touch.ts`): hover = tiny smile or "hm?", body click = blink + hop, head click = pat (happy, `lh` blush, eyes shut), 3+ clicks in 4s = annoyed plus `avatar.poke` so she says one line. Rate limited.
+- **Where she looks** (`avatar/look.ts`): glance > hold > real gaze > cursor (anywhere, eyes full, head ~0.5x) > idle (at you, occasional glances).
+- Debug: `__eve.wear(items)`, `__eve.wearing()`, `__eve.touch(kind)`.
 
 ### States (`avatar.state`, resolved in `AvatarLayer`)
 
@@ -119,7 +128,7 @@ Timeline from mount (`T` in the file):
 
 ## Debug handle
 
-`window.__eve`: `mood(m, intensity, holdMs)`, `state(s | null)`, `look(x, y, ms)`, `blink()`, `say(text, mood?)` (local, speechSynthesis), `hush()`, `still(on, eyesClosed, mouth)`, `frame("column" | "stage" | "overlay")`, `model` (active id), `runtime`.
+`window.__eve`: `wear(items)`, `wearing()`, `touch(kind)`, `mood(m, intensity, holdMs)`, `state(s | null)`, `look(x, y, ms)`, `blink()`, `say(text, mood?)` (local, speechSynthesis), `hush()`, `still(on, eyesClosed, mouth)`, `frame("column" | "stage" | "overlay")`, `model` (active id), `runtime`.
 
 ## Tests
 

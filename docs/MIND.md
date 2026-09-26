@@ -34,6 +34,7 @@ The engine's clock is the event `ts`, so replaying a recorded or simulated strea
 | `task_done` | `task.done` | always | soon | none | yes |
 | `face_return` | `eye.status`, `gaze.target` | face back after 2+ min away; once per return | soon | 60s | yes |
 | `app_opened` | `app.opened` | any non-dating app | later | 5s | yes |
+| `poked` | `avatar.poke` | 3+ clicks on her in ~4s (overlay / shell column); one scripted line | immediate | 30s | no |
 
 "Stare" continuity: a `gaze.target` on a different key, a `gaze.fixation` on a different key, a `gaze.lost`, or a gap of more than 6s between announcements breaks it. Face presence comes from `eye.status.facePresent` or a gaze target in the last 10s.
 
@@ -103,6 +104,7 @@ Logits per decision, softmax into scores, argmax. Everything starts at IGNORE 0,
 | `long_silence` | IGNORE 2, ASK 0.8 + initiative, COMMENT 0.4 + 0.5·banter |
 | `face_return` | IGNORE 1.4, GLANCE 1.3, REACT 1.2 + warmth |
 | `app_opened` | IGNORE 3, GLANCE -0.5, COMMENT -0.8 + (banter-0.5) |
+| `poked` | IGNORE -2, COMMENT 5, forced (no social modifiers), never waits on remote Jev |
 | anything else | IGNORE 2.5, GLANCE 0.5, COMMENT 0.3 |
 
 **Social modifiers** (added to every non-IGNORE logit, except `companion_born` and `relapse`):

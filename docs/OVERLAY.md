@@ -31,9 +31,10 @@ She has to be born first (the Eigen flow in the shell: `open http://127.0.0.1:51
 
 - **Talk.** She's listening whenever the chip says `listening`. What she hears shows up in the chip as you speak. Same half-duplex rule as the browser shell: while she's talking, only 3+ words get through, and they cut her off (barge-in).
 - **Approvals.** When she wants to do something real (a calendar event), the chip says **say "yeah"** with what it is. Say "yeah" / "do it", or "nah".
-- **Drag** her by her body or hair to move her. A tap without dragging makes her notice you (blink, glance, small smile).
+- **Drag** her by her body or hair to move her (she startles, then settles when you let go). A tap on her head is a head pat (happy, blush, eyes shut); a tap on her body is a poke (blink, small hop). Three or more taps in ~4s and she gets annoyed and says so, at most once per 30s. See `docs/WARDROBE.md`.
 - **Flashes** at the top: `remembered · 3ms · ...` when she pulls a memory, `noted · ...` when she saves one, `comment · dating relapse` when she noticed something on her own. They're gone in ~3s.
-- **Cursor.** Bring the pointer near her and she glances at it now and then.
+- **Cursor.** She follows your mouse anywhere on the screen: main polls `screen.getCursorScreenPoint()` at ~30Hz while she's visible and sends it over IPC (`eveOverlay.onCursor`). Eyes follow fully, her head at ~half. When the cursor rests for 4s she drifts back to looking at you (camera, top-center), with an occasional glance around. A real gaze point (`gaze.point`, screen coords) outranks the cursor. Details: `docs/WARDROBE.md`, `apps/shell/src/avatar/look.ts`.
+- **Outfit.** Tray > Outfit lists what she can wear as checkboxes (it mirrors the core, so spoken changes show up there too).
 
 ### Hotkeys (global)
 
