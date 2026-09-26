@@ -145,6 +145,8 @@ export interface EventMap {
   "shell.scene": { scene: Scene };
   "shell.ready": { width: number; height: number; audioUnlocked: boolean };
   "shell.key": { key: string };
+  /** Pause / resume ambient attention (screen watching, unprompted remarks). Direct speech still works. */
+  "attention.pause": { paused: boolean; by?: string };
 
   // --- act I: eigenvector -------------------------------------------------------
   "dating.view": { candidateId: string; index: number; total: number };
