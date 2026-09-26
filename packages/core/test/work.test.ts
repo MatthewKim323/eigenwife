@@ -814,3 +814,14 @@ describe("claude code sessions", () => {
     r.work.stop();
   });
 });
+
+describe("overlay chip", () => {
+  test("a running coding task shows as 'working on', approvals and speech still win", async () => {
+    const { chipFor } = await import("../../../apps/shell/src/overlay/status");
+    const base = { connected: true, born: true, approval: null, muted: false, thinking: false, heard: "", listening: true, micError: undefined, speaking: false, attentionPaused: false };
+    expect(chipFor({ ...base, working: "add hello (eigenwife)" })).toEqual({ kind: "working", text: "working on", sub: "add hello (eigenwife)" });
+    expect(chipFor({ ...base, working: "x", approval: "merge it and push" }).kind).toBe("approval");
+    expect(chipFor({ ...base, working: "x", speaking: true }).kind).toBe("speaking");
+    expect(chipFor(base).kind).toBe("listening");
+  });
+});

@@ -108,7 +108,7 @@ export function codePrompt(task: string, wt: Worktree, context?: string): string
     "Do the task completely: read the code, make the change, add or update a test when the repo has tests, and run the relevant tests.",
     "Rules: stay inside this directory. Do NOT commit, push, reset or checkout: leave every change uncommitted, the caller commits it.",
     "Never use em dashes (U+2014) or en dashes (U+2013) in code, comments or text.",
-    "When you are done, reply with 2-3 plain sentences: what you changed and whether the tests pass. No markdown.",
+    "When you are done, reply with 2 plain sentences that will be read aloud: what you changed and whether the tests pass. No markdown, no file paths, and don't mention these rules or committing.",
   ]
     .filter(Boolean)
     .join("\n");

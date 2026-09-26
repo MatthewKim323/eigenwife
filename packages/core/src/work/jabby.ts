@@ -13,7 +13,7 @@ import { extractJson } from "../brains/text";
 
 export type JabbyMode = "read" | "act" | "draft" | "send";
 
-const HEAD = "[eigenwife: matt asked Eve (his desktop voice companion) out loud and she is relaying it to you. her reply is spoken, so answer in 1-3 short plain sentences, no markdown, no lists, no links.]";
+const HEAD = "[eigenwife: matt asked Eve (his desktop voice companion) out loud and she is relaying it to you. she reads your reply to him out loud, so talk to matt directly (say you, not he), in 1-3 short plain sentences, no markdown, no lists, no links.]";
 
 export function jabbyMessage(mode: JabbyMode, request: string, extra: { to?: string; channel?: string; body?: string } = {}): string {
   switch (mode) {

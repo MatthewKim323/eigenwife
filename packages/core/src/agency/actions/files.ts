@@ -42,7 +42,9 @@ export async function spotlight(exec: Exec, query: string, opts: { dir?: string;
   const dir = opts.dir ?? homedir();
   const q = query.replace(/[\u0000-\u001f]/g, " ").trim().slice(0, 120);
   if (!q) return [];
-  const runs = opts.content ? [["mdfind", "-onlyin", dir, q]] : [["mdfind", "-onlyin", dir, "-name", q], ["mdfind", "-onlyin", dir, q]];
+  // "OVERLAY.md" is a file name, not a topic: content matches would only add noise.
+  const nameOnly = /\.[a-z0-9]{1,5}$/i.test(q) && !/\s/.test(q);
+  const runs = opts.content ? [["mdfind", "-onlyin", dir, q]] : nameOnly ? [["mdfind", "-onlyin", dir, "-name", q]] : [["mdfind", "-onlyin", dir, "-name", q], ["mdfind", "-onlyin", dir, q]];
   const groups: string[][] = [];
   for (const argv of runs) {
     const r = await exec(argv, { timeoutMs: 10_000, maxBytes: 400_000 });
