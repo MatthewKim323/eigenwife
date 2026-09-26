@@ -32,6 +32,16 @@
         "@eigenwife/protocol": "workspace:*",
       },
     },
+    "packages/harem": {
+      "name": "@eigenwife/harem",
+      "version": "0.1.0",
+      "dependencies": {
+        "@eigenwife/protocol": "workspace:*",
+      },
+      "devDependencies": {
+        "@eigenwife/core": "workspace:*",
+      },
+    },
     "packages/protocol": {
       "name": "@eigenwife/protocol",
       "version": "0.1.0",
@@ -39,6 +49,8 @@
   },
   "packages": {
     "@eigenwife/core": ["@eigenwife/core@workspace:packages/core"],
+
+    "@eigenwife/harem": ["@eigenwife/harem@workspace:packages/harem"],
 
     "@eigenwife/protocol": ["@eigenwife/protocol@workspace:packages/protocol"],
 

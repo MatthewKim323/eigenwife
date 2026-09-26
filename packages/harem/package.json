@@ -1,0 +1,16 @@
+{
+  "name": "@eigenwife/harem",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "demo": "bun run src/cli.ts",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@eigenwife/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "@eigenwife/core": "workspace:*"
+  }
+}
