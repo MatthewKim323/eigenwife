@@ -32,6 +32,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@eigenwife/protocol": "workspace:*",
+        "@moss-js/moss": "^1.14.0",
       },
     },
     "packages/harem": {
@@ -57,6 +58,20 @@
     "@eigenwife/protocol": ["@eigenwife/protocol@workspace:packages/protocol"],
 
     "@eigenwife/shell": ["@eigenwife/shell@workspace:apps/shell"],
+
+    "@moss-js/moss": ["@moss-js/moss@1.14.0", "", { "dependencies": { "@moss-js/moss-core": "0.29.0" } }, "sha512-p9M6eDo17jBlIvNefl2gXUlSVnlS1GjHGY27OgzsXTYqWZxmdF/wx2tCfkgCVauufU/R9CE25tByiFfhKtaApg=="],
+
+    "@moss-js/moss-core": ["@moss-js/moss-core@0.29.0", "", { "optionalDependencies": { "@moss-js/moss-core-darwin-arm64": "0.29.0", "@moss-js/moss-core-darwin-x64": "0.29.0", "@moss-js/moss-core-linux-arm64-gnu": "0.29.0", "@moss-js/moss-core-linux-x64-gnu": "0.29.0", "@moss-js/moss-core-win32-x64-msvc": "0.29.0" } }, "sha512-zf794xANCQwxf7g9EKCv77VXtgvYhcgvp8svyx1vQwkl/zXwTFwCrKDBSbWAGGN/+TV77B6q5Y/wl43F0T9UKQ=="],
+
+    "@moss-js/moss-core-darwin-arm64": ["@moss-js/moss-core-darwin-arm64@0.29.0", "", { "os": "darwin", "cpu": "arm64" }, "sha512-E0qyRxoxhknayKb25tz5PkBTWvEsaiECxeRkp4uVj2ZU7mwa6NGf+aQeW2i6HNtS5+k2TcobKVtyzKC49i62/w=="],
+
+    "@moss-js/moss-core-darwin-x64": ["@moss-js/moss-core-darwin-x64@0.29.0", "", { "os": "darwin", "cpu": "x64" }, "sha512-pGoguG9KyGw1+IOu1B/nF/ivnRp0WgHyADifYhfGdOjUXacL/xNSvnOq+qTUW9hIzdL2JN1WSP8RUa7+baJ48Q=="],
+
+    "@moss-js/moss-core-linux-arm64-gnu": ["@moss-js/moss-core-linux-arm64-gnu@0.29.0", "", { "os": "linux", "cpu": "arm64" }, "sha512-n1dlaqXMUZVzFzcIaCT/RWmFuwXJU/a7O/9/s1pyP4UjwlMT+NDVI0m6CCIxSfVdUbLci++njlZ3+76tXMmfcg=="],
+
+    "@moss-js/moss-core-linux-x64-gnu": ["@moss-js/moss-core-linux-x64-gnu@0.29.0", "", { "os": "linux", "cpu": "x64" }, "sha512-o/qG+WBMxjcErzjP9KN/ubVCvmqbjsoq+YDdphqUMj/CqUuieJ7y6cPND9CEBhOunf4utVb1ZZ7GXOAB10aMwg=="],
+
+    "@moss-js/moss-core-win32-x64-msvc": ["@moss-js/moss-core-win32-x64-msvc@0.29.0", "", { "os": "win32", "cpu": "x64" }, "sha512-yJT7IY8GSU6y0+zB3d8itmBgmHAY0ux6Zvhkv7CCSE+xYTqI5LL+OU8hPtP/NrfjLtKnxVhOYGS23Qa0nlFapw=="],
 
     "@oxc-project/types": ["@oxc-project/types@0.151.0", "", {}, "sha512-J1yXrIlNDZVzE3ada310xeAw7nH8yCAyLPuUIsjKatFPmfn5bS1oW+cM+QsGOtVWd5nhSpbwZWx/rue+r5Z+PA=="],
 
