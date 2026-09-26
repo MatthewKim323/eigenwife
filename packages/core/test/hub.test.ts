@@ -95,3 +95,19 @@ test("queued emits flush after connect", async () => {
   off();
   a.close();
 });
+
+test("synchronous core reactions reach the client that caused them", async () => {
+  const off = core.ctx.bus.on("shell.scene", (e) => {
+    if (e.data.scene === "emergence") core.ctx.bus.emit("diag", { label: "reaction", value: "born" }, "core", e.id);
+  });
+  const a = client("a");
+  await until(() => a.connected);
+  const seen: string[] = [];
+  a.on("*", (e) => seen.push(e.type));
+  a.emit("shell.scene", { scene: "emergence" });
+  await until(() => seen.includes("diag"));
+  await Bun.sleep(50);
+  expect(seen.filter((t) => t === "shell.scene").length).toBe(1);
+  off();
+  a.close();
+});

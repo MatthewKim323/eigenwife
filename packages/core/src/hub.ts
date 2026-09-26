@@ -24,12 +24,14 @@ export function json(data: unknown, status = 200): Response {
  */
 export function startHub(ctx: CoreContext & { routes: Map<string, RouteHandler> }) {
   const sockets = new Map<string, ServerWebSocket<Peer>>();
-  let fromSocket: string | null = null;
+  // Only the exact envelope a client sent is withheld from that client. Reactions
+  // the core publishes synchronously while handling it must still reach the sender.
+  let origin: { socket: string; eventId: string } | null = null;
 
   ctx.bus.tap((e: AnyEnvelope) => {
     const raw = JSON.stringify(e);
     for (const [id, ws] of sockets) {
-      if (id === fromSocket) continue;
+      if (origin && id === origin.socket && e.id === origin.eventId) continue;
       ws.send(raw);
     }
   });
@@ -85,11 +87,12 @@ export function startHub(ctx: CoreContext & { routes: Map<string, RouteHandler> 
           );
           ctx.log("hub", `${e.data.client} joined (${e.data.role})`);
         }
-        fromSocket = ws.data.id;
+        const prev = origin;
+        origin = { socket: ws.data.id, eventId: e.id };
         try {
           ctx.bus.publish(e);
         } finally {
-          fromSocket = null;
+          origin = prev;
         }
       },
       close(ws) {
