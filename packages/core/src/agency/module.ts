@@ -46,14 +46,17 @@ export const defaultDeps = (): AgencyDeps => ({
     }
   },
   async loadHarem() {
-    try {
-      // A variable specifier keeps tsc and bundlers from requiring the package at build time.
-      const spec = "@eigenwife/harem";
-      const mod = (await import(spec)) as Partial<HaremModule>;
-      return typeof mod.executeWithHarem === "function" ? (mod as HaremModule) : null;
-    } catch {
-      return null;
+    // Variable specifiers keep tsc and bundlers from requiring harem at build time.
+    // Core can't declare harem as a dependency (harem dev-depends on core), and bun's
+    // isolated installs only link declared deps, so fall back to the workspace path.
+    const specs = ["@eigenwife/harem", join(REPO_ROOT, "packages", "harem", "src", "index.ts")];
+    for (const spec of specs) {
+      try {
+        const mod = (await import(spec)) as Partial<HaremModule>;
+        if (typeof mod.executeWithHarem === "function") return mod as HaremModule;
+      } catch {}
     }
+    return null;
   },
   now: () => Date.now(),
   env: (name) => secret(name),
