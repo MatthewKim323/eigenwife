@@ -3,6 +3,7 @@
  * local Jev scorer (features) and the router (behavior, goal extraction).
  * Deliberately keyword based: it runs on every utterance in well under 1ms.
  */
+import { readOutfit, type OutfitIntent } from "./outfit";
 
 export interface UtteranceIntent {
   /** "wait", "stop", "nvm": shut up now. */
@@ -25,6 +26,8 @@ export interface UtteranceIntent {
   approval: boolean;
   /** "um", "hmm", "ok": nothing to answer. */
   filler: boolean;
+  /** "put your hoodie on", "lose the shades", "what are you wearing" (outfit.ts). */
+  outfit: OutfitIntent | null;
   words: number;
 }
 
@@ -89,6 +92,7 @@ export function readIntent(text: string): UtteranceIntent {
     down: DOWN.test(t),
     approval: APPROVAL.test(t),
     filler: FILLER.test(t),
+    outfit: stop || music ? null : readOutfit(t),
     words,
   };
 }

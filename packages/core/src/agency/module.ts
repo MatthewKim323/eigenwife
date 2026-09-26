@@ -10,6 +10,7 @@ import { musicControl, musicPlay } from "./actions/music";
 import { calendarCreateAlias, calendarCreateEvent, calendarDeleteEvent, calendarFreeBusy } from "./actions/calendar";
 import { placesSearchAction } from "./actions/places";
 import { webScrape, webScrapeAction, webSearchAction } from "./actions/web";
+import { avatarWear } from "./actions/wardrobe";
 import { Gate, SRC } from "./gate";
 import { effectivePermission } from "./policy";
 import { Policy } from "./policy";
@@ -87,6 +88,7 @@ export function createAgency(ctx: CoreContext, opts: AgencyOptions = {}) {
   const budget = opts.budget ?? (Number(deps.env("EIGEN_ACTION_BUDGET")) || 25);
   const gate = new Gate(ctx, deps, new Policy(budget), opts.approvalTimeoutMs ?? 30_000);
   gate.register(calendarCreateEvent, calendarCreateAlias, calendarDeleteEvent, calendarFreeBusy, browserOpen, webSearchAction, webScrapeAction, placesSearchAction, shellCloseApp, shellOpen, appQuit, musicPlay, musicControl);
+  gate.register(avatarWear);
 
   // Someone else (harem, shell, an operator script) asked for an action on the bus:
   // same gate, their actionId, never their permission claim if it's lower than ours.

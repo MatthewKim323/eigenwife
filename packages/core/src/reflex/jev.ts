@@ -110,6 +110,9 @@ function scoreUtterance(input: JevInput, text: string): LocalResult {
   } else if (it.approval && input.pendingApproval) {
     l.IGNORE = 5;
     why.push("approval reply, agency owns it");
+  } else if (it.outfit) {
+    l.ACT = 4;
+    why.push(`outfit request ${it.outfit.kind}`);
   } else if (it.task) {
     l.ESCALATE = 4;
     l.HELP = 1.5;
@@ -201,6 +204,11 @@ function ambientSalience(t: Trigger, input: JevInput, l: Scores, why: string[]) 
       l.REACT = 1.2 + r.warmth;
       why.push("welcome back");
       return;
+    case "poked":
+      l.IGNORE = -2;
+      l.COMMENT = 5;
+      why.push(`poked x${Number(t.data.count ?? 3)}`);
+      return;
     case "app_opened":
       l.IGNORE = 3;
       l.GLANCE = -0.5;
@@ -229,7 +237,7 @@ export function localScore(input: JevInput): LocalResult {
   }
   ambientSalience(t, input, l, why);
   // Social modifiers apply to everything that is not a forced moment.
-  const forced = t.rule === "companion_born" || t.rule === "relapse";
+  const forced = t.rule === "companion_born" || t.rule === "relapse" || t.rule === "poked";
   if (!forced) {
     let mod = (input.relationship.initiative - 0.5) * 2;
     const sinceHer = w.companion.lastSpokeAt !== undefined ? input.now - w.companion.lastSpokeAt : Infinity;
@@ -384,7 +392,7 @@ export function createJev(opts: JevOptions = {}): JevDecider {
         intent: local.intent,
       });
       // Hard cases never wait on the network.
-      const hard = local.stopSpeech || local.reason.includes("not born") || local.reason.includes("agency owns") || local.reason.includes("own escalation");
+      const hard = local.stopSpeech || local.reason.includes("not born") || local.reason.includes("agency owns") || local.reason.includes("own escalation") || local.reason.includes("outfit request") || local.reason.includes("poked");
       if (!opts.apiKey || hard) return localVerdict("");
       if (clock() < openUntil) return localVerdict("jev breaker open");
       try {

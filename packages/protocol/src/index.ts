@@ -182,6 +182,12 @@ export interface EventMap {
   "avatar.mood": { mood: Mood; intensity: number; holdMs?: number };
   "avatar.state": { state: AvatarState };
   "avatar.look": { targetKey: string | null; ms: number };
+  /** What she has on now (wardrobe item ids, see wardrobe.ts). Full state, not a delta. */
+  "avatar.outfit": { items: string[]; by: "user" | "agent" | "restore" };
+  /** The shell loaded an avatar model; `wardrobe` = the item ids that model can show. */
+  "avatar.model": { id: string; wardrobe: string[] };
+  /** The user clicked her (desktop overlay / shell column). count = pokes in the last few seconds. */
+  "avatar.poke": { region: "head" | "body"; count: number };
   "memory.recall": { query: string; hits: MemoryHit[]; ms: number; by: string };
   "memory.write": { record: MemoryRecord; policy: MemoryWritePolicy };
   "relationship.update": { state: RelationshipState; delta: Partial<RelationshipState>; reason: string };
@@ -332,4 +338,5 @@ export function emptyWorld(): WorldSnapshot {
   };
 }
 export * from "./world";
+export * from "./wardrobe";
 export * from "./candidates";

@@ -8,6 +8,7 @@ import { relationshipModule } from "../mind/module";
 import { preferenceModule } from "../preference/module";
 import { reflexModule } from "../reflex/module";
 import { speechModule } from "../speech/module";
+import { wardrobeModule } from "../wardrobe/module";
 import { clock } from "./clock";
 
 /**
@@ -21,6 +22,7 @@ export function allModules(): Module[] {
     memoryModule(),
     preferenceModule(),
     relationshipModule(),
+    wardrobeModule(),
     brainsModule(),
     speechModule(),
     earsModule(),

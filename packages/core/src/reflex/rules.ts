@@ -220,6 +220,18 @@ export const DEFAULT_RULES: Rule[] = [
     data: (_e, rc) => ({ awayMs: rc.lastAbsenceMs() }),
   },
   {
+    id: "poked",
+    doc: "the user clicked her 3+ times in a few seconds (avatar.poke from the overlay / shell). One short line, 30s cooldown.",
+    on: "avatar.poke",
+    urgency: "immediate",
+    ambient: false,
+    after: "companion.born",
+    cooldownMs: 30_000,
+    when: (e) => e.type === "avatar.poke" && e.data.count >= 3,
+    describe: (e) => `user keeps poking you (${(e.data as { count: number }).count} clicks in a few seconds)`,
+    data: (e) => ({ count: (e.data as { count: number }).count, region: (e.data as { region: string }).region }),
+  },
+  {
     id: "app_opened",
     doc: "any other app opened. Almost always ignored, which is the point.",
     on: "app.opened",

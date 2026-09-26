@@ -1,8 +1,9 @@
-import { DEFAULT_RELATIONSHIP, type AnyEnvelope, type Mood, type ReflexDecision, type RelationshipState, type Urgency } from "@eigenwife/protocol";
+import { describeOutfit, DEFAULT_RELATIONSHIP, WARDROBE_ITEMS, type AnyEnvelope, type Mood, type ReflexDecision, type RelationshipState, type Urgency } from "@eigenwife/protocol";
 import type { CoreContext, Module } from "../context";
 import { json } from "../hub";
 import { jevEndpoint, secret } from "../config";
 import { goalFrom, readIntent, type UtteranceIntent } from "./intent";
+import type { OutfitIntent } from "./outfit";
 import { createJev, type JevDecider, type JevVerdict } from "./jev";
 import { DEFAULT_RULES, PerceptionEngine, type Rule, type Trigger } from "./rules";
 
@@ -35,6 +36,11 @@ export const RELAPSE_LINE = "[mood:annoyed 0.8] ...seriously?";
 export const BIRTH_LINE = "[mood:smug 0.6] so. apparently this is your type.";
 /** Woken on the desktop without Act I: no "your type" joke, she just moves in. */
 export const WAKE_LINE = "[mood:happy 0.6] hey. i live on your desktop now. don't mind me.";
+
+/** Poked 3+ times: scripted (fast, cacheable), never improvised. */
+export const POKE_LINES = ["[mood:annoyed 0.7] okay. stop poking me.", "[mood:annoyed 0.7] i'm not a button.", "[mood:annoyed 0.6] hey. hands off."];
+
+const labels = (ids: string[]) => ids.map((id) => WARDROBE_ITEMS[id]?.label ?? id).join(", ");
 
 const FALLBACK: Record<string, string> = {
   greet: "hi. it's me. i watched you swipe, so we need to talk.",
@@ -309,7 +315,9 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
     const brains = ctx.tryUse("brains");
     const fallback = t.rule === "task_done" ? `${t.data.ok ? "done" : "that didn't work"}. ${String(t.data.summary ?? "")}`.trim() : (FALLBACK[behavior] ?? "mhm.");
     let src: string | AsyncIterable<string>;
-    if (t.rule === "companion_born" && t.data.woken) {
+    if (t.rule === "poked") {
+      src = pick(POKE_LINES, t.id);
+    } else if (t.rule === "companion_born" && t.data.woken) {
       src = WAKE_LINE;
     } else if (t.rule === "companion_born" && ctx.config.demo) {
       // The birth line is the demo's biggest laugh: scripted, pre-rendered, never improvised.
@@ -348,6 +356,8 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
       await say(RELAPSE_LINE, t, t.parent, "annoyed", true);
       args = { app: String(t.data.app ?? "Eigen") };
       description = `close ${args.app}: user relapsed onto the dating app`;
+    } else if (v.intent?.outfit) {
+      return outfit(t, v.intent.outfit);
     } else if (v.intent?.music) {
       const mu = v.intent.music;
       if (mu.op === "play") {
@@ -385,6 +395,70 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
       log(`act ${kind} threw:`, err);
     }
     await observe(t.rule === "utterance" ? String(t.data.text ?? "") : undefined, null, t.description);
+  }
+
+  /** Outfit requests: change first (she's visibly changing), then one short in-character line. */
+  async function outfit(t: Trigger, o: OutfitIntent) {
+    const userText = String(t.data.text ?? "");
+    const w = ctx.tryUse("wardrobe");
+    if (!w) {
+      await say("my closet isn't hooked up right now.", t, t.parent, "sad");
+      return;
+    }
+    const avail = w.available();
+    const have = avail.length ? labels(avail) : "nothing, just these clothes";
+    const facts: string[] = [];
+    let fallback = "there.";
+    let mood: Mood = "happy";
+    const wearing = () => describeOutfit(w.get().items);
+    const wear = async (change: { add?: string[]; remove?: string[] | "all" }, fb: string) => {
+      const r = await w.wear(change, "user");
+      if (!r.changed && r.unavailable.length) {
+        facts.push(`they asked you to put on: ${labels(r.unavailable)}. you can't in this body right now.`, `what you can wear: ${have}`);
+        fallback = avail.length ? `can't do that one. i've got ${have}.` : "i only have what i'm wearing, sorry.";
+        mood = "sad";
+      } else if (!r.changed) {
+        facts.push("nothing changed: it was already like that.");
+        fallback = change.add?.length ? "already on. keep up." : "i'm not even wearing that.";
+        mood = "smug";
+      } else {
+        fallback = fb;
+      }
+      facts.push(`you are now wearing: ${wearing()}`);
+    };
+    switch (o.kind) {
+      case "ask":
+        facts.push(`you are wearing: ${wearing()}`, `your wardrobe: ${have}`);
+        fallback = w.get().items.length ? `${wearing()}. obviously.` : "just my usual. want me to change?";
+        mood = "smug";
+        break;
+      case "wear":
+        facts.push(`they asked you to put on: ${labels(o.add)}.`);
+        await wear({ add: o.add }, pick(["there. happy?", "better?", "okay, how's this?"], t.id));
+        break;
+      case "remove":
+        facts.push(`they asked you to take off: ${o.remove === "all" ? "everything extra, back to normal" : labels(o.remove)}.`);
+        await wear({ remove: o.remove }, pick(["fine. back to normal.", "okay, off.", "there. plain me."], t.id));
+        break;
+      case "change": {
+        const top = w.get().items.some((id) => WARDROBE_ITEMS[id]?.slot === "top");
+        facts.push(top ? "they asked you to change: you took the hoodie off." : "they asked you to change: you picked your cat hoodie.");
+        await wear(top ? { remove: "all" } : { add: ["hoodie"] }, top ? "okay, back to normal." : "hoodie time.");
+        break;
+      }
+      case "missing":
+        facts.push(`they asked you to wear a ${o.want}. you don't have one.`, `what you do have: ${have}`);
+        fallback = avail.length ? `i don't own a ${o.want}. i've got ${have}.` : `i don't own a ${o.want}. this is all i've got.`;
+        mood = "sad";
+        break;
+    }
+    facts.push("one short line, in character. only mention clothes listed above, never invent others.");
+    const brains = ctx.tryUse("brains");
+    const src = brains
+      ? guarded(brains.persona({ event: t.description, behavior: "react", userText, extra: extraFor(t, undefined, [], facts), marks: true, maxWords: 16 }), fallback, log)
+      : fallback;
+    const said = await say(src, t, t.parent, mood);
+    await observe(userText, said, t.description);
   }
 
   async function escalate(t: Trigger) {

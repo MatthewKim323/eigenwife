@@ -108,6 +108,22 @@ export interface AgencyService {
   act(kind: string, args: Record<string, unknown>, opts?: { taskId?: string; description?: string }): Promise<{ ok: boolean; observation: string }>;
 }
 
+export interface WardrobeState {
+  /** Item ids she has on (protocol WARDROBE_ITEMS), catalog order. */
+  items: string[];
+  /** Who made the last change and when. */
+  by: "user" | "agent" | "restore";
+  updatedAt: number;
+}
+
+export interface WardrobeService {
+  get(): WardrobeState;
+  /** Items the active avatar model can show (all catalog items until the shell reports its model). */
+  available(): string[];
+  /** Put on / take off. remove: "all" clears. Emits avatar.outfit and persists when anything changed. */
+  wear(change: { add?: string[]; remove?: string[] | "all" }, by?: "user" | "agent"): Promise<{ items: string[]; changed: boolean; unavailable: string[] }>;
+}
+
 export interface ServiceMap {
   brains: BrainService;
   speech: SpeechService;
@@ -117,6 +133,8 @@ export interface ServiceMap {
   home: HomeService;
   reflex: ReflexService;
   agency: AgencyService;
+  /** What she has on (packages/core/src/wardrobe). */
+  wardrobe: WardrobeService;
   /** Eve's Zo computer (Google Calendar, Maps, Spotify, files). Provided by home only when ZO_API_KEY is set. */
   zo: ZoService;
 }
