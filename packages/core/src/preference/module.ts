@@ -282,7 +282,9 @@ export function preferenceModule(opts: PreferenceModuleOptions = {}): Module {
       ctx.route("/api/preference/wake", async (req) => {
         if (req.method !== "POST") return null;
         if (bornEmitted) return json({ ok: true, already: true, persona });
-        const p = await service.converge();
+        await queue;
+        // No observations is fine here: converge() synthesizes a balanced default persona.
+        const p = await converge();
         if (p) emitBorn(true);
         return json({ ok: !!p, persona: p });
       });
