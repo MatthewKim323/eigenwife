@@ -84,9 +84,10 @@ function normalize(text: string): string {
 export function classifyApproval(text: string): Verdict {
   const t = normalize(text);
   if (!t) return null;
-  // Strip negated yeses ("not ok", "don't do it") down to their no-side.
-  const yes = YES_RE.test(t) && !/\b(not|don't|dont|never)\s+(ok|okay|sure|do it|go)\b/.test(t);
-  const no = NO_RE.test(t);
+  // A negated yes ("not ok", "don't do it") is a no.
+  const negated = /\b(not|don't|dont|never)\s+(ok|okay|sure|do it|go)\b/.test(t);
+  const yes = YES_RE.test(t) && !negated;
+  const no = NO_RE.test(t) || negated;
   if (yes && !no) return "yes";
   if (no && !yes) return "no";
   return null;

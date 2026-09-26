@@ -19,6 +19,7 @@ export interface RequestOpts {
   requestedBy?: string;
   /** Permission the requester claimed. We only ever raise it, never lower it. */
   claimed?: PermissionClass;
+  claimedNeedsApproval?: boolean;
   progress?: (text: string) => void;
 }
 
@@ -72,7 +73,10 @@ export class Gate {
     const description = opts.description ?? def.describe(args);
     const entry: TraceEntry = { actionId, taskId: opts.taskId, kind, permission, description, args, requestedBy: opts.requestedBy ?? SRC, requestedAt: t0 };
     this.record(entry);
-    if (!opts.external) bus.emit("action.request", { actionId, taskId: opts.taskId, kind, permission, description, args, needsApproval: ask }, SRC, opts.parent);
+    // Emit our own request, or correct an external one that understated what this needs,
+    // so the shell's prompt and the swarm view show the real class.
+    const understated = opts.external && (opts.claimed !== permission || opts.claimedNeedsApproval !== ask);
+    if (!opts.external || understated) bus.emit("action.request", { actionId, taskId: opts.taskId, kind, permission, description, args, needsApproval: ask }, SRC, opts.parent);
 
     const verdict = this.policy.check(def, args);
     let decision: Decision;

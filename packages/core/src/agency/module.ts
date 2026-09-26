@@ -95,6 +95,7 @@ export function createAgency(ctx: CoreContext, opts: AgencyOptions = {}) {
       external: true,
       requestedBy: e.source,
       claimed: e.data.permission,
+      claimedNeedsApproval: e.data.needsApproval,
       parent: e.id,
     });
   });
