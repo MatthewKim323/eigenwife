@@ -97,8 +97,6 @@ test("ESCALATE: acknowledges, runs the task through agency, reports the result",
   expect(report.userText).toBe("can you figure out dinner for tonight?");
   expect(r.speech.said.at(-1)!.text).toBe("booked. ramen at 8, you're welcome.");
   expect(r.memory.observed.at(-1)!.event).toContain("task done");
-  // the task.done that agency emits for its own task is not narrated twice
-  r.emit("task.start", { taskId: "t9", goal: "x", brain: "b" });
   await r.stop();
 });
 
