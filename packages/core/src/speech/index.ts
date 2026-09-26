@@ -1,0 +1,10 @@
+export { speechModule, speechFor, buildTts, ttsIO } from "./module";
+export { createSpeech, defaultEstimateMs } from "./service";
+export type { Speech, SpeechDeps } from "./service";
+export { MarkSplitter, splitMarks, parseMark } from "./marks";
+export { SentenceChunker, SegmentStream, segmentText, MAX_WORDS } from "./chunker";
+export type { Segment } from "./chunker";
+export { Tts, AudioCache, audioKey, openAiTts, elevenLabsTts, sayTts, EVE_VOICE_INSTRUCTIONS } from "./tts";
+export type { TtsBackend, TtsIO, Rendered } from "./tts";
+export { LINES, FILLERS, scriptedTexts } from "./lines";
+export type { LineName } from "./lines";

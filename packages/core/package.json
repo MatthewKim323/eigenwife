@@ -6,7 +6,9 @@
   "scripts": {
     "start": "bun run src/main.ts",
     "test": "bun test",
-    "eve": "bun run src/home/cli.ts"
+    "eve": "bun run src/home/cli.ts",
+    "prerender": "bun run scripts/prerender.ts",
+    "smoke:brains": "bun run scripts/brains-smoke.ts"
   },
   "dependencies": {
     "@eigenwife/protocol": "workspace:*",
