@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import type { AvatarState } from "@eigenwife/protocol";
 import { screenToFocus, userFocus } from "../avatar/attention";
+import { useTouchController, useWardrobeSync } from "../avatar/interact";
 import { HEAD_IN_BOX, loadEve, type EveLive2D } from "../avatar/live2d";
 import type { RigInput } from "../avatar/rig";
 import { avatarRuntime, avatarUi, useStore } from "../avatar/store";
@@ -12,7 +13,7 @@ import { micLevel } from "../voice/ears";
 import { Subtitles } from "../voice/Subtitles";
 import { voice, voiceUi } from "../voice/VoiceProvider";
 import { bridge, inElectron } from "./bridge";
-import { ClickThroughGate, containRect, fitBox, hitAlpha, TAP_SLOP, type Box } from "./hittest";
+import { ClickThroughGate, containRect, fitBox, HIT, hitAlpha, TAP_SLOP, type Box } from "./hittest";
 import { chipFor, triggerLabel } from "./status";
 import "../avatar/avatar.css";
 import "./overlay.css";
@@ -90,6 +91,8 @@ export function OverlayApp() {
 
   useEvent("avatar.mood", (e) => avatarRuntime.rig.setMood(e.data.mood, e.data.intensity ?? 0.8, performance.now(), e.data.holdMs));
   useEvent("attention.pause", (e) => setAttentionPaused(e.data.paused));
+  useWardrobeSync();
+  const touch = useTouchController("overlay");
 
   // --- renderer: Live2D with a readable drawing buffer, tachie fallback ---------
   useEffect(() => {
@@ -188,25 +191,22 @@ export function OverlayApp() {
     const gate = new ClickThroughGate((on) => {
       bridge.setInteractive(on);
       setCursor(on ? "grab" : "none");
+      if (on) touch.enter();
       if (!logged || on) bridge.log(`interactive ${on ? "on" : "off"}`);
       logged = true;
     });
     let pending: { x: number; y: number } | null = null;
     let raf = 0;
-    let lastGlance = 0;
     const flush = () => {
       raf = 0;
       if (!pending) return;
       const { x, y } = pending;
       pending = null;
       const now = performance.now();
-      gate.update(alphaAt(x, y), now);
-      // She notices the cursor near her, now and then.
-      const head = avatarRuntime.head;
-      if (Math.hypot(x - head.x, y - head.y) < 260 && now - lastGlance > 2400 && avatarUi.get().state !== "sleeping") {
-        lastGlance = now;
-        avatarRuntime.attention.look({ x, y }, 700, now);
-      }
+      const a = alphaAt(x, y);
+      gate.update(a, now);
+      // Cursor near her: eyes, then head, follow it (touch.ts).
+      touch.move({ x, y }, boxRef.current, a >= HIT.enter);
     };
     let press: { x: number; y: number; dragging: boolean } | null = null;
     const onMove = (e: MouseEvent) => {
@@ -216,6 +216,7 @@ export function OverlayApp() {
           gate.setDragging(true);
           setCursor("grabbing");
           bridge.dragStart();
+          touch.dragStart();
         }
         return;
       }
@@ -234,13 +235,19 @@ export function OverlayApp() {
         bridge.dragEnd();
         gate.setDragging(false);
         setCursor("grab");
-      } else poke(e.clientX, e.clientY);
+        touch.drop();
+      } else {
+        // A tap: pat on the head, poke on the body (her pixels only: the gate was on).
+        const at = { x: e.clientX, y: e.clientY };
+        touch.click(at, boxRef.current, alphaAt(at.x, at.y) >= HIT.exit);
+      }
       pending = { x: e.clientX, y: e.clientY };
       if (!raf) raf = requestAnimationFrame(flush);
     };
     const onLeave = () => {
       if (press?.dragging) return;
       gate.update(-1, performance.now());
+      touch.move(null, boxRef.current, false);
     };
     const tick = setInterval(() => gate.tick(performance.now()), 60);
     addEventListener("mousemove", onMove);
@@ -296,15 +303,6 @@ export function OverlayApp() {
       <StatusChip connected={connected} born={born} thinking={born && world.companion.state === "thinking"} attentionPaused={attentionPaused} />
     </div>
   );
-}
-
-/** Tap (no drag): she notices. Local only, nothing goes on the bus. */
-function poke(x: number, y: number) {
-  const now = performance.now();
-  if (avatarUi.get().state === "sleeping") return;
-  avatarRuntime.rig.blink.trigger(now);
-  avatarRuntime.attention.look({ x, y }, 900, now);
-  avatarRuntime.rig.setMood("happy", 0.55, now, 1400);
 }
 
 function useApproval(): string | null {

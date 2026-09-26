@@ -182,6 +182,44 @@ async function setAttentionPaused(p: boolean) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// outfit (docs/WARDROBE.md): the core owns what she wears; the tray mirrors it
+// ---------------------------------------------------------------------------
+
+interface OutfitItem {
+  id: string;
+  label: string;
+  on: boolean;
+}
+let outfit: OutfitItem[] = [];
+
+async function refreshOutfit() {
+  try {
+    const r = await fetch(`${CORE_HTTP}/api/wardrobe`, { signal: AbortSignal.timeout(1500) });
+    const j = (await r.json()) as { catalog?: OutfitItem[] };
+    const next = (j.catalog ?? []).map((c) => ({ id: c.id, label: c.label, on: !!c.on }));
+    if (JSON.stringify(next) !== JSON.stringify(outfit)) {
+      outfit = next;
+      refreshTray();
+    }
+  } catch {
+    if (outfit.length) {
+      outfit = [];
+      refreshTray();
+    }
+  }
+}
+
+async function toggleOutfit(id: string, on: boolean) {
+  try {
+    await fetch(`${CORE_HTTP}/api/wardrobe`, { method: "POST", body: JSON.stringify(on ? { add: [id] } : { remove: id === "all" ? "all" : [id] }), signal: AbortSignal.timeout(2000) });
+    log(`outfit ${on ? "+" : "-"}${id}`);
+  } catch {
+    log("outfit: core offline");
+  }
+  await refreshOutfit();
+}
+
 function moveTo(corner: Corner) {
   if (!win) return;
   const b = win.getBounds();
@@ -286,6 +324,17 @@ function refreshTray() {
     { label: visible ? "Hide Eve" : "Show Eve", accelerator: "CommandOrControl+Shift+E", click: toggleVisible },
     { label: "Mute mic", type: "checkbox", checked: state.muted, accelerator: "CommandOrControl+Shift+M", click: (i) => setMuted(i.checked) },
     { label: "Pause attention", type: "checkbox", checked: state.attentionPaused, click: (i) => void setAttentionPaused(i.checked) },
+    {
+      label: "Outfit",
+      enabled: outfit.length > 0,
+      submenu: outfit.length
+        ? [
+            ...outfit.map((o): MenuItemConstructorOptions => ({ label: o.label, type: "checkbox", checked: o.on, click: (i) => void toggleOutfit(o.id, i.checked) })),
+            { type: "separator" },
+            { label: "Back to normal", enabled: outfit.some((o) => o.on), click: () => void toggleOutfit("all", false) },
+          ]
+        : [{ label: "core offline", enabled: false }],
+    },
     { type: "separator" },
     {
       label: "Move to corner",
@@ -355,6 +404,9 @@ if (!app.requestSingleInstanceLock()) {
     createWindow();
     refreshTray();
     registerHotkeys();
+    // The tray's Outfit submenu mirrors the core (spoken changes show up here too).
+    void refreshOutfit();
+    setInterval(() => void refreshOutfit(), 4000);
 
     const reclamp = () => {
       if (!win) return;

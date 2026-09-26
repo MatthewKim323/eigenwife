@@ -6,6 +6,8 @@ import { useScene } from "../lib/scene";
 import { MicIndicator } from "../voice/MicIndicator";
 import { Subtitles } from "../voice/Subtitles";
 import { screenToFocus, userFocus } from "./attention";
+import { useTouchController, useWardrobeSync } from "./interact";
+import { bodyRect, headEllipse, inEllipse } from "./touch";
 import { loadModel, type EveLive2D } from "./live2d";
 import type { FramingSlot } from "./models";
 import type { RigInput } from "./rig";
@@ -168,6 +170,45 @@ export function AvatarLayer() {
     if (!t || t.kind === "avatar") return;
     avatarRuntime.attention.onUserTarget(t.key, elementCenter(t.key), performance.now());
   });
+
+  // --- outfits + touch ---------------------------------------------------------------
+  useWardrobeSync();
+  const touch = useTouchController("column");
+  // In the desktop column she's pointer-events: none (the page stays usable), so
+  // touch is geometric (head ellipse + a body column) and never over real UI.
+  useEffect(() => {
+    if (dock !== "column") return;
+    const boxNow = () => ({ x: x.get(), y: y.get(), w: BOX_W * s.get(), h: BOX_H * s.get() });
+    const onHer = (px: number, py: number) => {
+      const b = boxNow();
+      const f = activeModel.framing.column;
+      const h = headEllipse(b, f.head, f.scale, activeModel.headShape);
+      const r = bodyRect(h, b);
+      return inEllipse({ x: px, y: py }, h) || (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h * 0.8);
+    };
+    const isUi = (t: EventTarget | null) => t instanceof Element && !!t.closest("button, a, input, textarea, select, [role=button], [contenteditable], [data-gaze]");
+    let over = false;
+    const onMove = (e: PointerEvent) => {
+      const on = onHer(e.clientX, e.clientY) && !isUi(e.target);
+      if (on && !over) touch.enter();
+      over = on;
+      touch.move({ x: e.clientX, y: e.clientY }, boxNow(), on);
+    };
+    const onDown = (e: PointerEvent) => {
+      if (e.button !== 0 || isUi(e.target) || !onHer(e.clientX, e.clientY)) return;
+      touch.click({ x: e.clientX, y: e.clientY }, boxNow(), true);
+    };
+    const onLeave = () => touch.move(null, boxNow(), false);
+    addEventListener("pointermove", onMove, { passive: true });
+    addEventListener("pointerdown", onDown, { passive: true });
+    document.documentElement.addEventListener("pointerleave", onLeave);
+    return () => {
+      removeEventListener("pointermove", onMove);
+      removeEventListener("pointerdown", onDown);
+      document.documentElement.removeEventListener("pointerleave", onLeave);
+      avatarRuntime.attention.follow(null);
+    };
+  }, [dock, x, y, s, touch]);
 
   // --- renderer: Live2D, or the tachie fallback after 4s -------------------------
   useEffect(() => {

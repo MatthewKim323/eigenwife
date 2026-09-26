@@ -1,4 +1,5 @@
-import type { Mood } from "@eigenwife/protocol";
+import { WARDROBE_ITEMS, type Mood, type WardrobeSlot } from "@eigenwife/protocol";
+import type { HeadShape } from "./touch";
 
 /**
  * Avatar model registry. Everything model-specific lives here: where the
@@ -89,6 +90,29 @@ export interface ModelDef {
   framing: Record<FramingSlot, Framing>;
   /** Short license note (see docs/AVATAR.md). */
   license: string;
+  /**
+   * Outfits (docs/WARDROBE.md): wardrobe item id (protocol WARDROBE_ITEMS) ->
+   * the model expression that shows it. Persistent, applied after the mood
+   * poses, never cleared by a mood. Items in one slot are exclusive.
+   */
+  wardrobe: Record<string, WardrobeEntry>;
+  /** Transient flourishes (a blush on a head pat, a sweat drop): name -> expression. */
+  accents?: Record<string, string>;
+  /** Head hit ellipse for pats (touch.ts), fractions of model height. Default DEFAULT_HEAD. */
+  headShape?: HeadShape;
+}
+
+export interface WardrobeEntry {
+  expression: string;
+  label: string;
+  slot: WardrobeSlot;
+  conflicts?: string[];
+}
+
+/** A wardrobe entry for a catalog item, shown by `expression`. */
+export function wear(id: keyof typeof WARDROBE_ITEMS & string, expression: string): WardrobeEntry {
+  const it = WARDROBE_ITEMS[id]!;
+  return { expression, label: it.label, slot: it.slot, ...(it.conflicts ? { conflicts: it.conflicts } : {}) };
 }
 
 const abs = (v: number): PoseEntry => ({ v });
@@ -214,6 +238,8 @@ export const HARU: ModelDef = {
     // Desktop overlay window: like the stage (she's small there, show more of her).
     overlay: { scale: 2.0, y: -0.018, x: 0.5, head: { x: 0.5, y: 0.28 } },
   },
+  // Office wear only: no outfit toggles in her expressions.
+  wardrobe: {},
   license:
     "Haru, official Live2D Cubism sample model (Live2D/CubismWebSamples Samples/Resources/Haru). Live2D Free Material License: free for individuals and small orgs (annual revenue under 10M JPY); larger businesses need a Cubism SDK Release License.",
 };
@@ -268,6 +294,20 @@ export const ALEXIA: ModelDef = {
     stage: { scale: 2.0, y: -0.018, x: 0.5, head: { x: 0.5, y: 0.28 } },
     overlay: { scale: 2.0, y: -0.018, x: 0.5, head: { x: 0.5, y: 0.28 } },
   },
+  // Every toggle is an exp3 that adds +30 to one switch parameter (0..30).
+  // yfmz = hoodie with the hood down (Param16 + Param17), yf = hood up
+  // (Param16 only), dyj = sunglasses on (Param64), mj = pushed up (Param11),
+  // bbt = lollipop (Param60), yjys1/2 = one violet eye (Param62/63).
+  wardrobe: {
+    hoodie: wear("hoodie", "yfmz"),
+    hood_up: wear("hood_up", "yf"),
+    sunglasses: wear("sunglasses", "dyj"),
+    sunglasses_up: wear("sunglasses_up", "mj"),
+    lollipop: wear("lollipop", "bbt"),
+    odd_eye_left: wear("odd_eye_left", "yjys1"),
+    odd_eye_right: wear("odd_eye_right", "yjys2"),
+  },
+  accents: { blush: "lh", sweat: "h" },
   license: "Third-party model supplied by matt. Local only (gitignored), not redistributed; check its original terms before any public use.",
 };
 
@@ -332,6 +372,22 @@ export function buildPoses(def: Pick<ModelDef, "poses" | "expressions">, exps: R
     const base = name && exps[name] ? expressionToPose(exps[name]) : {};
     out[mood] = { ...base, ...def.poses[mood] };
   }
+  return out;
+}
+
+/** Every expression name the model def refers to (moods, wardrobe, accents): what the loader fetches. */
+export function expressionNames(def: Pick<ModelDef, "expressions" | "wardrobe" | "accents">): Set<string> {
+  return new Set<string>([
+    ...(Object.values(def.expressions) as string[]),
+    ...Object.values(def.wardrobe ?? {}).map((w) => w.expression),
+    ...Object.values(def.accents ?? {}),
+  ]);
+}
+
+/** Toggle poses for wardrobe items (by item id) or accents (by name). Missing expressions are skipped. */
+export function buildTogglePoses(map: Record<string, string>, exps: Record<string, Exp3>): Record<string, Pose> {
+  const out: Record<string, Pose> = {};
+  for (const [id, name] of Object.entries(map)) if (exps[name]) out[id] = expressionToPose(exps[name]!);
   return out;
 }
 

@@ -1,4 +1,4 @@
-import { buildPoses, type Exp3, type Framing, type FramingSlot, type ModelDef } from "./models";
+import { buildPoses, buildTogglePoses, expressionNames, type Exp3, type Framing, type FramingSlot, type ModelDef } from "./models";
 import type { RigInput } from "./rig";
 import { activeModel, avatarRuntime } from "./store";
 
@@ -31,9 +31,9 @@ function loadCore(): Promise<void> {
   return coreLoading;
 }
 
-/** Fetch the exp3 files the def maps to moods. Missing ones just leave our overrides alone. */
+/** Fetch the exp3 files the def uses (moods, wardrobe, accents). Missing ones just leave our overrides alone. */
 async function loadExpressions(def: ModelDef): Promise<Record<string, Exp3>> {
-  const wanted = new Set(Object.values(def.expressions));
+  const wanted = expressionNames(def);
   if (!wanted.size) return {};
   const out: Record<string, Exp3> = {};
   try {
@@ -118,7 +118,15 @@ export async function loadModel(
   im.updateNaturalMovements = () => {};
 
   const rig = avatarRuntime.rig;
-  rig.setModel(def, buildPoses(def, exps));
+  rig.setModel(
+    def,
+    buildPoses(def, exps),
+    {
+      wardrobe: buildTogglePoses(Object.fromEntries(Object.entries(def.wardrobe).map(([id, w]) => [id, w.expression])), exps),
+      accents: buildTogglePoses(def.accents ?? {}, exps),
+    },
+    performance.now(),
+  );
   const io = {
     get: (id: string) => core.getParameterValueById(id) as number,
     set: (id: string, v: number) => core.setParameterValueById(id, v),

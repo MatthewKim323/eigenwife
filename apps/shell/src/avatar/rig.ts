@@ -1,7 +1,8 @@
 import type { AvatarState, Mood } from "@eigenwife/protocol";
 import { applyPoses, EmotionBlender, poseMouth } from "./emotion";
-import { HARU, type ModelDef, type ParamMap, type PoseTable } from "./models";
-import { BlinkScheduler, breathAt, clamp, frameLerp, idleSway, SaccadeScheduler, Spring, springParams, type Rand } from "./motion-math";
+import { HARU, type ModelDef, type ParamMap, type Pose, type PoseTable } from "./models";
+import { BlinkScheduler, breathAt, clamp, easeInOutCubic, frameLerp, idleSway, SaccadeScheduler, Spring, springParams, type Rand } from "./motion-math";
+import { WardrobeLayer } from "./wardrobe";
 
 /** A point in "focus space": x right, y up, both roughly -1..1 relative to her face. */
 export interface Focus {
@@ -35,12 +36,17 @@ const STATE_MOOD: Partial<Record<AvatarState, Mood>> = { thinking: "thinking" };
 
 /**
  * Eve's per-frame parameter pipeline, in the order the playbook requires:
- * motion -> face rest -> emotion pose -> blink -> look-at -> mouth -> breath.
+ * motion -> face rest -> emotion pose -> wardrobe -> blink -> look-at -> mouth -> breath.
  * All SDK built-ins (expressions, eye blink, breath, focus) are disabled by the
  * Live2D adapter, so nothing fights us. Parameter ids come from the model def.
  */
 export class EveRig {
   readonly emotion = new EmotionBlender();
+  /** Outfits + accents (wardrobe.ts), applied right after the mood poses. */
+  readonly wardrobe = new WardrobeLayer();
+  /** Touch one-shots: eyes held shut (a head pat) and a small body bounce (a poke). */
+  private eyesShut: { from: number; until: number } | null = null;
+  private bounceAt = -Infinity;
   readonly blink: BlinkScheduler;
   readonly saccade: SaccadeScheduler;
   private headX: Spring;
@@ -64,10 +70,26 @@ export class EveRig {
   }
 
   /** Switch model: ids, face rest and poses (built from the model's expressions, see buildPoses). */
-  setModel(def: ModelDef, poses: PoseTable = def.poses) {
+  setModel(def: ModelDef, poses: PoseTable = def.poses, toggles: { wardrobe?: Record<string, Pose>; accents?: Record<string, Pose> } = {}, now = 0) {
     this.model = def;
     this.P = def.params;
     this.poses = poses;
+    this.wardrobe.setModel(def, toggles.wardrobe ?? {}, toggles.accents ?? {}, now);
+  }
+
+  /** What she has on (wardrobe item ids). Fades ~250ms. Ids the model can't show are ignored. */
+  setOutfit(items: string[], now: number) {
+    this.wardrobe.set(items, now);
+  }
+
+  /** Eyes eased shut for ms (a head pat). */
+  closeEyes(now: number, ms: number) {
+    this.eyesShut = { from: now, until: now + ms };
+  }
+
+  /** A tiny startled hop (a poke). */
+  bounce(now: number) {
+    this.bounceAt = now;
   }
 
   get modelDef() {
@@ -101,9 +123,11 @@ export class EveRig {
     //    the face only moves on our events, never on the idle loop's schedule.
     for (const [id, v] of Object.entries(this.model.faceRest)) io.set(id, v);
 
-    // 2. emotion pose.
+    // 2. emotion pose, then the wardrobe on top (moods never clear an outfit).
     const weights = this.emotion.weights(now);
+    const worn = this.wardrobe.before(io.get);
     applyPoses(this.poses, weights, io.get, io.set);
+    this.wardrobe.apply(worn, now, io.get, io.set);
     if (sleeping) {
       io.set(P.eyeLOpen, 0);
       io.set(P.eyeROpen, 0);
@@ -117,6 +141,26 @@ export class EveRig {
       const bob = 5 * Math.exp(-sinceHappy / 380) * Math.sin((2 * Math.PI * sinceHappy) / 420);
       io.set(P.angleY, io.get(P.angleY) + bob);
       io.set(P.bodyY, io.get(P.bodyY) + bob * 0.4);
+    }
+
+    // A poke: a small decaying hop of the body.
+    const sinceBounce = now - this.bounceAt;
+    if (sinceBounce >= 0 && sinceBounce < 700) {
+      const hop = bounceAt(sinceBounce);
+      io.set(P.bodyY, io.get(P.bodyY) + hop * 6);
+      io.set(P.angleY, io.get(P.angleY) + hop * 5);
+    }
+
+    // A pat: eyes eased shut, then open again.
+    if (this.eyesShut) {
+      const k = shutAt(now, this.eyesShut.from, this.eyesShut.until);
+      if (k <= 0 && now > this.eyesShut.until) this.eyesShut = null;
+      else {
+        io.set(P.eyeLOpen, io.get(P.eyeLOpen) * (1 - k));
+        io.set(P.eyeROpen, io.get(P.eyeROpen) * (1 - k));
+        io.set(P.eyeLSmile, Math.max(io.get(P.eyeLSmile), k * 0.8));
+        io.set(P.eyeRSmile, Math.max(io.get(P.eyeRSmile), k * 0.8));
+      }
     }
 
     // 3. blink: multiplier on the pose's eye value, only written during a blink.
@@ -166,4 +210,17 @@ export class EveRig {
   get stateSince() {
     return this.stateAt;
   }
+}
+
+/** Bounce profile 0..1 over ~700ms: a quick hop up, a small settle. */
+export function bounceAt(ms: number): number {
+  if (ms < 0 || ms >= 700) return 0;
+  return Math.exp(-ms / 180) * Math.sin((2 * Math.PI * ms) / 360);
+}
+
+/** Eyes-shut amount 0..1: 150ms in, hold, 220ms out after `until`. */
+export function shutAt(now: number, from: number, until: number): number {
+  if (now < from) return 0;
+  if (now < until) return easeInOutCubic(Math.min(1, (now - from) / 150));
+  return 1 - easeInOutCubic(Math.min(1, (now - until) / 220));
 }
