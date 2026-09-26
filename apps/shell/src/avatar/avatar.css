@@ -67,8 +67,8 @@
 /* Thinking: three tiny dots orbiting above her head. */
 .eve-thinking {
   position: absolute;
-  left: 62%;
-  top: 4%;
+  left: 60%;
+  top: 11%;
   width: 70px;
   height: 70px;
   opacity: 0;
@@ -172,12 +172,12 @@
   letter-spacing: 0.035em;
   word-spacing: 0.14em;
   color: #fff;
-  -webkit-text-stroke: 6px oklch(0.2 0.05 var(--hue));
+  -webkit-text-stroke: 8px oklch(0.2 0.05 var(--hue));
   paint-order: stroke fill;
   text-shadow: 0 3px 14px oklch(0.1 0.04 var(--hue) / 0.55);
   text-wrap: balance;
 }
-.eve-subs[data-placement="column"] p { font-size: 22px; -webkit-text-stroke-width: 5px; }
+.eve-subs[data-placement="column"] p { font-size: 22px; -webkit-text-stroke-width: 6.5px; }
 .eve-subs-before { opacity: 0.72; }
 .eve-w { display: inline-block; white-space: nowrap; }
 .eve-g {

@@ -3,7 +3,7 @@ import type { Mood } from "@eigenwife/protocol";
 import { avatarRuntime, avatarUi, useStore } from "./store";
 
 export const TACHIE_MOODS: readonly Mood[] = ["neutral", "happy", "annoyed", "thinking", "surprised", "smug", "sad"];
-const src = (name: string) => `/avatar/tachie/${name}.png`;
+const src = (name: string) => `/avatar/tachie/${name}.webp`;
 
 /**
  * Safety net if Live2D won't load: pre-rendered stills of the same Hiyori

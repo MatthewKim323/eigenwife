@@ -180,7 +180,15 @@ export function AvatarLayer() {
       const look = avatarRuntime.attention.current(now);
       const head = avatarRuntime.head;
       const focus = look.kind === "user" ? userFocus(head, innerWidth) : screenToFocus(look, head, innerWidth, innerHeight);
-      return { state: avatarUi.get().state, focus, mouth: avatarRuntime.mouth, mouthHold: avatarRuntime.mouthHold };
+      const r = avatarRuntime;
+      return {
+        state: avatarUi.get().state,
+        focus,
+        mouth: r.mouthOverride ?? r.mouth,
+        mouthHold: r.mouthOverride === null && r.mouthHold,
+        still: r.still,
+        eyesClosed: r.eyesClosed,
+      };
     };
     loadEve(canvasRef.current!, { width: BOX_W, height: BOX_H }, getInput, fallback)
       .then((e) => {
@@ -212,6 +220,14 @@ export function AvatarLayer() {
         d("speech.begin", { utteranceId: id, text, brain: "debug" });
         d("speech.segment", { utteranceId: id, seq: 0, text, marks: mood ? [{ at: 0, mood, intensity: 0.9 }] : [] });
         d("speech.end", { utteranceId: id, interrupted: false });
+      },
+      /** Stop whatever she's saying (local only). */
+      hush: () => client.dispatch(envelope("speech.stop", { reason: "debug" }, "shell")),
+      /** Freeze saccades/sway/blinks, optionally shut eyes / hold the mouth open. For tachie capture. */
+      still: (on = true, eyesClosed = false, mouth: number | null = null) => {
+        avatarRuntime.still = on;
+        avatarRuntime.eyesClosed = eyesClosed;
+        avatarRuntime.mouthOverride = mouth;
       },
       runtime: avatarRuntime,
     };

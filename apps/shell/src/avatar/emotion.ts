@@ -22,8 +22,10 @@ export const POSES: Record<Mood, Pose> = {
     ParamEyeRSmile: abs(1),
     ParamMouthForm: abs(1),
     ParamCheek: abs(1),
-    ParamEyeLOpen: abs(0.9),
-    ParamEyeROpen: abs(0.9),
+    // Hiyori's smile arcs only read once the lids come down a bit.
+    ParamEyeLOpen: abs(0.7),
+    ParamEyeROpen: abs(0.7),
+    ParamMouthOpenY: abs(0.18),
     ParamBrowLY: abs(0.3),
     ParamBrowRY: abs(0.3),
     ParamAngleZ: add(6),
@@ -178,6 +180,16 @@ export class EmotionBlender {
  * (after motion), set() writes. Absolute entries lerp toward the pose value,
  * additive entries add weight * value.
  */
+/** The mouth-open value the blended poses ask for (lipsync takes the max of this and the audio). */
+export function poseMouth(weights: Partial<Record<Mood, number>>): number {
+  let m = 0;
+  for (const [mood, w] of Object.entries(weights) as [Mood, number][]) {
+    const e = POSES[mood].ParamMouthOpenY;
+    if (e) m = Math.max(m, e.v * w);
+  }
+  return m;
+}
+
 export function applyPoses(
   weights: Partial<Record<Mood, number>>,
   get: (id: string) => number,

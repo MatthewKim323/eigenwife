@@ -63,6 +63,10 @@ export const avatarRuntime = {
   mouth: 0,
   mouthHold: false,
   speaking: false,
+  /** Capture/debug overrides (window.__eve). */
+  still: false,
+  eyesClosed: false,
+  mouthOverride: null as number | null,
   /** Screen position of her head, updated by the layer, used for look-at mapping. */
   head: { x: 0, y: 0 },
 };

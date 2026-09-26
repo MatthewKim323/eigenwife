@@ -1,5 +1,5 @@
 import type { AvatarState, Mood } from "@eigenwife/protocol";
-import { applyPoses, EmotionBlender } from "./emotion";
+import { applyPoses, EmotionBlender, poseMouth } from "./emotion";
 import { BlinkScheduler, breathAt, clamp, frameLerp, idleSway, SaccadeScheduler, Spring, springParams, type Rand } from "./motion-math";
 
 /** A point in "focus space": x right, y up, both roughly -1..1 relative to her face. */
@@ -16,6 +16,10 @@ export interface RigInput {
   mouth: number;
   /** Force the mouth closed (post-speech hold). */
   mouthHold: boolean;
+  /** Capture mode: no saccades, sway or random blinks (for rendering tachie stills). */
+  still?: boolean;
+  /** Capture mode: eyes shut. */
+  eyesClosed?: boolean;
 }
 
 export interface ParamIO {
@@ -70,7 +74,7 @@ export class EveRig {
     }
     const sleeping = state === "sleeping";
     this.emotion.sustain(STATE_MOOD[state] ?? null, 1);
-    this.saccade.paused = state === "thinking" || sleeping;
+    this.saccade.paused = state === "thinking" || sleeping || !!input.still;
 
     // 1. motion: already written into the model by the motion manager.
 
@@ -95,7 +99,7 @@ export class EveRig {
     // 3. blink: multiplier on the pose's eye value, only written during a blink.
     const eyeL = io.get("ParamEyeLOpen");
     const eyeR = io.get("ParamEyeROpen");
-    const b = sleeping ? null : this.blink.update(now);
+    const b = input.eyesClosed ? 0 : sleeping || input.still ? null : this.blink.update(now);
     if (b !== null) {
       io.set("ParamEyeLOpen", eyeL * b);
       io.set("ParamEyeROpen", eyeR * b);
@@ -113,7 +117,7 @@ export class EveRig {
     const a = frameLerp(LOOK.eyeLerp, dtMs);
     this.eyeX += (clamp(fx + this.saccade.x, -1, 1) - this.eyeX) * a;
     this.eyeY += (clamp(fy + this.saccade.y, -1, 1) - this.eyeY) * a;
-    const sway = idleSway(now);
+    const sway = input.still ? { x: 0, y: 0, z: 0 } : idleSway(now);
     const listen = state === "listening" ? 1 : 0;
     io.set("ParamAngleX", io.get("ParamAngleX") + hx * LOOK.headDeg + sway.x);
     io.set("ParamAngleY", io.get("ParamAngleY") + hy * LOOK.headDeg + sway.y + listen * 4);
@@ -128,8 +132,7 @@ export class EveRig {
     // 5. mouth.
     if (input.mouthHold || sleeping) io.set("ParamMouthOpenY", 0);
     else {
-      const poseMouth = (weights.surprised ?? 0) > 0 ? io.get("ParamMouthOpenY") : 0;
-      io.set("ParamMouthOpenY", Math.max(poseMouth, input.mouth));
+      io.set("ParamMouthOpenY", Math.max(poseMouth(weights), input.mouth));
       if (input.mouth > 0.05) io.set("ParamAngleY", io.get("ParamAngleY") + input.mouth * 3);
     }
 
