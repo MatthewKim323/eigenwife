@@ -15,3 +15,4 @@ apps/shell/public/avatar/local/
 docs/screens/local/
 # a symlink to the real local models (worktrees)
 apps/shell/public/avatar/local
+.gstack/
