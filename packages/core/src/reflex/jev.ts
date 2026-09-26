@@ -213,6 +213,23 @@ function ambientSalience(t: Trigger, input: JevInput, l: Scores, why: string[]) 
       l.COMMENT = 5;
       why.push(`poked x${Number(t.data.count ?? 3)}`);
       return;
+    case "screen_stuck": {
+      // Same error for minutes: offering help is the friend move. Still not forced.
+      const min = Number(t.data.stuckMin ?? 5);
+      l.IGNORE = 0.8;
+      l.GLANCE = 0.4;
+      l.HELP = 2.3 + 0.3 * Math.min(1, Math.max(0, (min - 5) / 10)) + (r.initiative - 0.5);
+      why.push(`stuck on an error ${min}m`);
+      return;
+    }
+    case "screen_interesting": {
+      const i = Number(t.data.interesting ?? 0.7);
+      l.IGNORE = 2.6;
+      l.GLANCE = 1.1;
+      l.COMMENT = 0.5 + 1.5 * (i - 0.7) + (r.banter - 0.5);
+      why.push(`screen ${String(t.data.mode ?? "")} ${i.toFixed(2)}`);
+      return;
+    }
     case "app_opened":
       l.IGNORE = 3;
       l.GLANCE = -0.5;
@@ -253,6 +270,8 @@ export function localScore(input: JevInput): LocalResult {
     if (w.user.speaking) mod -= 2;
     if (w.companion.state === "speaking") mod -= 1.5;
     if (w.scene === "swarm" || w.scene === "architecture") mod -= 0.5;
+    // Deep focus (typing in a code or writing app, from the screen sense): stay quiet.
+    if (w.slots.screen?.focus === "deep" && t.rule !== "screen_stuck") mod -= 1.5;
     for (const d of REFLEX_DECISIONS) if (d !== "IGNORE") l[d] += mod;
     const jitter = whim(t.id) * 0.5;
     l.IGNORE += jitter;

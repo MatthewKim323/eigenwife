@@ -135,6 +135,31 @@ export interface WorkContextSnapshot {
   at: number;
 }
 
+/** What's on matt's screen (packages/core/src/screen, docs/SCREEN.md). */
+export interface ScreenService {
+  /** Latest level-2 observation (summary only, never raw text), or null. */
+  current(): ScreenSnapshot | null;
+  /** Could "this" mean the screen right now: enabled, not paused, a non-Eve, non-private app in front. */
+  canLook(): boolean;
+  /** Level 3: capture the focused window once, describe it with a vision model, delete the image. */
+  look(reason: "deictic" | "stuck" | "auto", opts?: { question?: string; parent?: string }): Promise<{ ok: boolean; description: string; app?: string; by: string; error?: string }>;
+  paused(): boolean;
+}
+
+export interface ScreenSnapshot {
+  app: string;
+  title?: string;
+  summary: string;
+  mode: string;
+  stuck: boolean;
+  interesting: number;
+  error?: string;
+  stuckMs?: number;
+  focus?: boolean;
+  private?: boolean;
+  at: number;
+}
+
 export interface WardrobeState {
   /** Item ids she has on (protocol WARDROBE_ITEMS), catalog order. */
   items: string[];
@@ -163,6 +188,8 @@ export interface ServiceMap {
   /** What she has on (packages/core/src/wardrobe). */
   wardrobe: WardrobeService;
   work: WorkService;
+  /** What's on matt's screen (packages/core/src/screen). */
+  screen: ScreenService;
   /** Eve's Zo computer (Google Calendar, Maps, Spotify, files). Provided by home only when ZO_API_KEY is set. */
   zo: ZoService;
 }

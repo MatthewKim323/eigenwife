@@ -1,4 +1,5 @@
 import { matchesType, type AnyEnvelope, type Urgency, type WorldSnapshot } from "@eigenwife/protocol";
+import { SCREEN_RULES } from "../screen/rules";
 
 /**
  * Perception rules: System 0 to System 1. Raw bus events go in, a small number
@@ -242,6 +243,8 @@ export const DEFAULT_RULES: Rule[] = [
     describe: (e) => `user opened ${(e.data as { app: string }).app}`,
     data: (e) => ({ app: (e.data as { app: string }).app }),
   },
+  // screen awareness: stuck on an error, something worth a remark (docs/SCREEN.md)
+  ...SCREEN_RULES,
 ];
 
 // ---------------------------------------------------------------------------

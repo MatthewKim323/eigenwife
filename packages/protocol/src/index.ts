@@ -54,7 +54,11 @@ export type Urgency = "immediate" | "soon" | "later";
 
 export type PermissionClass = "READ" | "SAFE_ACTION" | "EXTERNAL_SIDE_EFFECT" | "SENSITIVE_ACTION";
 
-export type ExecutionMode = "DO_MYSELF" | "SPAWN_ONE" | "SPAWN_SWARM" | "ASK_USER";
+/** What matt is doing on screen, as judged from the focused window (docs/SCREEN.md). */
+export type ScreenMode = "coding" | "debugging" | "reading" | "writing" | "shopping" | "social" | "video" | "gaming" | "idle";
+export const SCREEN_MODES: readonly ScreenMode[] = ["coding", "debugging", "reading", "writing", "shopping", "social", "video", "gaming", "idle"];
+
+export type ExecutionMode ="DO_MYSELF" | "SPAWN_ONE" | "SPAWN_SWARM" | "ASK_USER";
 export type SwarmAgentState = "spawning" | "assigned" | "working" | "waiting" | "done" | "failed" | "merging" | "despawned";
 
 /** Named numeric traits. Candidates, preferences and personas all share this shape. */
@@ -249,6 +253,36 @@ export interface EventMap {
   };
   /** A Claude Code session (watcher/claude-hook.ts) did something. cwd is where it runs. */
   "work.claude": { event: "prompt" | "tool" | "test" | "stop"; cwd?: string; sessionId?: string; tool?: string; ok?: boolean };
+  // --- screen: what's on matt's screen (docs/SCREEN.md) ---------------------------
+  /**
+   * Level 2: a compact, locally summarized and redacted read of the focused
+   * window (never raw text). private: denylisted app/domain or judged sensitive,
+   * so title and summary are omitted. stuckMs: how long the same error has been
+   * on screen.
+   */
+  "screen.observation": {
+    app: string;
+    title?: string;
+    summary: string;
+    scores: { mode: ScreenMode; stuck: boolean; interesting: number; sensitive: boolean };
+    by: "jev" | "local";
+    private?: boolean;
+    error?: string;
+    stuckMs?: number;
+    /** Typing in a code/writing app right now: stay quiet. */
+    focus?: boolean;
+    /** Site host for browsers (never the full URL). */
+    host?: string;
+  };
+  /** Level 3: a one-off look at the focused window, described by a vision model. The image is never stored. */
+  "screen.vision": { app: string; title?: string; reason: "deictic" | "stuck" | "auto"; description: string; by: string; ms: number; ok: boolean };
+  /** She is reading the screen right now: drives the "looking" chip. level 2 = accessibility text flash, 3 = window capture. */
+  "screen.looking": { level: 2 | 3; active: boolean; reason?: string };
+  /** Pause / resume screen awareness only (tray "Pause screen", cmd+shift+P). Persisted in ~/.eve/screen.json. */
+  "screen.pause": { paused: boolean; by?: string };
+  /** macOS permissions the screen sense needs (Accessibility for level 2, Screen Recording for level 3). */
+  "screen.permission": { accessibility: boolean; screenRecording: boolean | null };
+
   /** Eve's own coding task lifecycle: drives the "working on" chip. */
   "work.task": {
     taskId: string;

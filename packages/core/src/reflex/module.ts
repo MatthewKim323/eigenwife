@@ -6,6 +6,7 @@ import { goalFrom, readIntent, type UtteranceIntent } from "./intent";
 import type { OutfitIntent } from "./outfit";
 import { createJev, type JevDecider, type JevVerdict } from "./jev";
 import { DEFAULT_RULES, PerceptionEngine, type Rule, type Trigger } from "./rules";
+import { screenDeictic } from "../screen/intent";
 
 /**
  * The reflex router. Perception rules raise triggers, Jev judges each one, and
@@ -36,6 +37,12 @@ export const RELAPSE_LINE = "[mood:annoyed 0.8] ...seriously?";
 export const BIRTH_LINE = "[mood:smug 0.6] so. apparently this is your type.";
 /** Woken on the desktop without Act I: no "your type" joke, she just moves in. */
 export const WAKE_LINE = "[mood:happy 0.6] hey. i live on your desktop now. don't mind me.";
+
+/** Said before a level 3 look (docs/SCREEN.md), so the few seconds of looking aren't dead air. */
+export const LOOK_LINES = ["hm. lemme see.", "ooh. let me look.", "hold on, looking."];
+/** A yes / no to her "want me to look?" offer about a stuck error. */
+const OFFER_YES = /^(?:yeah|yea|ya|yes|yep|yup|sure|ok(?:ay)?|please|pls|do it|go (?:for it|ahead)|help(?: me)?|look at it|take a look|fix it|bet|that'?d be (?:great|nice))\b(?!.*\b(?:no|nah|don'?t)\b)/i;
+const OFFER_NO = /^(?:nah|no|nope|don'?t|i'?m good|not now|i got it|i'?ve got it|all good)\b/i;
 
 /** Poked 3+ times: scripted (fast, cacheable), never improvised. */
 export const POKE_LINES = ["[mood:annoyed 0.7] okay. stop poking me.", "[mood:annoyed 0.7] i'm not a button.", "[mood:annoyed 0.6] hey. hands off."];
@@ -132,6 +139,9 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
   const ownGoals = new Set<string>();
   const ownTasks = new Set<string>();
   let escalations = 0;
+  /** Her open "want me to look?" about an error on screen, and the one he just said yes to. */
+  let screenOffer: { until: number; error: string; app: string } | null = null;
+  let acceptedOffer: { error: string; app: string } | null = null;
   const offs: (() => void)[] = [];
   const recent: { at: number; trigger: string; rule: string; decision: ReflexDecision; by: string; latencyMs: number; reason: string }[] = [];
   const stats: ReflexStats = { total: 0, ambient: 0, ambientIgnored: 0, byDecision: {}, byJev: 0 };
@@ -218,6 +228,15 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
     // She asked a work question ("which repo?"): the next thing he says is the answer.
     if (t.rule === "utterance" && !v.stopSpeech && pendingApprovals.size === 0 && v.decision !== "ESCALATE" && ctx.tryUse("work")?.awaiting())
       v = { ...v, decision: "ESCALATE", reason: `${v.reason}; answering her work question` };
+    // She offered to look at a stuck error: "yeah" hands it to work mode, "nah" drops it.
+    if (t.rule === "utterance" && !v.stopSpeech && screenOffer) {
+      if (now() > screenOffer.until) screenOffer = null;
+      else if (pendingApprovals.size === 0 && OFFER_YES.test(text.trim())) {
+        acceptedOffer = { error: screenOffer.error, app: screenOffer.app };
+        screenOffer = null;
+        v = { ...v, decision: "ESCALATE", reason: `${v.reason}; yes to her screen help offer` };
+      } else if (OFFER_NO.test(text.trim())) screenOffer = null;
+    }
     stats.total += 1;
     stats.byDecision[v.decision] = (stats.byDecision[v.decision] ?? 0) + 1;
     if (v.by === "jev") stats.byJev += 1;
@@ -314,9 +333,16 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
     const userText = t.rule === "utterance" ? String(t.data.text ?? "") : undefined;
     const memories = await recall(userText ?? t.description, t.parent);
     if (gen !== myGen) return;
-    const extra = extraFor(t, intent, memories);
+    const screenLines = await screenContext(t, userText, myGen);
+    if (screenLines === null || gen !== myGen) return;
+    const extra = extraFor(t, intent, memories, screenLines);
     const brains = ctx.tryUse("brains");
-    const fallback = t.rule === "task_done" ? `${t.data.ok ? "done" : "that didn't work"}. ${String(t.data.summary ?? "")}`.trim() : (FALLBACK[behavior] ?? "mhm.");
+    const fallback =
+      t.rule === "task_done"
+        ? `${t.data.ok ? "done" : "that didn't work"}. ${String(t.data.summary ?? "")}`.trim()
+        : t.rule === "screen_stuck"
+          ? `that error's been up ${String(t.data.stuckMin ?? "a few")} minutes. want me to look?`
+          : (FALLBACK[behavior] ?? "mhm.");
     let src: string | AsyncIterable<string>;
     if (t.rule === "poked") {
       src = pick(POKE_LINES, t.id);
@@ -473,7 +499,78 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
     await observe(userText, said, t.description);
   }
 
+  /**
+   * What the screen adds to a reply (docs/SCREEN.md): a level 3 look for a
+   * deictic question in another app, the error (and a look) for a stuck
+   * offer, the summary for an interesting remark. null = a stop word
+   * arrived while she was looking; drop the reply.
+   */
+  async function screenContext(t: Trigger, userText: string | undefined, myGen: number): Promise<string[] | null> {
+    const screen = ctx.tryUse("screen");
+    if (!screen) return [];
+    const lines: string[] = [];
+    const w = ctx.world();
+    const gazeFreshNow = !!w.user.gazeTarget && w.user.gazeTargetAt !== undefined && now() - w.user.gazeTargetAt <= gazeFresh;
+    if (userText && screenDeictic(userText) && !gazeFreshNow && screen.canLook()) {
+      await say(pick(LOOK_LINES, t.id), t, t.parent, "thinking");
+      const look = await screen.look("deictic", { question: userText, parent: t.parent });
+      if (gen !== myGen) return null;
+      if (look.ok && look.description) {
+        lines.push(`on their screen right now (${look.app ?? "their window"}): ${look.description}`);
+        lines.push(`when they say "this", "that" or "thoughts?", they mean what's on their screen. react to it directly and specifically, like a friend glancing over. have an opinion.`);
+      } else {
+        const cur = screen.current();
+        if (cur && !cur.private) lines.push(`on their screen (from the window text): ${cur.summary}`, `when they say "this" or "that", they probably mean that.`);
+        else lines.push("you couldn't see their screen just now. say so briefly and ask what it is.");
+      }
+    } else if (t.rule === "screen_stuck") {
+      const look = screen.canLook() ? await screen.look("stuck", { parent: t.parent }) : null;
+      if (gen !== myGen) return null;
+      lines.push(`the error: ${String(t.data.error ?? "")} (in ${String(t.data.app ?? "")}, on screen ${String(t.data.stuckMin ?? "?")} minutes)`);
+      if (look?.ok && look.description) lines.push(`what the window shows: ${look.description}`);
+      lines.push(`offer to take a look, in one short casual line ending in a question, like "that error's been there ${String(t.data.stuckMin ?? 6)} minutes, want me to look?". don't try to solve it yet.`);
+      screenOffer = { until: now() + 120_000, error: String(t.data.error ?? "the error on screen"), app: String(t.data.app ?? "") };
+    } else if (t.rule === "screen_interesting") {
+      lines.push(`what's on their screen: ${String(t.data.summary ?? "")}`, `one short, specific, opinionated remark about it, like a friend glancing over ("that jacket is mid"). don't offer help.`);
+    }
+    return lines;
+  }
+
+  /** He said yes to "want me to look?": hand the error to work mode (Claude Code on his repo), else to a task. */
+  async function helpWithScreen(t: Trigger, offer: { error: string; app: string }) {
+    const work = ctx.tryUse("work");
+    const repo = work?.resolveRepo()?.name;
+    const ask = `fix ${offer.error}${repo ? ` in ${repo}` : ""}`;
+    if (work?.claims(ask)) return escalateWork(t, ask, goalFrom(ask), false);
+    const agency = ctx.tryUse("agency");
+    if (!agency) {
+      await say("i'd help but my hands aren't hooked up right now.", t, t.parent, "sad");
+      return;
+    }
+    await say(pick(ACK_LINES, t.id), t, t.parent, "thinking");
+    const goal = `Help fix this error on their screen (${offer.app}): ${offer.error}`;
+    escalations += 1;
+    ownGoals.add(goal);
+    void (async () => {
+      let res: { ok: boolean; summary: string };
+      try {
+        res = await agency.runTask(goal, { parent: t.parent });
+      } catch (err) {
+        res = { ok: false, summary: `it broke: ${err instanceof Error ? err.message : String(err)}` };
+      } finally {
+        escalations -= 1;
+        ownGoals.delete(goal);
+      }
+      await report(t, goal, String(t.data.text ?? ""), res);
+    })();
+  }
+
   async function escalate(t: Trigger) {
+    if (t.rule === "utterance" && acceptedOffer) {
+      const offer = acceptedOffer;
+      acceptedOffer = null;
+      return helpWithScreen(t, offer);
+    }
     const text = String(t.data.text ?? t.description);
     const goal = t.rule === "utterance" ? goalFrom(text) : t.description;
     const work = ctx.tryUse("work");
