@@ -1,10 +1,28 @@
 import type { Module } from "../context";
+import { agencyModule } from "../agency/module";
+import { brainsModule } from "../brains/module";
+import { homeModule } from "../home/module";
+import { memoryModule } from "../memory/module";
+import { relationshipModule } from "../mind/module";
+import { preferenceModule } from "../preference/module";
+import { reflexModule } from "../reflex/module";
+import { speechModule } from "../speech/module";
 import { clock } from "./clock";
 
 /**
- * The full Eve. Order matters only for startup logs: modules talk over the bus.
- * Each module owns one faculty (see docs/ARCHITECTURE.md).
+ * The full Eve. Modules never import each other: they talk over the bus.
+ * Each one owns a faculty (see docs/ARCHITECTURE.md).
  */
 export function allModules(): Module[] {
-  return [clock()];
+  return [
+    clock(),
+    homeModule(),
+    memoryModule(),
+    preferenceModule(),
+    relationshipModule(),
+    brainsModule(),
+    speechModule(),
+    reflexModule(),
+    agencyModule(),
+  ];
 }

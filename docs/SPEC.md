@@ -8,6 +8,9 @@ The meme is "AI girlfriend." The actual thesis:
 
 > Persistent multimodal agents should share attention with humans, maintain long-term memory, and act continuously in the world instead of waiting for explicit prompts.
 
+
+> **2026-09-26 scope change:** gaze is attention only. No blink clicks, no double-blink confirms, no gaze-driven input of any kind. Gaze tells Eve what the user is looking at (the "this") and feeds Act I preference signals. Profiles advance on their own (look away / time budget), approvals are spoken. See `docs/ARCHITECTURE.md`.
+
 ---
 
 ## 1. The four acts

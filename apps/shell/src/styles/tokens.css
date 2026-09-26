@@ -1,0 +1,34 @@
+/* One hue drives the whole UI. Animate --hue and everything shifts mood. */
+:root {
+  --hue: 262;
+  --bg: oklch(0.14 0.02 var(--hue));
+  --bg-2: oklch(0.18 0.025 var(--hue));
+  --panel: oklch(0.22 0.03 var(--hue) / 0.72);
+  --line: oklch(0.72 0.05 var(--hue) / 0.18);
+  --text: oklch(0.96 0.01 var(--hue));
+  --text-dim: oklch(0.78 0.03 var(--hue) / 0.7);
+  --accent: oklch(0.8 0.14 var(--hue));
+  --accent-2: oklch(0.78 0.16 calc(var(--hue) + 60));
+  --warn: oklch(0.78 0.16 40);
+  --ok: oklch(0.82 0.15 150);
+  --glow: 0 0 24px oklch(0.8 0.14 var(--hue) / 0.45);
+  --font-ui: "DM Sans", system-ui, sans-serif;
+  --font-mono: "DM Mono", ui-monospace, Menlo, monospace;
+  --font-voice: "Quicksand", "DM Sans", sans-serif;
+  --radius: 22px;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-shutter: cubic-bezier(0.87, 0.05, 0.02, 0.97);
+}
+
+* { box-sizing: border-box; }
+html, body, #root { margin: 0; height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  user-select: none;
+}
+.mono { font-family: var(--font-mono); letter-spacing: 0.08em; }
+.dim { color: var(--text-dim); }
