@@ -35,6 +35,8 @@ test("addressing gate: the mic hears the room, she only answers when it's for he
   expect(say("put your pajamas on", cold).decision).toBe("ACT");
   expect(say("let's listen to music", cold).decision).toBe("ACT");
   expect(say("thoughts?", cold).decision).not.toBe("IGNORE");
+  expect(say("look at this", cold).decision).not.toBe("IGNORE");
+  expect(say("yo check this out", cold).decision).not.toBe("IGNORE");
   expect(say("wait", cold).stopSpeech).toBe(true);
   expect(say("hella beef").decision).not.toBe("IGNORE");
   // opt out
