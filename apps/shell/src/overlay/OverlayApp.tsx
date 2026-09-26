@@ -15,6 +15,7 @@ import { voice, voiceUi } from "../voice/VoiceProvider";
 import { bridge, inElectron } from "./bridge";
 import { ClickThroughGate, containRect, fitBox, HIT, hitAlpha, TAP_SLOP, type Box } from "./hittest";
 import { chipFor, triggerLabel } from "./status";
+import { lookChip, nextLook, NO_LOOK, type LookState } from "./looking";
 import "../avatar/avatar.css";
 import "./overlay.css";
 
@@ -305,6 +306,7 @@ export function OverlayApp() {
         </div>
       </div>
       <Flashes />
+      <LookingChip />
       <Subtitles placement="column" />
       <StatusChip connected={connected} born={born} thinking={born && world.companion.state === "thinking"} attentionPaused={attentionPaused} />
     </div>
@@ -375,6 +377,33 @@ function StatusChip({ connected, born, thinking, attentionPaused }: { connected:
       <span className="ov-dot" ref={dot} />
       <span className="ov-chip-text">{chip.text}</span>
       {chip.sub && <span className="ov-chip-sub">{chip.sub}</span>}
+    </div>
+  );
+}
+
+/**
+ * "👀 looking" on her whenever the core reads the screen (screen.looking):
+ * a flash for an accessibility read, a held chip for a window capture.
+ * Never hidden by speech or other chips (docs/SCREEN.md guardrail).
+ */
+function LookingChip() {
+  const [look, setLook] = useState<LookState>(NO_LOOK);
+  const [now, setNow] = useState(() => performance.now());
+  useEvent("screen.looking", (e) => {
+    const t = performance.now();
+    setLook((s) => nextLook(s, e.data, t));
+    setNow(t);
+  });
+  useEffect(() => {
+    if (!look.level) return;
+    const id = setInterval(() => setNow(performance.now()), 200);
+    return () => clearInterval(id);
+  }, [look]);
+  const chip = lookChip(look, now);
+  return (
+    <div className="ov-look mono" data-kind={chip?.kind ?? "none"} data-hidden={!chip} aria-live="polite">
+      <span>{chip?.text ?? "👀 looking"}</span>
+      {chip?.sub && <span className="ov-look-sub">{chip.sub}</span>}
     </div>
   );
 }

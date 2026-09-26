@@ -28,6 +28,8 @@ import { startCursorLayer, type CursorLayer } from "./cursor/layer";
 import { heartBitmap } from "./icon";
 import {
   attentionEnvelope,
+  parseScreenStatus,
+  screenPauseEnvelope,
   cornerBounds,
   loadState,
   overlayUrl,
@@ -200,6 +202,36 @@ async function setAttentionPaused(p: boolean) {
 }
 
 // ---------------------------------------------------------------------------
+// screen awareness (docs/SCREEN.md): the core owns the pause (~/.eve/screen.json)
+// ---------------------------------------------------------------------------
+
+let screenSense: { enabled: boolean; paused: boolean } | null = null;
+
+async function refreshScreen() {
+  let next: typeof screenSense = null;
+  try {
+    const r = await fetch(`${CORE_HTTP}/api/screen/status`, { signal: AbortSignal.timeout(1500) });
+    next = r.ok ? parseScreenStatus(await r.json()) : null;
+  } catch {}
+  if (JSON.stringify(next) !== JSON.stringify(screenSense)) {
+    screenSense = next;
+    refreshTray();
+  }
+}
+
+async function setScreenPaused(p: boolean) {
+  if (screenSense) screenSense = { ...screenSense, paused: p };
+  refreshTray();
+  try {
+    const r = await fetch(`${CORE_HTTP}/emit`, { method: "POST", body: JSON.stringify(screenPauseEnvelope(p)), signal: AbortSignal.timeout(2000) });
+    log(`screen ${p ? "paused" : "resumed"} (core ${r.status})`);
+  } catch {
+    log("screen pause: core offline");
+  }
+  await refreshScreen();
+}
+
+// ---------------------------------------------------------------------------
 // outfit (docs/WARDROBE.md): the core owns what she wears; the tray mirrors it
 // ---------------------------------------------------------------------------
 
@@ -356,6 +388,14 @@ function refreshTray() {
     { label: "Mute mic", type: "checkbox", checked: state.muted, accelerator: "CommandOrControl+Shift+M", click: (i) => setMuted(i.checked) },
     { label: "Pause attention", type: "checkbox", checked: state.attentionPaused, click: (i) => void setAttentionPaused(i.checked) },
     {
+      label: screenSense?.enabled === false ? "Pause screen (off: EVE_SCREEN=0)" : "Pause screen",
+      type: "checkbox",
+      checked: !!screenSense?.paused,
+      enabled: !!screenSense?.enabled,
+      accelerator: "CommandOrControl+Shift+P",
+      click: (i) => void setScreenPaused(i.checked),
+    },
+    {
       label: "Outfit",
       enabled: outfit.length > 0,
       submenu: outfit.length
@@ -394,6 +434,8 @@ function registerHotkeys() {
   const keys: [string, () => void][] = [
     ["CommandOrControl+Shift+E", toggleVisible],
     ["CommandOrControl+Shift+M", () => setMuted(!state.muted)],
+    // Screen awareness pause works even before the tray has heard from the core.
+    ["CommandOrControl+Shift+P", () => void setScreenPaused(!screenSense?.paused)],
   ];
   for (const [k, fn] of keys) if (!globalShortcut.register(k, fn)) log(`hotkey ${k} is taken by another app`);
 }
@@ -439,6 +481,9 @@ if (!app.requestSingleInstanceLock()) {
     // The tray's Outfit submenu mirrors the core (spoken changes show up here too).
     void refreshOutfit();
     setInterval(() => void refreshOutfit(), 4000);
+    // The tray's "Pause screen" mirrors the core too.
+    void refreshScreen();
+    setInterval(() => void refreshScreen(), 4000);
     // ~30Hz, only while she's visible, only when it moved.
     setInterval(pollCursor, 33);
 

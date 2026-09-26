@@ -171,3 +171,22 @@ export function attentionEnvelope(paused: boolean, now = Date.now()) {
     data: { paused, by: "overlay" },
   };
 }
+
+/** A screen.pause envelope (tray "Pause screen", cmd+shift+P). The core persists it in ~/.eve/screen.json. */
+export function screenPauseEnvelope(paused: boolean, now = Date.now()) {
+  return {
+    type: "screen.pause",
+    ts: now,
+    source: "overlay",
+    id: `ov_${now.toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+    data: { paused, by: "overlay" },
+  };
+}
+
+/** Parse GET /api/screen/status for the tray: null when the core is down or has no screen module. */
+export function parseScreenStatus(j: unknown): { enabled: boolean; paused: boolean } | null {
+  if (!j || typeof j !== "object") return null;
+  const o = j as Record<string, unknown>;
+  if (typeof o.enabled !== "boolean") return null;
+  return { enabled: o.enabled, paused: o.paused === true };
+}

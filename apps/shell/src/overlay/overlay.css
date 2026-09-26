@@ -119,7 +119,39 @@ html[data-mode="overlay"] #root {
 .ov-flash[data-kind="memory"] { color: oklch(0.9 0.1 var(--hue)); }
 .ov-flash[data-kind="attention"] { color: oklch(0.9 0.1 calc(var(--hue) + 60)); }
 
+/* "looking" chip: she is reading the screen right now (docs/SCREEN.md). Top right, never hidden by speech. */
+.ov-look {
+  position: absolute;
+  top: 44px;
+  right: 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: oklch(0.2 0.03 var(--hue) / 0.78);
+  border: 1px solid oklch(0.85 0.06 var(--hue) / 0.2);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  color: oklch(0.97 0.01 var(--hue));
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  pointer-events: none;
+  transition: opacity 160ms var(--ov-ease), transform 160ms var(--ov-ease);
+}
+.ov-look[data-hidden="true"] { opacity: 0; transform: translateY(-3px) scale(0.97); }
+.ov-look[data-kind="read"] { opacity: 0.86; }
+.ov-look[data-kind="vision"] {
+  border-color: oklch(0.85 0.14 var(--hue) / 0.6);
+  box-shadow: 0 0 14px oklch(0.8 0.14 var(--hue) / 0.35);
+  animation: ov-pulse 1.4s ease-in-out infinite;
+}
+.ov-look-sub { color: oklch(0.85 0.03 var(--hue) / 0.62); }
+.ov-look-sub::before { content: "·"; margin-right: 6px; opacity: 0.6; }
+
 @media (prefers-reduced-motion: reduce) {
+  .ov-look { animation: none !important; }
   .ov-chip .ov-dot { animation: none !important; }
   .ov-chip { transition: opacity 200ms ease; }
 }
