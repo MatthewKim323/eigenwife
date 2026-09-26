@@ -177,9 +177,12 @@ Sequence:
 | `memories.jsonl` | memory | yes |
 | `task_state.json` `{ tasks: [{ taskId, goal, brain, startedAt, doneAt, ok, summary, ms }] }` | home, from `task.start` / `task.done` | yes |
 | `status.json` heartbeat `{ pid, startedAt, lastBeatAt, host, port, online, memories, tasks, lastSyncAt }` | home | at most once a minute |
+| `memories.md` readable top 60 memories by importance | home, derived from `memories.jsonl` | Zo only |
 | `embeddings.json` | memory | no |
 
-**Zo mirror** (`ZO_API_KEY`): writes are debounced (1.5s) and coalesced, so a burst becomes one sync carrying the latest bytes of every dirty file, into `/home/workspace/eve/` on her Zo (`ZO_EVE_DIR` to override). Transport: Zo MCP at `https://api.zo.computer/mcp` over Streamable HTTP (initialize, `tools/list`, then `tools/call` on the file-writing tool, with argument names read from its input schema; JSON and SSE responses both handled). If MCP fails, `POST /zo/ask` asks the Zo agent to write the files verbatim. Failed files stay dirty for the next sync. `lastSyncAt` is recorded, and once a sync succeeds `home.status.host` reads `"zo"`. `POST /api/home/sync` forces a full sync. Covered with a fake Zo; not run against a live Zo here (no key on this machine).
+**Zo mirror** (`ZO_API_KEY`): writes are debounced (1.5s) and coalesced, so a burst becomes one sync carrying the latest bytes of every dirty file, into `/home/workspace/eve/` on her Zo (`ZO_EVE_DIR` to override); files Zo already holds are skipped. Transport is the shared Zo MCP client (`packages/core/src/zo/`, `write_file` on the low-priority lane); if that fails, `POST /zo/ask` asks the Zo agent to write the files verbatim. Failed files stay dirty for the next sync. `lastSyncAt` is recorded, and once a sync succeeds `home.status.host` reads `"zo"`. `POST /api/home/sync` forces a full sync.
+
+**Restore**: if `~/.eve` has none of her state files at boot, home reads them back from Zo (validated, capped at 15s) before memory and preference load, so she survives a laptop wipe. Mirror, restore and the Spotify poll only run for the real `~/.eve` (or `EVE_ZO_MIRROR=1`), so a throwaway `EVE_HOME` like the e2e run never overwrites her on Zo. Home also provides the `zo` service (Google Calendar, Maps, Spotify, files) to other modules. Verified live on 2026-09-26; details, timings and every knob in [ZO.md](ZO.md).
 
 `home.status { online, host, uptimeMs, memories, tasks, lastSyncAt? }` every 5s.
 
@@ -201,7 +204,7 @@ UPTIME    05:31:14
 MEMORIES  142
 TASKS     3
 HOST      zo
-ZO        mirrored, last sync 12s ago
+ZO        LIVE (ping 140ms), last sync 12s ago
 PERSONA   Eve, sarcastic and funny. Your type, compiled.
 BORN      2h ago
 HOME      /Users/you/.eve
@@ -222,7 +225,7 @@ EVE  STATUS ONLINE | UPTIME 05:31:14 | MEMORIES 142 | TASKS 3
 | `GET /api/preference` | vector, deltas, progress, persona, born, history |
 | `POST /api/preference/converge` | force convergence now |
 | `POST /api/preference/reset` | rerun Act I |
-| `GET /api/home/status` | the status block as JSON |
+| `GET /api/home/status` | the status block as JSON, plus `zoStatus` (connected, last error, per-tool p50/p95) |
 | `GET /api/home/tasks` | persisted task list |
 | `POST /api/home/sync` | force a Zo sync |
 
@@ -235,7 +238,7 @@ EVE  STATUS ONLINE | UPTIME 05:31:14 | MEMORIES 142 | TASKS 3
 | `OPENAI_API_KEY` | OpenAI embeddings (local embedding otherwise) |
 | `MOSS_PROJECT_ID`, `MOSS_PROJECT_KEY`, `MOSS_INDEX` | Moss mirror + recall |
 | `TYPESAFE_API_KEY` | Jev scores Act I attention (local model otherwise) |
-| `ZO_API_KEY`, `ZO_BASE_URL`, `ZO_EVE_DIR` | Zo mirror |
+| `ZO_API_KEY`, `ZO_BASE_URL`, `ZO_EVE_DIR` | Zo mirror, restore, calendar/maps/spotify (see [ZO.md](ZO.md) for the `EVE_ZO_*` switches) |
 
 ## 7. Contracts for other modules
 
