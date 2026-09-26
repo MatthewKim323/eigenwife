@@ -242,6 +242,8 @@ export function AvatarLayer() {
       },
       runtime: avatarRuntime,
       model: activeModel.id,
+      /** Reframe her inside the box (capture): "column" | "stage" | "overlay". */
+      frame: (slot: FramingSlot) => eveRef.current?.setFraming(slot, true),
     };
   }, [client]);
 

@@ -206,12 +206,13 @@ export const HARU: ModelDef = {
   },
   idleMotionGroup: "Idle",
   framing: {
-    // Right column: head and chest, large; she fades out below the chest.
-    column: { scale: 2.2, y: -0.04, x: 0.5, head: { x: 0.5, y: 0.27 } },
+    // Measured on Haru (fractions of model height): hair top 0.054, eyes 0.15, clasped hands 0.446.
+    // Right column: head to waist, face large; she fades out above her hands.
+    column: { scale: 2.6, y: -0.07, x: 0.5, head: { x: 0.5, y: 0.32 } },
     // Emergence center stage: head down to her clasped hands.
-    stage: { scale: 1.6, y: 0.03, x: 0.5, head: { x: 0.5, y: 0.26 } },
+    stage: { scale: 2.0, y: -0.018, x: 0.5, head: { x: 0.5, y: 0.28 } },
     // Desktop overlay window: like the stage (she's small there, show more of her).
-    overlay: { scale: 1.6, y: 0.03, x: 0.5, head: { x: 0.5, y: 0.26 } },
+    overlay: { scale: 2.0, y: -0.018, x: 0.5, head: { x: 0.5, y: 0.28 } },
   },
   license:
     "Haru, official Live2D Cubism sample model (Live2D/CubismWebSamples Samples/Resources/Haru). Live2D Free Material License: free for individuals and small orgs (annual revenue under 10M JPY); larger businesses need a Cubism SDK Release License.",
