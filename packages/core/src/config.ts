@@ -24,6 +24,8 @@ export function parseDotEnv(raw: string): Record<string, string> {
  * anything already wired for it (keys, voice ids) works here for free.
  */
 function loadEnvFiles(): Record<string, string> {
+  // Tests are hermetic: real keys in .env must never turn a unit test into a network call.
+  if (process.env.NODE_ENV === "test" && process.env.EIGEN_TEST_REAL_ENV !== "1") return {};
   const files = [join(REPO_ROOT, ".env.local"), join(REPO_ROOT, ".env"), join(JABBY_DIR, ".claude", "jabby", ".env")];
   const out: Record<string, string> = {};
   for (const f of files) {

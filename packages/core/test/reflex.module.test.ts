@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { EventMap, EventType, GazeTarget, ReflexDecision } from "@eigenwife/protocol";
 import type { CoreContext } from "../src/context";
-import type { JevDecider } from "../src/reflex/jev";
+import { createJev, type JevDecider } from "../src/reflex/jev";
 import { ACK_LINES, BIRTH_LINE, RELAPSE_LINE, reflexModule } from "../src/reflex/module";
 import { emitAt, FakeAgency, FakeBrains, FakeClock, fakeContext, FakeMemory, FakeSpeech, settle, startModules } from "../src/reflex/testing";
 
@@ -37,7 +37,7 @@ async function rig(opts: { jev?: JevDecider; services?: ("speech" | "brains" | "
     // REFLEX_SIM_TRACE=1 prints every non-trivial decision with its scores
     if (process.env.REFLEX_SIM_TRACE && !/^(stare|app_opened)#/.test(e.data.trigger)) console.log(e.data.decision, JSON.stringify(e.data.scores), e.data.reason);
   });
-  const stop = await startModules(ctx, [reflexModule({ now: clock.now, jev: opts.jev })]);
+  const stop = await startModules(ctx, [reflexModule({ now: clock.now, jev: opts.jev ?? createJev({}) /* local scorer: tests never hit the network, even with keys in .env */ })]);
   const emit = <K extends EventType>(type: K, data: EventMap[K]) => emitAt(ctx, clock, type, data);
   return { ctx, clock, speech, brains, memory, agency, decisions, stop, emit };
 }
