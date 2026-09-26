@@ -307,3 +307,28 @@ export function useShell<T>(sel: (s: ShellState) => T): T {
 export function closeEigen() {
   shell.set({ eigenOpen: false });
 }
+
+/** Wives return structured JSON. Show the one line a human would say. */
+export function summarizeResult(raw: string): string {
+  let v: unknown;
+  try {
+    v = JSON.parse(raw);
+  } catch {
+    return raw.length > 90 ? `${raw.slice(0, 88)}...` : raw;
+  }
+  if (!v || typeof v !== "object") return String(v);
+  const o = v as Record<string, any>;
+  for (const k of ["summary", "choice", "pick", "answer"]) if (typeof o[k] === "string") return o[k];
+  if (Array.isArray(o.options) && o.options.length) {
+    const f = o.options[0];
+    const bits = [f.name, f.dish, f.price !== undefined ? `$${f.price}` : null].filter(Boolean).join(" · ");
+    return o.options.length > 1 ? `${bits} (+${o.options.length - 1} more)` : bits;
+  }
+  if (o.availableFrom) return `free ${o.availableFrom}${o.availableUntil ? ` to ${o.availableUntil}` : ""}`;
+  if (o.maxRecommendedSpend !== undefined) return `budget: under $${o.maxRecommendedSpend}${Array.isArray(o.warnings) && o.warnings[0] ? ` · ${o.warnings[0]}` : ""}`;
+  const pairs = Object.entries(o)
+    .filter(([, x]) => typeof x !== "object")
+    .slice(0, 2)
+    .map(([k, x]) => `${k}: ${x}`);
+  return pairs.join(" · ") || "done";
+}

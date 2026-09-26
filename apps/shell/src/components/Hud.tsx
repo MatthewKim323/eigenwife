@@ -4,6 +4,7 @@ import { useGaze } from "../gaze/GazeProvider";
 import { useBus, useEvent, useWorld } from "../lib/bus";
 import { KEY_HELP, isOperatorKeyEvent, keyAction, nextHudLevel, toggledGazeUrl } from "../lib/keys";
 import { useScene } from "../lib/scene";
+import { animateHue } from "../lib/hue";
 import { shell, useShell } from "../lib/store";
 import { Glitch, Pill, useNow } from "./fx";
 import { ShutterHost, shutter } from "./Shutter";
@@ -52,12 +53,26 @@ function useBridge() {
   });
 
   // Agency: her workspace opens when a task starts, and folds back when it's done.
+  useEvent("companion.born", (e) => {
+    if (sceneRef.current !== "convergence") void animateHue(e.data.persona.palette.hue, 1400);
+  });
+  useEvent("bus.welcome", (e) => {
+    const p = e.data.world.companion.persona;
+    if (p && e.data.world.companion.born) {
+      shell.set({ persona: p });
+      if (sceneRef.current !== "boot" && sceneRef.current !== "dating") void animateHue(p.palette.hue, 900);
+    }
+  });
+
+  const switching = useRef(false);
   const toSwarm = () => {
     const s = sceneRef.current;
+    if (switching.current) return;
     // Never yank the audience out of Act I or the architecture slide.
     if (s === "swarm" || s === "boot" || s === "calibration" || s === "dating" || s === "convergence" || s === "architecture") return;
     shell.set({ eigenOpen: false });
-    void shutter(() => go("swarm"), 1300);
+    switching.current = true;
+    void shutter(() => go("swarm"), 1300).then(() => (switching.current = false));
   };
   useEvent("task.start", toSwarm);
   // The harem can run without agency's task.start (CLI, late join).

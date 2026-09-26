@@ -4,7 +4,7 @@ import { DEFAULT_ADVANCE, advanceReason, pointInRect } from "./advance";
 import { LocalPreference, engagement, evidenceVector, lifts, localPersona, localProgress, localSignal, personaHue } from "./fallback";
 import { hueDelta } from "./hue";
 import { SCENE_ORDER, isOperatorKeyEvent, keyAction, nextHudLevel, toggledGazeUrl } from "./keys";
-import { formatWhen, initialShell, reduceShell, type ShellState } from "./store";
+import { formatWhen, initialShell, reduceShell, summarizeResult, type ShellState } from "./store";
 
 const stat = (dwellMs: number, revisits = 0): RegionStats => ({ dwellMs, visits: revisits + 1, revisits, longestMs: dwellMs });
 
@@ -239,5 +239,15 @@ describe("shell reducer", () => {
     expect(s.reflex.length).toBe(4);
     expect(s.reflexIgnored).toBe(6);
     expect(s.counts["reflex.decision"]).toBe(6);
+  });
+});
+
+describe("wife results", () => {
+  test("structured results read like a sentence", () => {
+    expect(summarizeResult(JSON.stringify({ options: [{ name: "Mensho", dish: "Garlic Knockout", price: 21 }, { name: "Kaze" }] }))).toBe("Mensho · Garlic Knockout · $21 (+1 more)");
+    expect(summarizeResult(JSON.stringify({ availableFrom: "19:10", availableUntil: "23:30" }))).toBe("free 19:10 to 23:30");
+    expect(summarizeResult(JSON.stringify({ maxRecommendedSpend: 20, warnings: ["no $28 bowls"] }))).toBe("budget: under $20 · no $28 bowls");
+    expect(summarizeResult(JSON.stringify({ summary: "done deal" }))).toBe("done deal");
+    expect(summarizeResult("plain text")).toBe("plain text");
   });
 });

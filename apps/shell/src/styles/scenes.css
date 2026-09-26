@@ -50,7 +50,7 @@
 .calib.calibrating .calib-rings { opacity: 0.25; }
 @keyframes calib-ring { 0% { opacity: 0; transform: scale(0.12); } 20% { opacity: 0.9; } 100% { opacity: 0; transform: scale(1); } }
 @keyframes calib-dot { to { transform: scale(1.35); } }
-.calib-copy { position: relative; margin-top: 340px; text-align: center; }
+.calib-copy { position: relative; margin-top: 580px; text-align: center; }
 .calib-copy .kicker { font-size: 10.5px; letter-spacing: 0.3em; color: var(--ink-3); }
 .calib-copy .kicker.ok { color: var(--ok); }
 .calib-copy .kicker.warn { color: var(--warn); }
