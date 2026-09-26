@@ -8,7 +8,8 @@
     "test": "bun test",
     "eve": "bun run src/home/cli.ts",
     "prerender": "bun run scripts/prerender.ts",
-    "smoke:brains": "bun run scripts/brains-smoke.ts"
+    "smoke:brains": "bun run scripts/brains-smoke.ts",
+    "smoke:speech": "bun run scripts/speech-smoke.ts"
   },
   "dependencies": {
     "@eigenwife/protocol": "workspace:*",

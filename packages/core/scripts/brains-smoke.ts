@@ -46,4 +46,15 @@ if (mode === "frontier" || mode === "all") {
   const r = await brains.frontier({ goal: 'Plan tonight in 3 short steps for someone who wants cheap spicy ramen. Return {"steps": string[]}.', json: true, engine, timeoutMs: 120_000 });
   console.log("frontier", r.engine, r.ms, "ms", r.ok ? JSON.stringify(r.json) : r.error);
 }
-console.log("detail", JSON.stringify(brains.detail(), null, 1));
+if (mode === "harem" || mode === "all") {
+  const t0 = performance.now();
+  const out = await brains.harem.structured<{ availableFrom: string; confidence: number }>({
+    agent: "smoke-calendar",
+    system: "You are Kari, the calendar wife. Terse.",
+    prompt: "The user is free after 7pm tonight. When are they available from?",
+    schema: { type: "object", properties: { availableFrom: { type: "string" }, confidence: { type: "number" } }, required: ["availableFrom", "confidence"], additionalProperties: false },
+    onEvent: (e) => console.log("  harem event", e),
+  });
+  console.log(`harem structured ${Math.round(performance.now() - t0)}ms ->`, out, brains.health.snapshot().claude?.ok ? "(claude)" : "");
+}
+console.log("detail",JSON.stringify(brains.detail(), null, 1));
