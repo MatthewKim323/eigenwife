@@ -9,8 +9,8 @@ export interface UtteranceIntent {
   stop: boolean;
   /** "figure out", "plan", "book": a real-world multi-step task. */
   task: boolean;
-  /** "close it", "quit spotify": one small immediate action. */
-  command: { kind: string; app?: string } | null;
+  /** "close it", "quit spotify": one small immediate action. app undefined means "whatever is open". */
+  command: { kind: "close"; app?: string } | null;
   /** "how do i", "help me". */
   help: boolean;
   question: boolean;
@@ -49,7 +49,7 @@ export function readIntent(text: string): UtteranceIntent {
   if (cmd && words <= 7) {
     const raw = (cmd[1] ?? "").trim().toLowerCase();
     const app = raw === "it" || raw === "that" || raw === "this" ? undefined : raw === "dating app" || raw === "eigen" ? "Eigen" : cmd[1]!.trim();
-    command = { kind: "shell.close_app", app };
+    command = { kind: "close", app };
   }
   const question = /\?\s*$/.test(t) || QUESTION_START.test(t);
   return {

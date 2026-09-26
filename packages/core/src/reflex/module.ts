@@ -338,9 +338,11 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
       args = { app: String(t.data.app ?? "Eigen") };
       description = `close ${args.app}: user relapsed onto the dating app`;
     } else if (v.intent?.command) {
-      kind = v.intent.command.kind;
+      // The dating app lives in the shell (shell.close_app); anything else is a real macOS app (app.quit).
       const app = v.intent.command.app ?? ctx.world().desktop.activeApp;
-      args = app ? { app } : {};
+      const inShell = !app || /^eigen\b|dating/i.test(app);
+      kind = inShell ? "shell.close_app" : "app.quit";
+      args = app ? { app: inShell ? "Eigen" : app } : {};
       description = `user asked: "${String(t.data.text ?? "")}"`;
       await say(pick(["done.", "gone.", "bye bye."], t.id), t, t.parent);
     } else {

@@ -147,6 +147,20 @@ test("relapse: '...seriously?' then closes the app via agency", async () => {
   await r.stop();
 });
 
+test("spoken commands: 'close spotify' quits the app, 'close it' on the dating app closes the shell app", async () => {
+  const r = await bornRig();
+  r.emit("voice.final", { text: "close spotify" });
+  await settle(10);
+  expect(r.decisions.at(-1)!.decision).toBe("ACT");
+  expect(r.agency.acts.at(-1)).toEqual({ kind: "app.quit", args: { app: "spotify" } });
+  r.clock.advance(30_000);
+  r.emit("app.focused", { app: "Eigen" });
+  r.emit("voice.final", { text: "close it" });
+  await settle(10);
+  expect(r.agency.acts.at(-1)).toEqual({ kind: "shell.close_app", args: { app: "Eigen" } });
+  await r.stop();
+});
+
 test("ambient waits for the tick and for her to finish talking; immediate bypasses", async () => {
   const forced: JevDecider = {
     status: () => ({ remote: false, failures: 0 }),
