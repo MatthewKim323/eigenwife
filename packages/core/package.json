@@ -5,7 +5,8 @@
   "main": "src/index.ts",
   "scripts": {
     "start": "bun run src/main.ts",
-    "test": "bun test"
+    "test": "bun test",
+    "eve": "bun run src/home/cli.ts"
   },
   "dependencies": {
     "@eigenwife/protocol": "workspace:*"
