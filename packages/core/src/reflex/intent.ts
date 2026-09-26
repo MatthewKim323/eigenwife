@@ -30,6 +30,8 @@ export interface UtteranceIntent {
   filler: boolean;
   /** "put your hoodie on", "lose the shades", "what are you wearing" (outfit.ts). */
   outfit: OutfitIntent | null;
+  /** "show me", "do it yourself", "open it": she does it herself in her own visible browser (docs/AGENT_CURSOR.md). */
+  browse: { query?: string } | null;
   /** "fix the flaky test in eigenwife", "find my resume", "what's due": a work ask (docs/WORK.md). */
   work: boolean;
   words: number;
@@ -58,6 +60,27 @@ const MUSIC_CTRL: [RegExp, "pause" | "resume" | "next" | "previous"][] = [
 ];
 const COMMAND = /\b(?:close|quit|kill|exit)\s+(?:the\s+)?(?:(it|that|this|dating app|eigen|[a-z][\w ]{1,20}?))(?:\s+app)?[\s.!]*$/i;
 
+const LEAD = /^(?:(?:yo|hey|ok(?:ay)?|eve|so|and)[,\s]+)*(?:(?:can|could|would) you\s+|please\s+)?/i;
+/** "it" in "show me" / "open it": whatever she found last (or the page he's on). */
+const BROWSE_BARE =
+  /^(?:show me(?: it| that| this| the (?:place|restaurant|spot|menu|hours|site|website))?|show it to me|open (?:it|that|this)(?: up)?|pull (?:it|that) up|let me see(?: it)?|do it yourself|you do it|go look(?: at it)?|look at it yourself)(?:\s+(?:on|in) (?:your|the) browser)?(?:\s+(?:please|pls|eve|for me))*$/i;
+/** "show me X in your browser", "open X in your browser": X is a query or a site. */
+const BROWSE_IN = /^(?:show me|open|pull up|look up|go to|search)\s+(.{2,80}?)\s+(?:on|in) (?:your|the) browser$/i;
+/** "show me ramen places near irvine": web-shaped things, never "show me my resume". */
+const BROWSE_WEB = /^show me\s+(?!my\b)(.{2,80})$/i;
+const WEBBY = /\b(?:restaurants?|places?|spots?|menu|hours|website|site|reviews?|near(?:by| me)?|open now|directions|map|maps)\b|\.(?:com|org|net|io|ai|dev)\b/i;
+
+export function readBrowse(text: string): UtteranceIntent["browse"] {
+  const t = text.trim().replace(/[\s.!?]+$/, "").replace(LEAD, "").trim();
+  if (!t || t.split(/\s+/).length > 14) return null;
+  if (BROWSE_BARE.test(t)) return {};
+  const inb = BROWSE_IN.exec(t);
+  if (inb) return /^(?:it|that|this)$/i.test(inb[1]!.trim()) ? {} : { query: inb[1]!.trim() };
+  const web = BROWSE_WEB.exec(t);
+  if (web && WEBBY.test(web[1]!)) return { query: web[1]!.trim() };
+  return null;
+}
+
 export function readIntent(text: string): UtteranceIntent {
   const t = text.trim();
   const words = t ? t.split(/\s+/).length : 0;
@@ -84,10 +107,11 @@ export function readIntent(text: string): UtteranceIntent {
     }
   }
   const question = /\?\s*$/.test(t) || QUESTION_START.test(t);
+  const browse = stop || music ? null : readBrowse(t);
   return {
     stop,
-    task: !stop && TASK.test(t),
-    command: stop || music ? null : command,
+    task: !stop && !browse && TASK.test(t),
+    command: stop || music || browse ? null : command,
     music,
     help: HELP.test(t),
     question,
@@ -97,7 +121,8 @@ export function readIntent(text: string): UtteranceIntent {
     approval: APPROVAL.test(t),
     filler: FILLER.test(t),
     outfit: stop || music ? null : readOutfit(t),
-    work: !stop && !command && !music && readWorkIntent(t) !== null,
+    browse,
+    work: !stop && !command && !music && !browse && readWorkIntent(t) !== null,
     words,
   };
 }

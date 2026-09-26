@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@eigenwife/protocol": "workspace:*",
-    "@moss-js/moss": "^1.14.0"
+    "@moss-js/moss": "^1.14.0",
+    "playwright-core": "1.63.0"
   }
 }

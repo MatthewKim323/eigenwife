@@ -2,6 +2,8 @@ import { newId, type PermissionClass } from "@eigenwife/protocol";
 import type { CoreContext } from "../context";
 import { APPROVE_KEYS, DENY_KEYS, judgeApproval } from "./approval";
 import { effectivePermission, needsApproval, Policy } from "./policy";
+import type { EveBrowser } from "./browser/driver";
+import { findNativeTarget, type AgentCursor } from "./cursor";
 import type { ActionDef, ActionOutcome, AgencyDeps, TraceEntry } from "./types";
 
 export const SRC = "agency";
@@ -35,6 +37,8 @@ export class Gate {
   readonly trace: TraceEntry[] = [];
   private approvals: Promise<unknown> = Promise.resolve();
   private pendingCount = 0;
+  /** Her cursor and browser (docs/AGENT_CURSOR.md), wired by createAgency. */
+  tools: { cursor?: AgentCursor; browser?: EveBrowser | null } = {};
 
   constructor(
     private ctx: CoreContext,
@@ -102,11 +106,14 @@ export class Gate {
     const t1 = this.deps.now();
     let out: ActionOutcome;
     try {
+      await this.nativeGlide(def, args, description);
       out = await def.run(args, {
         ctx: this.ctx,
         deps: this.deps,
         taskId: opts.taskId,
         progress: opts.progress,
+        browser: this.tools.browser,
+        cursor: this.tools.cursor,
         act: (k, a) => this.request(k, a, { taskId: opts.taskId, parent: opts.parent, progress: opts.progress }),
       });
     } catch (err) {
@@ -116,6 +123,25 @@ export class Gate {
     entry.result = { ok: out.ok, observation: out.observation, at: this.deps.now(), ms: this.deps.now() - t1 };
     this.ctx.log("agency", `${kind} ${out.ok ? "ok" : "failed"}: ${out.observation}`);
     return { ...out, actionId };
+  }
+
+  /**
+   * Native actions (Spotify, Calendar, quitting an app, opening a file): when
+   * someone is watching her cursor, it glides to the app's window (bounds only)
+   * or its Dock spot and clicks, then the AppleScript does the real work.
+   * Capped so a slow window lookup never holds the action up for long.
+   */
+  private async nativeGlide(def: ActionDef, args: Record<string, unknown>, label: string): Promise<void> {
+    const cursor = this.tools.cursor;
+    const app = def.cursorApp?.(args);
+    if (!cursor || !app || !cursor.watching()) return;
+    try {
+      const target = await findNativeTarget(this.deps.osa, app, 1200);
+      if (!target) return;
+      await cursor.move(target.point, { label: target.kind === "dock" ? `${app} in the Dock` : app, target: app });
+      cursor.click({ label: label.slice(0, 48), target: app });
+      cursor.settle();
+    } catch {}
   }
 
   /** Approvals are serialized: she asks one thing at a time. */

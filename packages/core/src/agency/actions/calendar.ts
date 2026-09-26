@@ -166,6 +166,7 @@ function createEvent(kind: string): ActionDef {
   return {
     kind,
     permission: "EXTERNAL_SIDE_EFFECT",
+    cursorApp: () => "Calendar",
     describe: (a) => {
       const e = eventArgs(a, Date.now());
       return `put "${e.title}" on your calendar${e.start ? ` at ${fmtTime(e.start)}` : ""}${e.location && e.location !== e.title ? ` at ${e.location}` : ""}`;
@@ -229,6 +230,7 @@ export const calendarCreateAlias = createEvent("calendar.create");
 export const calendarDeleteEvent: ActionDef = {
   kind: "calendar.delete_event",
   permission: "EXTERNAL_SIDE_EFFECT",
+  cursorApp: () => "Calendar",
   describe: (a) => `delete a calendar event${a.title ? ` ("${String(a.title)}")` : ""}`,
   async run(args, env) {
     const uid = String(args.id ?? args.uid ?? args.eventId ?? "");

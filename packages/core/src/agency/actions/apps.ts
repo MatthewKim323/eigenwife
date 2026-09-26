@@ -39,6 +39,7 @@ export const appQuit: ActionDef = {
   permission: "SAFE_ACTION",
   describe: (a) => `quit ${String(a.app ?? "an app")}`,
   targets: (a) => [String(a.app ?? "")],
+  cursorApp: (a) => QUIT_ALLOWLIST.find((x) => x.toLowerCase() === String(a.app ?? "").trim().toLowerCase()) ?? null,
   async run(args, env) {
     const want = String(args.app ?? "").trim();
     const app = QUIT_ALLOWLIST.find((x) => x.toLowerCase() === want.toLowerCase());

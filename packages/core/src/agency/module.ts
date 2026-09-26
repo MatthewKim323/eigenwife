@@ -11,10 +11,15 @@ import { calendarCreateAlias, calendarCreateEvent, calendarDeleteEvent, calendar
 import { placesSearchAction } from "./actions/places";
 import { webScrape, webScrapeAction, webSearchAction } from "./actions/web";
 import { avatarWear } from "./actions/wardrobe";
+import { BROWSER_ACTIONS, rememberPlace } from "./actions/browser";
+import { mapsQuery } from "./actions/places";
+import { EveBrowser } from "./browser/driver";
+import { playwrightBackend } from "./browser/playwright";
+import { AgentCursor } from "./cursor";
 import { Gate, SRC } from "./gate";
 import { effectivePermission } from "./policy";
 import { Policy } from "./policy";
-import { cannedOutcome, runBuiltinTask } from "./planner";
+import { cannedOutcome, heuristicPrefs, runBuiltinTask } from "./planner";
 import { realOsa } from "./osa";
 import { realExec } from "../work/exec";
 import { WORK_ACTIONS } from "./actions/work";
@@ -65,7 +70,12 @@ export const defaultDeps = (): AgencyDeps => ({
   now: () => Date.now(),
   env: (name) => secret(name),
   exec: realExec,
+  browserBackend: () => playwrightBackend(),
+  sleep: (ms) => Bun.sleep(ms),
 });
+
+/** Food-ish goals get the visible Maps browse while the swarm works. */
+const PLACE_GOAL = /\b(tonight|dinner|lunch|brunch|breakfast|eat|food|hungry|restaurant|ramen|sushi|tacos?|pizza|thai|korean|coffee|drinks|bar|date)\b/i;
 
 /** Adapt the core brains' frontier call to harem's structured Brain interface. */
 export function frontierAsHaremBrain(brains: BrainService): HaremBrain {
@@ -93,6 +103,50 @@ export function createAgency(ctx: CoreContext, opts: AgencyOptions = {}) {
   gate.register(calendarCreateEvent, calendarCreateAlias, calendarDeleteEvent, calendarFreeBusy, browserOpen, webSearchAction, webScrapeAction, placesSearchAction, shellCloseApp, shellOpen, appQuit, musicPlay, musicControl);
   gate.register(avatarWear);
   gate.register(...WORK_ACTIONS);
+  gate.register(...BROWSER_ACTIONS);
+
+  // Her own cursor + visible browser (docs/AGENT_CURSOR.md). The browser window
+  // only opens when a browser.task actually runs.
+  const cursor = new AgentCursor(ctx.bus, { sleep: deps.sleep });
+  const backend = deps.browserBackend?.() ?? null;
+  const browser = backend ? new EveBrowser(backend, cursor, ctx.bus, { sleep: deps.sleep }) : null;
+  gate.tools = { cursor, browser };
+
+  /**
+   * The show: visible browsing that runs next to a task, never in its way.
+   * Only when someone is watching her cursor (the overlay's cursor layer said
+   * hello) or EVE_BROWSER_SHOW=1; EVE_BROWSER_SHOW=0 turns it off.
+   */
+  const showOn = () => {
+    const flag = deps.env("EVE_BROWSER_SHOW");
+    return !!browser && flag !== "0" && (flag === "1" || cursor.watching());
+  };
+  function show(args: Record<string, unknown>, taskId?: string, parent?: string) {
+    if (!showOn()) return;
+    void gate.request("browser.task", { budget: 10, ...args }, { taskId, parent }).catch(() => {});
+  }
+  function startShow(taskId: string, goal: string, context: string, parent?: string): () => void {
+    if (!showOn()) return () => {};
+    const location = deps.env("EIGEN_LOCATION") || "Irvine, CA";
+    const prefs = heuristicPrefs([goal, context]);
+    if (PLACE_GOAL.test(goal) || prefs.cuisine) {
+      const q = `${mapsQuery(prefs.cuisine ? prefs : { ...prefs, cuisine: "dinner" })} near ${location}`;
+      show({ goal: `look up ${q}`, query: q, maps: true }, taskId, parent);
+    }
+    // The pick arrives as the calendar request (harem or built-in): go look at it while she asks.
+    const off = ctx.bus.on("action.request", (e) => {
+      if (e.data.taskId !== taskId || !/^calendar\.create/.test(e.data.kind)) return;
+      off();
+      const a = e.data.args ?? {};
+      const name = String(a.location ?? a.title ?? "").split(",")[0]!.replace(/\s*\(.*\)$/, "").trim();
+      if (!name) return;
+      const place = { name, address: location };
+      rememberPlace(place);
+      ctx.setSlot("agency", "last_place", name);
+      show({ goal: `check out ${name}`, place }, taskId, parent);
+    });
+    return off;
+  }
 
   // Someone else (harem, shell, an operator script) asked for an action on the bus:
   // same gate, their actionId, never their permission claim if it's lower than ours.
@@ -137,6 +191,8 @@ export function createAgency(ctx: CoreContext, opts: AgencyOptions = {}) {
     ctx.bus.emit("task.start", { taskId, goal, brain: harem ? "harem" : "agency" }, SRC, o.parent);
     ctx.bus.emit("avatar.state", { state: "thinking" }, SRC, o.parent);
     ctx.setSlot("agency", "task", goal);
+    // The visible browse runs beside the task and never delays its answer.
+    const offShow = startShow(taskId, goal, ctx.contextBlock(), o.parent);
 
     try {
       if (harem) {
@@ -177,6 +233,8 @@ export function createAgency(ctx: CoreContext, opts: AgencyOptions = {}) {
       return { ok: false, summary };
     } finally {
       ctx.setSlot("agency", "task", null);
+      // Harem resolves before the calendar request can land: keep listening a moment.
+      setTimeout(offShow, 5000);
     }
   }
 
@@ -188,7 +246,12 @@ export function createAgency(ctx: CoreContext, opts: AgencyOptions = {}) {
     },
   };
 
-  return { gate, deps, service, runTask, stop: offExternal };
+  const stop = () => {
+    offExternal();
+    cursor.stop();
+    void browser?.close();
+  };
+  return { gate, deps, service, runTask, cursor, browser, stop };
 }
 
 async function body(req: Request): Promise<Record<string, unknown>> {

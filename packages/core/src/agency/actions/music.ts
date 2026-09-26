@@ -34,6 +34,7 @@ export const musicPlay: ActionDef = {
   permission: "SAFE_ACTION",
   describe: (a) => `play ${String(a.query ?? a.uri ?? "our song")} on Spotify`,
   targets: () => ["Spotify"],
+  cursorApp: () => "Spotify",
   async run(args, env) {
     let uri = spotifyUri(args.uri) ?? spotifyUri(args.query);
     const query = typeof args.query === "string" ? args.query.trim() : "";
@@ -56,6 +57,7 @@ export const musicControl: ActionDef = {
   permission: "SAFE_ACTION",
   describe: (a) => `${String(a.op ?? "pause")} the music`,
   targets: () => ["Spotify"],
+  cursorApp: () => "Spotify",
   async run(args, env) {
     const op = String(args.op ?? "pause") as keyof typeof CONTROL_SCRIPT;
     const script = CONTROL_SCRIPT[op];

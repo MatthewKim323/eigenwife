@@ -374,6 +374,13 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
         description = `${mu.op} the music`;
         if (mu.op !== "pause") await say(pick(["mm.", "okay.", "next."], t.id), t, t.parent);
       }
+    } else if (v.intent?.browse) {
+      // "show me" / "do it yourself" / "open it": she does it in her own visible browser.
+      const q = v.intent.browse.query;
+      kind = "browser.task";
+      args = q ? { query: q, maps: /\b(?:restaurants?|places?|spots?|near|open now|food)\b/i.test(q), goal: `show you ${q}` } : { goal: "show you" };
+      description = q ? `show you ${q} in my browser` : "show you in my browser";
+      await say(pick(["okay, watch.", "look.", "fine, i'll do it. watch."], t.id), t, t.parent, "happy");
     } else if (v.intent?.command) {
       // The dating app lives in the shell (shell.close_app); anything else is a real macOS app (app.quit).
       const app = v.intent.command.app ?? ctx.world().desktop.activeApp;
@@ -394,6 +401,8 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
     try {
       const r = await agency.act(kind, args, { description });
       if (!r.ok) log(`act ${kind} failed: ${r.observation}`);
+      if (!r.ok && kind === "browser.task")
+        await say(/open what/i.test(r.observation) ? "open what? i haven't found anything yet." : "my browser didn't cooperate.", t, t.parent, "sad");
     } catch (err) {
       log(`act ${kind} threw:`, err);
     }

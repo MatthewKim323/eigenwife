@@ -226,6 +226,7 @@ export const filesOpen: ActionDef = {
   permission: "SAFE_ACTION",
   describe: (a) => `open ${String(a.target ?? a.path ?? "it")}`,
   targets: (a) => [String(a.target ?? a.path ?? "")],
+  cursorApp: (a) => findApp(String(a.target ?? a.path ?? "").trim()) ?? "Finder",
   refuse: (a) => {
     const t = String(a.target ?? a.path ?? "").trim();
     if (EXECUTABLE_EXT.test(t) && !findApp(t)) return `refused: opening ${basename(t)} would run it`;

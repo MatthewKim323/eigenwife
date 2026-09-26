@@ -1,5 +1,7 @@
 import type { PermissionClass } from "@eigenwife/protocol";
 import type { CoreContext } from "../context";
+import type { EveBrowser, BrowserBackend } from "./browser/driver";
+import type { AgentCursor } from "./cursor";
 import type { OsaRunner } from "./osa";
 
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
@@ -40,6 +42,10 @@ export interface AgencyDeps {
   env(name: string): string;
   /** Spawn a process (git, mdfind, claude, textutil...). Tests swap it for a fake. */
   exec: Exec;
+  /** Eve's own visible browser (Playwright). Tests swap in a fake; null = no browser on this machine. */
+  browserBackend?(): BrowserBackend | null;
+  /** Timers for cursor glides and browser pauses. Tests make it instant. */
+  sleep?(ms: number): Promise<void>;
 }
 
 export interface HaremTask {
@@ -84,6 +90,10 @@ export interface ActionEnv {
   act(kind: string, args: Record<string, unknown>): Promise<ActionOutcome>;
   /** Human-readable progress lines for whoever asked (the planner turns them into swarm.progress). */
   progress?(text: string): void;
+  /** Her visible browser (docs/AGENT_CURSOR.md), when this machine has one. */
+  browser?: EveBrowser | null;
+  /** Her own on-screen cursor (visual only). */
+  cursor?: AgentCursor;
 }
 
 export interface ActionDef {
@@ -103,6 +113,12 @@ export interface ActionDef {
    * persona paraphrase (exact shell command, the email body being sent).
    */
   confirmLine?(args: Record<string, unknown>): string;
+  /**
+   * The macOS app this action works in (Spotify, Calendar, Finder...). When the
+   * cursor layer is watching, her cursor glides to that app's window (or its
+   * Dock spot) and clicks just before run(). Window bounds only, never content.
+   */
+  cursorApp?(args: Record<string, unknown>): string | null;
   run(args: Record<string, unknown>, env: ActionEnv): Promise<ActionOutcome>;
 }
 
