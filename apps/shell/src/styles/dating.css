@@ -137,8 +137,8 @@
   top: -64px;
   border-radius: 0 0 22px 22px;
   overflow: hidden;
-  -webkit-mask-image: linear-gradient(191deg, transparent 0%, black 13%);
-  mask-image: linear-gradient(191deg, transparent 0%, black 13%);
+  -webkit-mask-image: linear-gradient(184deg, transparent 0px, rgb(0 0 0 / 0.35) 40px, black 110px);
+  mask-image: linear-gradient(184deg, transparent 0px, rgb(0 0 0 / 0.35) 40px, black 110px);
 }
 .pcard-photo1 .art,
 .pcard-photo2 .art {
@@ -243,7 +243,7 @@
 .latent .bar i { height: 9px; border-radius: 1.5px; background: oklch(0.8 0.05 var(--hue) / 0.1); transition: background 400ms ease, box-shadow 400ms ease; }
 .latent .bar i.on { background: oklch(0.88 0.12 var(--hue)); box-shadow: 0 0 8px oklch(0.8 0.15 var(--hue) / 0.6); }
 
-.latent .constellation { position: relative; height: 196px; margin: 0 -8px; }
+.latent .constellation { position: relative; flex: 1; min-height: 170px; margin: 0 -8px; }
 .latent .constellation svg { width: 100%; height: 100%; overflow: visible; }
 
 .latent .traits { display: flex; flex-direction: column; gap: 7px; }
@@ -262,7 +262,7 @@
 .latent .signal .dist { display: flex; height: 4px; border-radius: 3px; overflow: hidden; margin: 6px 0 4px; gap: 1px; }
 .latent .signal .dist i { transition: flex-grow 600ms var(--ease-out); }
 
-.latent .readout { margin-top: auto; font-size: 11px; line-height: 1.75; color: var(--ink-2); border-top: 1px solid oklch(1 0 0 / 0.06); padding-top: 12px; min-height: 150px; }
+.latent .readout { font-size: 11px; line-height: 1.75; color: var(--ink-2); border-top: 1px solid oklch(1 0 0 / 0.06); padding-top: 12px; min-height: 128px; }
 .latent .readout .h { color: var(--ink); letter-spacing: 0.2em; font-size: 10.5px; margin-bottom: 4px; }
 .latent .readout .r { display: grid; grid-template-columns: 1fr auto; font-variant-numeric: tabular-nums; }
 .latent .readout .r.live span:first-child::before { content: "> "; color: var(--accent); }

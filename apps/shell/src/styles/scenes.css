@@ -101,7 +101,7 @@
 .arch-row .organ { margin-top: 4px; font: 400 12px var(--font-ui); color: var(--ink-2); }
 .arch-row .live { position: absolute; right: 16px; top: 15px; font: 500 11px var(--font-mono); color: var(--accent); letter-spacing: 0.06em; }
 .arch-row.hot { border-color: oklch(0.85 0.12 var(--hue) / 0.5); box-shadow: 0 0 30px oklch(0.7 0.15 var(--hue) / 0.25); }
-.arch-final { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; background: oklch(0.08 0.02 var(--hue) / 0.92); }
+.arch-final { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; background: radial-gradient(ellipse at 50% 50%, oklch(0.16 0.05 var(--hue) / 0.96), oklch(0.06 0.02 var(--hue) / 0.99) 70%); backdrop-filter: blur(20px); }
 .arch-final h2 { margin: 0; font: 700 clamp(64px, 11vw, 180px)/0.9 var(--font-ui); letter-spacing: -0.055em; }
 .arch-final p { margin: 22px 0 0; font: 400 clamp(18px, 1.8vw, 26px) var(--font-voice); color: var(--ink-2); letter-spacing: 0.01em; }
 .arch-final .fine { margin-top: 44px; font: 400 10.5px var(--font-mono); letter-spacing: 0.26em; color: var(--ink-3); }

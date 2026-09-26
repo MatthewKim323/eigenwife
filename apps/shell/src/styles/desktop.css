@@ -66,7 +66,7 @@
   left: 24px;
   right: calc(var(--calm) + 16px);
   top: 46px;
-  bottom: 118px;
+  bottom: 130px;
   z-index: 5;
   border-radius: 16px;
   overflow: hidden;
@@ -141,7 +141,7 @@
 .cal {
   position: absolute;
   left: 24px;
-  bottom: 22px;
+  bottom: 34px;
   width: 300px;
   min-height: 80px;
   z-index: 6;
@@ -168,10 +168,9 @@
 
 .result {
   position: absolute;
-  left: 340px;
-  bottom: 22px;
-  width: min(360px, calc(100vw - var(--calm) - 360px - 300px));
-  min-width: 240px;
+  right: calc(var(--calm) + 32px);
+  top: 104px;
+  width: 360px;
   z-index: 7;
   padding: 13px 16px;
   border-radius: 18px;
@@ -188,7 +187,7 @@
 /* dock */
 .dock {
   position: absolute;
-  bottom: 18px;
+  bottom: 30px;
   left: calc((100vw - var(--calm)) / 2 + 150px);
   transform: translateX(-50%);
   z-index: 8;

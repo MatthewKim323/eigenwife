@@ -27,7 +27,7 @@ export function SwarmScene() {
   const persona = useShell((s) => s.persona);
   const { w, h } = useSize();
   const cx = (w - CALM) / 2 + 30;
-  const cy = h * 0.5;
+  const cy = h * 0.47;
   const agents = run ? run.order.map((id) => run.agents[id]!).filter(Boolean) : [];
   const pos = useMemo(() => layout(agents, cx, cy, Math.min((w - CALM) * 0.36, 380), Math.min(h * 0.3, 250)), [agents.length, cx, cy, w, h]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -63,7 +63,7 @@ export function SwarmScene() {
         const pa = pos.get(c.lines[0]?.agentId ?? c.a) ?? pos.get(c.a);
         const pb = pos.get(c.lines[1]?.agentId ?? c.b) ?? pos.get(c.b);
         if (!pa || !pb) return null;
-        return <Conflict key={c.conflictId} c={c} a={pa} b={pb} resolved={!!run.resolve} />;
+        return <Conflict key={c.conflictId} c={c} a={pa} b={pb} cy={cy} resolved={!!run.resolve} merged={!!run.merge} />;
       })}
       {run?.merge && <Merge run={run} pos={pos} cx={cx} cy={cy} />}
       <Resolve run={run} />
@@ -174,18 +174,44 @@ function AgentNode({ a, x, y, cx, cy }: { a: SwarmAgent; x: number; y: number; c
       </div>
       {a.result && a.state !== "working" && (
         <div className={`res ${a.ok === false ? "bad" : ""}`}>
-          <span>{a.ok === false ? "✕" : "✓"}</span> {a.result}
+          <span>{a.ok === false ? "✕" : "✓"}</span> {summarizeResult(a.result)}
         </div>
       )}
     </motion.div>
   );
 }
 
-function Conflict({ c, a, b, resolved }: { c: SwarmRun["conflicts"][number]; a: { x: number; y: number }; b: { x: number; y: number }; resolved: boolean }) {
+/** Wives return structured JSON. Show the one line a human would say. */
+export function summarizeResult(raw: string): string {
+  let v: unknown;
+  try {
+    v = JSON.parse(raw);
+  } catch {
+    return raw.length > 90 ? `${raw.slice(0, 88)}...` : raw;
+  }
+  if (!v || typeof v !== "object") return String(v);
+  const o = v as Record<string, any>;
+  for (const k of ["summary", "choice", "pick", "answer"]) if (typeof o[k] === "string") return o[k];
+  if (Array.isArray(o.options) && o.options.length) {
+    const f = o.options[0];
+    const bits = [f.name, f.dish, f.price !== undefined ? `$${f.price}` : null].filter(Boolean).join(" · ");
+    return o.options.length > 1 ? `${bits} (+${o.options.length - 1} more)` : bits;
+  }
+  if (o.availableFrom) return `free ${o.availableFrom}${o.availableUntil ? ` to ${o.availableUntil}` : ""}`;
+  if (o.maxRecommendedSpend !== undefined) return `budget: under $${o.maxRecommendedSpend}${Array.isArray(o.warnings) && o.warnings[0] ? ` · ${o.warnings[0]}` : ""}`;
+  const pairs = Object.entries(o)
+    .filter(([, x]) => typeof x !== "object")
+    .slice(0, 2)
+    .map(([k, x]) => `${k}: ${x}`);
+  return pairs.join(" · ") || "done";
+}
+
+function Conflict({ c, a, b, cy, resolved, merged }: { c: SwarmRun["conflicts"][number]; a: { x: number; y: number }; b: { x: number; y: number }; cy: number; resolved: boolean; merged: boolean }) {
   const mx = (a.x + b.x) / 2;
-  const my = (a.y + b.y) / 2;
+  // Keep the argument clear of Eve's orb.
+  const my = Math.min((a.y + b.y) / 2, cy - 170);
   return (
-    <motion.div className={`conflict ${resolved ? "resolved" : ""}`} style={{ left: mx, top: my }} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: resolved ? 0.35 : 1, scale: 1 }} transition={{ type: "spring", duration: 0.5, bounce: 0.3 }}>
+    <motion.div className={`conflict ${resolved ? "resolved" : ""}`} style={{ left: mx, top: my }} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: merged ? 0 : resolved ? 0.55 : 1, scale: 1 }} transition={{ type: "spring", duration: 0.5, bounce: 0.3 }}>
       <div className="topic mono">CONFLICT · {c.topic}</div>
       {c.lines.slice(0, 2).map((l, i) => (
         <motion.div key={i} className={`bubble ${i ? "r" : "l"}`} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 + i * 0.7 }}>
@@ -199,7 +225,7 @@ function Conflict({ c, a, b, resolved }: { c: SwarmRun["conflicts"][number]; a: 
 function Resolve({ run }: { run: SwarmRun | null }) {
   const text = run?.resolve?.text ?? "";
   const typed = useTypewriter(text, 26);
-  if (!run?.resolve) return null;
+  if (!run?.resolve || run.done) return null;
   return (
     <div className="resolve" key={run.resolve.conflictId}>
       <div className="k mono">EVE</div>

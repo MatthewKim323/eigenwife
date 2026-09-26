@@ -140,10 +140,11 @@ function Constellation({ progress, lifts: ls }: { progress: number; lifts: { key
     return TRAIT_KEYS.map((k) => ({ key: k, a: r() * Math.PI * 2, d: 0.55 + r() * 0.45, wob: r() * 6 }));
   }, []);
   const liftOf = new Map(ls.map((l) => [l.key, l.lift]));
-  const top = new Set(ls.filter((l) => l.lift > 0).slice(0, 3).map((l) => l.key));
+  const topList = ls.filter((l) => l.lift > 0).slice(0, 3).map((l) => l.key);
+  const top = new Set(topList);
   return (
     <div className="constellation" aria-hidden>
-      <svg viewBox={`0 0 ${W} ${H}`}>
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet">
         <defs>
           <radialGradient id="core-glow">
             <stop offset="0" stopColor="white" stopOpacity="0.9" />
@@ -158,7 +159,7 @@ function Constellation({ progress, lifts: ls }: { progress: number; lifts: { key
         {seeds.map((s) => {
           const lift = liftOf.get(s.key) ?? 0;
           const pull = progress * (0.35 + Math.max(0, lift) * 0.7);
-          const rad = s.d * (1 - Math.min(0.88, pull));
+          const rad = Math.max(0.28, s.d * (1 - Math.min(0.7, pull)));
           const x = cx + Math.cos(s.a) * 168 * rad;
           const y = cy + Math.sin(s.a) * 90 * rad;
           const size = 2.2 + Math.max(0, lift) * 5;
@@ -171,7 +172,7 @@ function Constellation({ progress, lifts: ls }: { progress: number; lifts: { key
                   <animate attributeName="r" values={`${size};${size * 1.3};${size}`} dur={`${2.4 + s.wob / 3}s`} repeatCount="indefinite" />
                 </circle>
                 {hot && (
-                  <text x={size + 5} y={3} fontSize="9" fontFamily="DM Mono" fill="white" opacity="0.8" letterSpacing="0.08em">
+                  <text x={size + 5} y={3 + (topList.indexOf(s.key) - 1) * 4} fontSize="9" fontFamily="DM Mono" fill="white" opacity="0.8" letterSpacing="0.08em">
                     {s.key.replace("_", " ")}
                   </text>
                 )}

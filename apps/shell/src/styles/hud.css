@@ -41,7 +41,7 @@
   max-width: 340px;
 }
 .hud-stack.tr { top: 44px; right: 20px; align-items: flex-end; }
-.hud-stack.bl { bottom: 40px; left: 22px; align-items: flex-start; }
+.hud-stack.bl { bottom: 52px; left: 22px; align-items: flex-start; }
 
 .hud-recall { display: flex; flex-direction: column; gap: 4px; align-items: inherit; }
 .hud-stack.tr .hud-recall { align-items: flex-end; }

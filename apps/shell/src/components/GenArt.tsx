@@ -623,7 +623,7 @@ export function FoodArt({ id, className }: { id: string; className?: string }) {
   );
   const dots = useMemo(() => Array.from({ length: 22 }, () => ({ x: 70 + r() * 160, y: 108 + r() * 50, s: r() })), [r]);
   return (
-    <svg className={className} viewBox="0 0 300 220" preserveAspectRatio="xMidYMid slice" role="img" aria-label="illustrated dish">
+    <svg className={className} viewBox="0 24 300 176" preserveAspectRatio="xMidYMid slice" role="img" aria-label="illustrated dish">
       <defs>
         <radialGradient id={`tbl${uid}`} cx="0.5" cy="0.3" r="0.8">
           <stop offset="0" style={{ stopColor: ok(0.34, 0.05, 50) }} />

@@ -52,11 +52,17 @@ function useBridge() {
   });
 
   // Agency: her workspace opens when a task starts, and folds back when it's done.
-  useEvent("task.start", () => {
-    if (sceneRef.current === "swarm") return;
+  const toSwarm = () => {
+    const s = sceneRef.current;
+    // Never yank the audience out of Act I or the architecture slide.
+    if (s === "swarm" || s === "boot" || s === "calibration" || s === "dating" || s === "convergence" || s === "architecture") return;
     shell.set({ eigenOpen: false });
     void shutter(() => go("swarm"), 1300);
-  });
+  };
+  useEvent("task.start", toSwarm);
+  // The harem can run without agency's task.start (CLI, late join).
+  useEvent("swarm.plan", toSwarm);
+  useEvent("swarm.spawn", toSwarm);
   useEvent("task.done", () => {
     setTimeout(() => {
       if (sceneRef.current === "swarm") void shutter(() => go("desktop"), 1300);
