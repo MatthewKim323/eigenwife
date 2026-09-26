@@ -2,16 +2,23 @@
   "name": "eigenwife",
   "private": true,
   "type": "module",
-  "workspaces": ["packages/*", "apps/*"],
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
   "scripts": {
     "dev": "bun run scripts/dev.ts",
     "core": "bun run --cwd packages/core start",
     "shell": "bun run --cwd apps/shell dev",
-    "test": "bun test packages",
-    "typecheck": "bunx tsc -p packages/protocol && bunx tsc -p packages/core && bun run --cwd apps/shell typecheck"
+    "test": "bun test packages apps/shell/src apps/overlay/src",
+    "typecheck": "bunx tsc -p packages/protocol && bunx tsc -p packages/core && bun run --cwd apps/shell typecheck && bun run --cwd apps/overlay typecheck",
+    "overlay": "bun run --cwd apps/overlay start"
   },
   "devDependencies": {
     "@types/bun": "^1.3.14",
     "typescript": "^5.9.3"
-  }
+  },
+  "trustedDependencies": [
+    "electron"
+  ]
 }

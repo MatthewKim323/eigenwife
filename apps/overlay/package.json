@@ -1,0 +1,20 @@
+{
+  "name": "@eigenwife/overlay",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Eve on the real desktop: a transparent, click-through Electron window around the shell's ?mode=overlay.",
+  "main": "dist/main.cjs",
+  "scripts": {
+    "build": "bun build src/main.ts --target=node --format=cjs --external electron --outfile dist/main.cjs && bun build src/preload.ts --target=node --format=cjs --external electron --outfile dist/preload.cjs",
+    "start": "bun run build && bun run ensure-electron && electron .",
+    "typecheck": "tsc -p . --noEmit",
+    "test": "bun test src",
+    "ensure-electron": "node -e \"require('electron')\" 2>/dev/null || install-electron"
+  },
+  "dependencies": {
+    "@eigenwife/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "electron": "44.4.5"
+  }
+}
