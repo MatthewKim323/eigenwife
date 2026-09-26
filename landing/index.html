@@ -7,7 +7,8 @@
 <meta name="description" content="A persistent AI companion compiled from your attention. She shares your gaze, remembers your life, and runs on her own computer.">
 <meta property="og:title" content="eigenwife · your type, compiled">
 <meta property="og:description" content="A persistent AI companion compiled from your attention.">
-<link rel="icon" href="eve.svg" type="image/svg+xml">
+<link rel="icon" href="media/eve-face.webp" type="image/webp">
+<meta property="og:image" content="media/reel.webp">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@500;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
@@ -29,9 +30,10 @@
 </svg>
 
 <nav class="nav">
-  <a class="nav-logo" href="#top" aria-label="eigenwife home"><span class="nav-eve" data-eve></span><span>eigenwife</span></a>
+  <a class="nav-logo" href="#top" aria-label="eigenwife home"><img class="nav-eve sticker" src="media/eve-face.webp" alt=""><span>eigenwife</span></a>
   <div class="nav-links">
     <a href="#acts">how</a>
+    <a href="#real">her</a>
     <a href="#compile">try it</a>
     <a href="#stack">stack</a>
     <a href="#demo">demo</a>
@@ -52,11 +54,14 @@
     </div>
   </div>
   <div class="hero-art">
-    <div class="eve-big sticker" data-eve data-follow></div>
+    <figure class="hero-frame sticker-card">
+      <div class="frame-bar mono"><i></i><i></i><i></i><span>eigen os · emergence</span></div>
+      <video class="clip" src="media/emergence.mp4" poster="media/emergence.webp" muted loop playsinline autoplay preload="metadata"></video>
+    </figure>
+    <img class="hero-face sticker" src="media/eve-face.webp" alt="Eve">
     <div class="float f1 sticker"><svg><use href="#i-eye"/></svg></div>
     <div class="float f2 sticker"><svg><use href="#i-heart"/></svg></div>
     <div class="float f3 sticker"><svg><use href="#i-spark"/></svg></div>
-    <div class="float f4 sticker"><svg><use href="#i-vec"/></svg></div>
     <p class="speech sticker">apparently I'm your type.</p>
   </div>
 </header>
@@ -71,6 +76,7 @@
   <p class="section-sub">starts as a joke dating app. ends looking like a prototype for ambient AGI.</p>
   <div class="act-grid">
     <article class="act sticker-card" style="--c: var(--pink)">
+      <video class="act-media clip" src="media/dating.mp4" poster="media/dating.webp" muted loop playsinline preload="none"></video>
       <div class="act-top"><span class="act-n mono">ACT I</span><svg class="act-icon"><use href="#i-eye"/></svg></div>
       <h3>Eigenvector</h3>
       <p class="act-say">"learn me"</p>
@@ -78,6 +84,7 @@
       <code class="mono">P = Σ rᵢ·Cᵢ / Σ rᵢ</code>
     </article>
     <article class="act sticker-card" style="--c: var(--lilac)">
+      <video class="act-media clip" src="media/convergence.mp4" poster="media/convergence.webp" muted loop playsinline preload="none"></video>
       <div class="act-top"><span class="act-n mono">ACT II</span><svg class="act-icon"><use href="#i-spark"/></svg></div>
       <h3>Emergence</h3>
       <p class="act-say">"become someone"</p>
@@ -85,6 +92,7 @@
       <code class="mono">humor .86 · sarcasm .76 · chaos .61</code>
     </article>
     <article class="act sticker-card" style="--c: var(--mint)">
+      <video class="act-media clip" src="media/desktop.mp4" poster="media/desktop.webp" muted loop playsinline preload="none"></video>
       <div class="act-top"><span class="act-n mono">ACT III</span><svg class="act-icon"><use href="#i-heart"/></svg></div>
       <h3>Companionship</h3>
       <p class="act-say">"understand me"</p>
@@ -92,6 +100,7 @@
       <code class="mono">IGNORE 0.91 · COMMENT 0.78</code>
     </article>
     <article class="act sticker-card" style="--c: var(--butter)">
+      <img class="act-media" src="media/swarm-fanout.webp" alt="the swarm fanning out: calendar, places, memory">
       <div class="act-top"><span class="act-n mono">ACT IV</span><svg class="act-icon"><use href="#i-cursor"/></svg></div>
       <h3>Agency</h3>
       <p class="act-say">"do things for me"</p>
@@ -112,7 +121,7 @@
       <p class="mono model-pct" id="pct">0%</p>
       <div id="traits" class="traits"></div>
       <div class="converged" id="converged" hidden>
-        <div class="eve-mini sticker" data-eve></div>
+        <img class="eve-mini sticker" src="media/eve-face.webp" alt="Eve">
         <div>
           <p class="mono hot">CONVERGENCE DETECTED</p>
           <p class="converged-say" id="converged-say">wow. so this is what your eyes have been telling on you for?</p>
@@ -120,6 +129,17 @@
         </div>
       </div>
     </aside>
+  </div>
+</section>
+
+<section class="gallery" id="real">
+  <h2 class="section-title">this is her. for real.</h2>
+  <p class="section-sub">Live2D rig, seven moods, blinks, breathing, and she glances at whatever you're looking at.</p>
+  <img class="moods sticker-card" src="media/eve-moods.webp" alt="Eve's moods: idle, happy, thinking, annoyed and more" loading="lazy">
+  <div class="swarm-strip">
+    <figure class="shot sticker-card"><img src="media/swarm-fanout.webp" alt="" loading="lazy"><figcaption class="mono">"figure out tonight" · fan out</figcaption></figure>
+    <figure class="shot sticker-card"><img src="media/swarm-conflict.webp" alt="" loading="lazy"><figcaption class="mono">the wives disagree</figcaption></figure>
+    <figure class="shot sticker-card"><img src="media/desktop-result.webp" alt="" loading="lazy"><figcaption class="mono">7:30. cheap ramen. done.</figcaption></figure>
   </div>
 </section>
 
@@ -164,14 +184,11 @@
 
 <section class="demo" id="demo">
   <h2 class="section-title">the demo</h2>
-  <p class="section-sub">two minutes. first thirty seconds absurd, next sixty impressive.</p>
+  <p class="section-sub">the golden path, straight out of Eigen OS. full two-minute cut drops after judging.</p>
   <div class="video sticker-card">
-    <div class="video-inner">
-      <div class="eve-mini sticker" data-eve data-follow></div>
-      <p class="mono">DEMO RENDERING...</p>
-      <p class="video-sub">drops after judging</p>
-    </div>
+    <video src="media/reel.mp4" poster="media/reel.webp" controls muted playsinline preload="metadata"></video>
   </div>
+  <p class="video-note mono">real capture of the shell, recorded headless. a mouse stands in for the eye tracker.</p>
   <ol class="beats mono">
     <li><span>0:00</span> profiles. your eyes do the swiping.</li>
     <li><span>0:23</span> EIGENWOMAN CONVERGED. glitch.</li>

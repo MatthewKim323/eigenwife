@@ -2,10 +2,16 @@
 
 Kawaii sticker system. Eve is the mascot and the ground truth: every asset reuses her.
 
-## Mascot: Eve
-Chibi companion, pink hair with side tails, pink bow, lilac top. Her ahoge is an arrow
-(the eigenvector). Eyes: dark with a violet-to-pink iris and a small heart highlight (gaze).
-Source: `eve.svg` (hand-drawn, original). Pupils are `.pupil` groups so the page can move them.
+## Eve (real model only)
+The page uses the real Eve from the shell: Haru, the Live2D sample model (Live2D Free Material
+License, fine for the hackathon, check before commercial use). Never Alexia on this page:
+she's third-party art and the repo rule is her renders are never committed (see docs/WARDROBE.md).
+
+## Media (`media/`)
+Real captures of the shell (`apps/shell`, `?model=haru&mic=0&gaze=mouse`), recorded headless with
+editskill's browser capture; a mouse hover stands in for the eye tracker. Raw captures live in
+`media-raw/` (gitignored). Stills come from `docs/screens/` (committed Haru/shell screens only).
+Re-shoot: scenes `dating`, `convergence`, `emergence`, `desktop`; encode 1280w h264 crf 27 faststart.
 
 ## Palette
 | role | hex |

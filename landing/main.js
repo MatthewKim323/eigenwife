@@ -1,27 +1,21 @@
-// eigenwife landing: Eve's eyes, the compile-your-type toy, and a few live diagnostics.
+// eigenwife landing: real clips, the compile-your-type toy, and a few live diagnostics.
 
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-// Eve: one SVG, inlined everywhere so her pupils can follow you.
-const eveSrc = await fetch("eve.svg").then((r) => r.text());
-let eveN = 0;
-for (const el of document.querySelectorAll("[data-eve]")) {
-  const id = `iris${eveN++}`;
-  el.innerHTML = eveSrc.replaceAll('id="iris"', `id="${id}"`).replaceAll("url(#iris)", `url(#${id})`);
-}
-
-const pupils = [...document.querySelectorAll("[data-eve] .pupil")];
-if (!reduced) {
-  addEventListener("pointermove", (e) => {
-    for (const p of pupils) {
-      const r = p.ownerSVGElement.getBoundingClientRect();
-      const dx = e.clientX - (r.left + r.width / 2);
-      const dy = e.clientY - (r.top + r.height * 0.5);
-      const d = Math.hypot(dx, dy) || 1;
-      const k = Math.min(d / 300, 1) * 4.5; // svg units, stays inside the eye
-      p.setAttribute("transform", `translate(${((dx / d) * k).toFixed(2)} ${((dy / d) * k).toFixed(2)})`);
-    }
-  });
+// Clips play only while on screen (and not at all with reduced motion).
+const clips = [...document.querySelectorAll("video.clip")];
+if (reduced) clips.forEach((v) => v.removeAttribute("autoplay"));
+else {
+  const io = new IntersectionObserver(
+    (entries) => {
+      for (const e of entries) {
+        if (e.isIntersecting) e.target.play().catch(() => {});
+        else e.target.pause();
+      }
+    },
+    { threshold: 0.35 },
+  );
+  clips.forEach((v) => io.observe(v));
 }
 
 // compile your type: hover dwell is the attention reward
