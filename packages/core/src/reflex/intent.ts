@@ -11,6 +11,8 @@ export interface UtteranceIntent {
   task: boolean;
   /** "close it", "quit spotify": one small immediate action. app undefined means "whatever is open". */
   command: { kind: "close"; app?: string } | null;
+  /** "let's listen to music", "play our song", "play <x>", "pause", "skip". */
+  music: { op: "play" | "pause" | "resume" | "next" | "previous"; query?: string } | null;
   /** "how do i", "help me". */
   help: boolean;
   question: boolean;
@@ -38,6 +40,15 @@ const LAUGH = /\b(?:lol+|lmao+|lmfao|haha+|hehe+|rofl|dead|i'?m crying)\b|ðŸ˜‚|ð
 const DOWN = /\b(?:sad|depressed|lonely|rough day|bad day|tired|exhausted|stressed|breakup|broke up|dumped|miss (?:her|him|them)|cry(?:ing)?|anxious|overwhelmed)\b/i;
 const APPROVAL = /^(?:yeah|yea|yes|yep|yup|sure|ok(?:ay)?|do it|go(?: for it| ahead)?|lock it in|send it|nah|no|nope|don'?t)\b[\s.!]*$/i;
 const FILLER = /^(?:um+|uh+|hm+|mm+|hmm+|ah+|oh|ok|okay|k|cool|nice|right)[\s.!?]*$/i;
+const MUSIC_PLAY =
+  /^(?:(?:yo|hey|ok(?:ay)?|eve)[,\s]+)*(?:let'?s|lets|can we|can you|could you|wanna|want to|please)?\s*(?:listen to|play|put on|throw on|bump|queue up|spin)\s+(.{1,60}?)(?:\s+(?:bro|please|for me|on spotify|rn|now))*[\s.!?]*$/i;
+const MUSIC_VIBE = /\b(?:let'?s|lets)\s+(?:listen to|vibe to|play)\s+(?:some\s+)?music\b|\b(?:music time|drop the beat|put some music on)\b/i;
+const MUSIC_CTRL: [RegExp, "pause" | "resume" | "next" | "previous"][] = [
+  [/^(?:(?:yo|eve)[,\s]+)?(?:pause|stop)\s+(?:the\s+)?(?:music|song|spotify)\b|^pause(?: it)?[\s.!]*$/i, "pause"],
+  [/^(?:(?:yo|eve)[,\s]+)?(?:skip|next)(?:\s+(?:it|this|song|track|this song|this one))?[\s.!]*$|\bnext song\b|\bskip (?:this|the) (?:song|track)\b/i, "next"],
+  [/\b(?:previous|last) (?:song|track)\b|^go back[\s.!]*$/i, "previous"],
+  [/^(?:(?:yo|eve)[,\s]+)?(?:resume|unpause|keep playing|play it again|turn (?:it|the music) back on)\b/i, "resume"],
+];
 const COMMAND = /\b(?:close|quit|kill|exit)\s+(?:the\s+)?(?:(it|that|this|dating app|eigen|[a-z][\w ]{1,20}?))(?:\s+app)?[\s.!]*$/i;
 
 export function readIntent(text: string): UtteranceIntent {
@@ -51,11 +62,26 @@ export function readIntent(text: string): UtteranceIntent {
     const app = raw === "it" || raw === "that" || raw === "this" ? undefined : raw === "dating app" || raw === "eigen" ? "Eigen" : cmd[1]!.trim();
     command = { kind: "close", app };
   }
+  let music: UtteranceIntent["music"] = null;
+  if (!stop && words <= 12) {
+    const ctrl = MUSIC_CTRL.find(([re]) => re.test(t));
+    if (ctrl) music = { op: ctrl[1] };
+    else if (MUSIC_VIBE.test(t)) music = { op: "play" };
+    else {
+      const m = MUSIC_PLAY.exec(t);
+      // "play" + something that isn't a game or a task ("play league", "play it cool" stay chat).
+      if (m && !/\b(?:league|valorant|fortnite|minecraft|chess|games?|it cool|dumb|along|around|with)\b/i.test(m[1]!)) {
+        const q = m[1]!.replace(/^(?:some|a|the|our|my)\s+/i, (x) => (/^(?:our|my)\s/i.test(x) ? x : "")).trim();
+        music = { op: "play", query: /^(?:music|a song|something|some music|song)$/i.test(q) ? undefined : q };
+      }
+    }
+  }
   const question = /\?\s*$/.test(t) || QUESTION_START.test(t);
   return {
     stop,
     task: !stop && TASK.test(t),
-    command: stop ? null : command,
+    command: stop || music ? null : command,
+    music,
     help: HELP.test(t),
     question,
     deictic: DEICTIC.test(t) && words <= 12,

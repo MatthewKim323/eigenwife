@@ -114,9 +114,9 @@ function scoreUtterance(input: JevInput, text: string): LocalResult {
     l.ESCALATE = 4;
     l.HELP = 1.5;
     why.push("task intent");
-  } else if (it.command) {
+  } else if (it.command || it.music) {
     l.ACT = 3.5;
-    why.push(`command ${it.command.kind}`);
+    why.push(it.music ? `music ${it.music.op}` : `command ${it.command!.kind}`);
   } else if (it.help) {
     l.HELP = 3;
     l.REACT = 1.5;

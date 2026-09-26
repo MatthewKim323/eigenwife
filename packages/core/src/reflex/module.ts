@@ -30,6 +30,7 @@ const URGENCY_RANK: Record<Urgency, number> = { immediate: 0, soon: 1, later: 2 
 /** The acknowledgement before a task. Scripted: fast, and cacheable by the speech layer. */
 export const ACK_LINES = ["on it.", "okay. give me a sec.", "leave it to me.", "on it. don't move."];
 // Same text as the speech module's scripted lines, so the pre-rendered audio is a cache hit.
+export const MUSIC_LINES = ["[mood:happy 0.7] ooh. okay. our song.", "[mood:smug 0.6] finally, taste.", "[mood:happy 0.6] bet. turning it up."];
 export const RELAPSE_LINE = "[mood:annoyed 0.8] ...seriously?";
 export const BIRTH_LINE = "[mood:smug 0.6] so. apparently this is your type.";
 
@@ -343,6 +344,19 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
       await say(RELAPSE_LINE, t, t.parent, "annoyed", true);
       args = { app: String(t.data.app ?? "Eigen") };
       description = `close ${args.app}: user relapsed onto the dating app`;
+    } else if (v.intent?.music) {
+      const mu = v.intent.music;
+      if (mu.op === "play") {
+        kind = "music.play";
+        args = mu.query ? { query: mu.query } : { query: "our song" };
+        description = mu.query ? `play ${mu.query}` : "play our song";
+        await say(pick(mu.query ? ["okay. one sec.", "bet.", "fine. putting it on."] : MUSIC_LINES, t.id), t, t.parent, "happy");
+      } else {
+        kind = "music.control";
+        args = { op: mu.op };
+        description = `${mu.op} the music`;
+        if (mu.op !== "pause") await say(pick(["mm.", "okay.", "next."], t.id), t, t.parent);
+      }
     } else if (v.intent?.command) {
       // The dating app lives in the shell (shell.close_app); anything else is a real macOS app (app.quit).
       const app = v.intent.command.app ?? ctx.world().desktop.activeApp;

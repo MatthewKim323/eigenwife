@@ -6,6 +6,7 @@ import type { CoreContext, Module } from "../context";
 import { json } from "../hub";
 import type { AgencyService, BrainService } from "../services";
 import { appQuit, browserOpen, shellCloseApp, shellOpen } from "./actions/apps";
+import { musicControl, musicPlay } from "./actions/music";
 import { calendarCreateAlias, calendarCreateEvent, calendarDeleteEvent, calendarFreeBusy } from "./actions/calendar";
 import { placesSearchAction } from "./actions/places";
 import { webScrape, webScrapeAction, webSearchAction } from "./actions/web";
@@ -85,7 +86,7 @@ export function createAgency(ctx: CoreContext, opts: AgencyOptions = {}) {
   const deps: AgencyDeps = { ...defaultDeps(), ...opts.deps };
   const budget = opts.budget ?? (Number(deps.env("EIGEN_ACTION_BUDGET")) || 25);
   const gate = new Gate(ctx, deps, new Policy(budget), opts.approvalTimeoutMs ?? 30_000);
-  gate.register(calendarCreateEvent, calendarCreateAlias, calendarDeleteEvent, calendarFreeBusy, browserOpen, webSearchAction, webScrapeAction, placesSearchAction, shellCloseApp, shellOpen, appQuit);
+  gate.register(calendarCreateEvent, calendarCreateAlias, calendarDeleteEvent, calendarFreeBusy, browserOpen, webSearchAction, webScrapeAction, placesSearchAction, shellCloseApp, shellOpen, appQuit, musicPlay, musicControl);
 
   // Someone else (harem, shell, an operator script) asked for an action on the bus:
   // same gate, their actionId, never their permission claim if it's lower than ours.
