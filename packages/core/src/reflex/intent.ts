@@ -33,7 +33,7 @@ const TASK =
 const HELP = /\b(?:how do i|how can i|help me|can you help|could you help|walk me through|explain|what does .* mean)\b/i;
 const QUESTION_START =
   /^(?:who|what|whats|what's|when|where|why|how|which|is|are|was|were|do|does|did|should|could|would|can|will|shall|thoughts|any thoughts|opinion|yay or nay)\b/i;
-const DEICTIC = /\b(?:this|that|these|those|this one|that one|the one|it|here|there)\b|^thoughts\??$|^(?:yay or nay|opinion)\??$/i;
+const DEICTIC = /\b(?:this|that|these|those|this one|that one|the one|this place|over here)\b|^thoughts\??$|^(?:yay or nay|opinion)\??$/i;
 const LAUGH = /\b(?:lol+|lmao+|lmfao|haha+|hehe+|rofl|dead|i'?m crying)\b|😂|🤣|💀/i;
 const DOWN = /\b(?:sad|depressed|lonely|rough day|bad day|tired|exhausted|stressed|breakup|broke up|dumped|miss (?:her|him|them)|cry(?:ing)?|anxious|overwhelmed)\b/i;
 const APPROVAL = /^(?:yeah|yea|yes|yep|yup|sure|ok(?:ay)?|do it|go(?: for it| ahead)?|lock it in|send it|nah|no|nope|don'?t)\b[\s.!]*$/i;

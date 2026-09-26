@@ -20,7 +20,7 @@ export interface JevInput {
   world: WorldSnapshot;
   relationship: RelationshipState;
   now: number;
-  /** When she last reacted (anything but IGNORE). */
+  /** When she last reacted out loud or acted (not IGNORE, not a silent GLANCE). */
   lastReactionAt?: number;
   /** An action is waiting on a spoken yes/no: short approvals belong to agency. */
   pendingApproval?: boolean;
@@ -54,6 +54,12 @@ const LOW = -1.5;
 export function whim(id: string): number {
   let h = 2166136261;
   for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 16777619);
+  // murmur3 finalizer: ids differ only in their tail ("stare#41", "stare#42"), so mix hard
+  h ^= h >>> 16;
+  h = Math.imul(h, 0x85ebca6b);
+  h ^= h >>> 13;
+  h = Math.imul(h, 0xc2b2ae35);
+  h ^= h >>> 16;
   return ((h >>> 0) / 2 ** 32) * 2 - 1;
 }
 
@@ -159,7 +165,7 @@ function ambientSalience(t: Trigger, input: JevInput, l: Scores, why: string[]) 
     case "repeat_media": {
       const n = Number(t.data.count ?? 3);
       l.IGNORE = 2.2;
-      l.COMMENT = 1.2 + 1.2 * (n - 3) + (r.banter - 0.5) * 1.5;
+      l.COMMENT = 1.2 + 1.4 * (n - 3) + (r.banter - 0.5) * 1.5;
       l.GLANCE = 0.4;
       why.push(`track x${n}`);
       return;
@@ -178,7 +184,7 @@ function ambientSalience(t: Trigger, input: JevInput, l: Scores, why: string[]) 
       const kind = String(t.data.kind ?? "");
       const ms = Number(t.data.ms ?? 0);
       l.IGNORE = 2.4;
-      l.GLANCE = 0.9 + Math.min(1, (ms - 4000) / 6000);
+      l.GLANCE = 1.8 + 0.8 * Math.min(1, (ms - 4000) / 5000);
       l.COMMENT = (kind === "menu-item" || kind === "restaurant" ? 0.5 : -0.2) + (r.initiative - 0.5);
       why.push(`stare ${kind} ${(ms / 1000).toFixed(1)}s`);
       return;
@@ -192,7 +198,7 @@ function ambientSalience(t: Trigger, input: JevInput, l: Scores, why: string[]) 
     case "face_return":
       l.IGNORE = 1.4;
       l.GLANCE = 1.3;
-      l.REACT = 0.8 + r.warmth;
+      l.REACT = 1.2 + r.warmth;
       why.push("welcome back");
       return;
     case "app_opened":
