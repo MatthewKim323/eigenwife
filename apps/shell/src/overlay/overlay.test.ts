@@ -112,9 +112,9 @@ describe("status chip", () => {
     attentionPaused: false,
   };
 
-  test("priority: offline > asleep > approval > muted > thinking > heard > listening", () => {
+  test("priority: offline > waking > approval > muted > thinking > heard > listening", () => {
     expect(chipFor({ ...base, connected: false, born: false }).kind).toBe("offline");
-    expect(chipFor({ ...base, born: false }).kind).toBe("asleep");
+    expect(chipFor({ ...base, born: false }).text).toBe("waking up");
     expect(chipFor({ ...base, approval: "add ramen to calendar", thinking: true }).text).toContain("say");
     expect(chipFor({ ...base, muted: true, thinking: true }).kind).toBe("muted");
     expect(chipFor({ ...base, thinking: true }).kind).toBe("thinking");
@@ -128,7 +128,7 @@ describe("status chip", () => {
     expect(triggerLabel("companion_born#1")).toBe("companion born");
   });
 
-  test("asleep hint says what to do", () => {
-    expect(chipFor({ ...base, born: false }).sub).toContain("Eigen");
+  test("never asleep on the desktop: unborn shows waking up, not a sleep state", () => {
+    expect(chipFor({ ...base, born: false }).kind).toBe("idle");
   });
 });

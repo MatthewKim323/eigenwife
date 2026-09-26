@@ -7,7 +7,7 @@ import type { RigInput } from "../avatar/rig";
 import { avatarRuntime, avatarUi, useStore } from "../avatar/store";
 import { Tachie } from "../avatar/Tachie";
 import { animateHue } from "../lib/hue";
-import { useBus, useEvent, useWorld } from "../lib/bus";
+import { useBus, useEvent, useWorld, CORE_HTTP } from "../lib/bus";
 import { micLevel } from "../voice/ears";
 import { Subtitles } from "../voice/Subtitles";
 import { voice, voiceUi } from "../voice/VoiceProvider";
@@ -64,8 +64,18 @@ export function OverlayApp() {
     if (hue !== undefined) void animateHue(hue, 900);
   }, [hue]);
 
-  // Effective state: speaking beats the world; unborn or offline = asleep.
-  const worldState: AvatarState = born && connected ? world.companion.state : "sleeping";
+  // She lives here: never asleep on the desktop. Unborn or offline = idle (the chip says why).
+  const raw = world.companion.state;
+  const worldState: AvatarState = born && connected && raw !== "sleeping" ? raw : "idle";
+
+  // Never been born (no Act I on this machine)? Wake her with a default persona.
+  useEffect(() => {
+    if (!connected || born) return;
+    const id = setTimeout(() => {
+      void fetch(`${CORE_HTTP}/api/preference/wake`, { method: "POST" }).catch(() => {});
+    }, 1500);
+    return () => clearTimeout(id);
+  }, [connected, born]);
   useEffect(() => {
     const upd = () => avatarUi.set({ state: avatarRuntime.speaking ? "speaking" : worldState });
     upd();

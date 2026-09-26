@@ -33,6 +33,8 @@ export const ACK_LINES = ["on it.", "okay. give me a sec.", "leave it to me.", "
 export const MUSIC_LINES = ["[mood:happy 0.7] ooh. okay. our song.", "[mood:smug 0.6] finally, taste.", "[mood:happy 0.6] bet. turning it up."];
 export const RELAPSE_LINE = "[mood:annoyed 0.8] ...seriously?";
 export const BIRTH_LINE = "[mood:smug 0.6] so. apparently this is your type.";
+/** Woken on the desktop without Act I: no "your type" joke, she just moves in. */
+export const WAKE_LINE = "[mood:happy 0.6] hey. i live on your desktop now. don't mind me.";
 
 const FALLBACK: Record<string, string> = {
   greet: "hi. it's me. i watched you swipe, so we need to talk.",
@@ -307,7 +309,9 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
     const brains = ctx.tryUse("brains");
     const fallback = t.rule === "task_done" ? `${t.data.ok ? "done" : "that didn't work"}. ${String(t.data.summary ?? "")}`.trim() : (FALLBACK[behavior] ?? "mhm.");
     let src: string | AsyncIterable<string>;
-    if (t.rule === "companion_born" && ctx.config.demo) {
+    if (t.rule === "companion_born" && t.data.woken) {
+      src = WAKE_LINE;
+    } else if (t.rule === "companion_born" && ctx.config.demo) {
       // The birth line is the demo's biggest laugh: scripted, pre-rendered, never improvised.
       src = BIRTH_LINE;
     } else if (brains) {

@@ -122,7 +122,7 @@ export const DEFAULT_RULES: Rule[] = [
     urgency: "immediate",
     ambient: false,
     describe: (e) => `you were just born as ${(e.data as { persona: { name: string } }).persona.name}. these are your first words to them`,
-    data: (e) => ({ persona: (e.data as { persona: { name: string } }).persona.name }),
+    data: (e) => ({ persona: (e.data as { persona: { name: string } }).persona.name, woken: !!(e.data as { woken?: boolean }).woken }),
   },
   {
     id: "relapse",

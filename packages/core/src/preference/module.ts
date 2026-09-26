@@ -145,12 +145,12 @@ export function preferenceModule(opts: PreferenceModuleOptions = {}): Module {
       const emitUpdate = (parent?: string) =>
         ctx.bus.emit("preference.update", { vector: round3(P), deltas: D, progress: conv.progress, observations: conv.n }, "core", parent);
 
-      const emitBorn = () => {
+      const emitBorn = (woken = false) => {
         if (!persona || bornEmitted) return;
         bornEmitted = true;
         wantBorn = false;
         bornAt = Date.now();
-        ctx.bus.emit("companion.born", { persona });
+        ctx.bus.emit("companion.born", woken ? { persona, woken: true } : { persona });
         void persistProfile();
         log("Eve is born");
       };
@@ -276,6 +276,15 @@ export function preferenceModule(opts: PreferenceModuleOptions = {}): Module {
         if (req.method !== "POST") return null;
         await service.reset();
         return json({ ok: true });
+      });
+      // Wake her without Act I (the desktop overlay does this): converge on whatever
+      // attention exists (none = a balanced default persona) and she's born.
+      ctx.route("/api/preference/wake", async (req) => {
+        if (req.method !== "POST") return null;
+        if (bornEmitted) return json({ ok: true, already: true, persona });
+        const p = await service.converge();
+        if (p) emitBorn(true);
+        return json({ ok: !!p, persona: p });
       });
       ctx.route("/api/preference/converge", async (req) => {
         if (req.method !== "POST") return null;

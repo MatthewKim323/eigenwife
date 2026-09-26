@@ -163,7 +163,7 @@ export interface EventMap {
 
   // --- act II/III: companion ----------------------------------------------------
   /** restored: she was already born before a core restart; skip the emergence animation. */
-  "companion.born": { persona: Persona; restored?: boolean };
+  "companion.born": { persona: Persona; restored?: boolean; /** Woken with a default persona (no Act I), e.g. by the desktop overlay. */ woken?: boolean };
   "reflex.decision": {
     trigger: string;
     decision: ReflexDecision;

@@ -27,7 +27,7 @@ const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1).trimEnd
 
 export function chipFor(s: ChipInput): Chip {
   if (!s.connected) return { kind: "offline", text: "core offline", sub: "bun run dev" };
-  if (!s.born) return { kind: "asleep", text: "asleep", sub: "run the Eigen flow first" };
+  if (!s.born) return { kind: "idle", text: "waking up" };
   if (s.approval) return { kind: "approval", text: "say “yeah”", sub: clip(s.approval, 42) };
   if (s.muted) return { kind: "muted", text: "mic muted", sub: "⌘⇧M" };
   if (s.thinking) return { kind: "thinking", text: "thinking" };
