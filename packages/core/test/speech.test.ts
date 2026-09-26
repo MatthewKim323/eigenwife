@@ -142,6 +142,18 @@ describe("speech pipeline", () => {
     expect(t.live().map((x) => x.name)).toEqual(["say"]);
   });
 
+  test("tts probe parks a dead network backend at boot and skips local say", async () => {
+    const broken = fakeBackend("openai", () => 1, () => new HttpError(429, "insufficient_quota", "openai tts"));
+    const local = fakeBackend("say");
+    const t = new Tts([broken, local], new AudioCache(tmp()));
+    expect(await t.probe()).toEqual({ openai: false });
+    expect(local.calls).toEqual([]);
+    expect(t.live().map((x) => x.name)).toEqual(["say"]);
+    const ok = new Tts([fakeBackend("openai")], new AudioCache(tmp()));
+    expect(await ok.probe()).toEqual({ openai: true });
+    expect(ok.lookup("hm.")?.backend).toBe("openai");
+  });
+
   test("no TTS at all: segments still go out, without audioUrl", async () => {
     const r = rig({ noTts: true });
     await r.speech.say(LINES.price);

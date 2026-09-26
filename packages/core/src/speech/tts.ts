@@ -233,6 +233,24 @@ export class Tts {
     return null;
   }
 
+  /**
+   * Render one short filler with every configured network backend that has
+   * no cached copy yet. A dead key gets parked at boot (so the first real
+   * line doesn't pay for it) and a live one leaves a useful cached filler.
+   */
+  async probe(text = "hm."): Promise<Record<string, boolean>> {
+    const out: Record<string, boolean> = {};
+    for (const b of this.backends) {
+      if (b.name === "say" || !b.configured() || this.health.cooling(b.name)) continue;
+      if (this.cache.get(audioKey(b.voiceKey(), text))) {
+        out[b.name] = true;
+        continue;
+      }
+      out[b.name] = !!(await this.render(text, AbortSignal.timeout(8000), { only: b.name }));
+    }
+    return out;
+  }
+
   private rendered(sha: string, ext: AudioExt, backend: string, cached: boolean, ms: number): Rendered {
     return { sha, ext, file: this.cache.path(sha, ext), url: `/api/audio/${sha}.${ext}`, backend, cached, ms };
   }

@@ -82,7 +82,7 @@ export function brainsModule(overrides: Partial<BrainsDeps> = {}): Module {
       instances.set(ctx, brains);
       ctx.provide("brains", brains);
       // Don't block boot on jabby's health check.
-      void brains.refresh().then(() => ctx.log("brains", "live:", liveList(brains)));
+      void Promise.all([brains.refresh(), overrides.personaBackends ? null : brains.probe()]).then(() => ctx.log("brains", "live:", liveList(brains)));
       timer = setInterval(() => void brains.refresh(), 15_000);
       (timer as { unref?: () => void }).unref?.();
 

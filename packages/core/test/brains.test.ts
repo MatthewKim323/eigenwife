@@ -91,6 +91,18 @@ describe("persona routing", () => {
     expect(b.status()["claude-cli"]).toBe(true);
   });
 
+  test("boot probe parks a dead key so no real turn pays for it", async () => {
+    const calls: string[] = [];
+    const b = brains({
+      personaBackends: [scriptedBackend("openai", new HttpError(429, "insufficient_quota", "openai"), calls), scriptedBackend("anthropic", ["ok"], calls), scriptedBackend("claude-cli", ["hi."], calls)],
+    });
+    expect(await b.probe()).toEqual({ openai: false, anthropic: true });
+    expect(b.status().openai).toBe(false);
+    calls.length = 0;
+    await collect(b.persona({ event: "x", behavior: "y" }));
+    expect(calls).toEqual(["anthropic"]);
+  });
+
   test("empty replies count as failures", async () => {
     const b = brains({ personaBackends: [scriptedBackend("featherless", []), scriptedBackend("openai", ["hi."])] });
     expect((await collect(b.persona({ event: "x", behavior: "y" }))).join("")).toBe("hi.");

@@ -56,8 +56,12 @@ export function speechModule(overrides: Partial<SpeechDeps> & { tts?: Tts | null
       speech = createSpeech({ bus: ctx.bus, log: (...a) => ctx.log("speech", ...a), ...overrides, tts });
       instances.set(ctx, { speech, tts });
       ctx.provide("speech", speech);
-      const live = tts?.live().map((b) => b.name) ?? [];
-      ctx.log("speech", `tts: ${live.length ? live.join(" > ") : "none (segments without audio)"}; cache ${tts?.cache.size ?? 0} files`);
+      const report = () => {
+        const live = tts?.live().map((b) => b.name) ?? [];
+        ctx.log("speech", `tts: ${live.length ? live.join(" > ") : "none (segments without audio)"}; cache ${tts?.cache.size ?? 0} files`);
+      };
+      if (tts && overrides.tts === undefined) void tts.probe().then(report);
+      else report();
 
       ctx.route("/api/audio/", async (req, url) => {
         if (req.method !== "GET" && req.method !== "HEAD") return null;

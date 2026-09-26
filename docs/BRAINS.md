@@ -37,7 +37,7 @@ A streaming `AsyncIterable<string>` of what Eve says, marks included. The router
 
 **Never leaks errors.** `guardSpoken()` holds the head of every stream (until a sentence end or 48 chars) and checks it against `ERROR_RE` (jabby's voice regex plus billing/auth strings like `insufficient_quota`). A match throws `LeakError`, and the router moves on to the next backend with nothing spoken. Later in the stream, error chatter cuts the line instead of being spoken. Every chunk is also sanitized: em/en dashes become commas, emoji, markdown and quote marks are removed, and a leading `Eve:` label is stripped.
 
-**Circuit breaker.** `HealthBook` parks a backend after a failure: 10 minutes for 401/402/403/429 or any billing/rate-limit text, 20 seconds for anything else. Parked backends are skipped, so no turn pays for a dead key's latency. After the cooldown they are retried automatically. When matt tops up OpenAI or adds a Featherless key, Eve switches over on her own without a restart (keys are read at call time).
+**Circuit breaker.** `HealthBook` parks a backend after a failure: 10 minutes for 401/402/403/429 or any billing/rate-limit text, 20 seconds for anything else. Parked backends are skipped, so no turn pays for a dead key's latency. At boot, `probe()` makes one tiny call per configured API backend (and the speech module renders a `hm.` filler per network TTS backend), so a key with no credits is parked before the first real turn. After the cooldown they are retried automatically. When matt tops up OpenAI or adds a Featherless key, Eve switches over on her own without a restart (keys are read at call time).
 
 A backend that fails after it already spoke is not retried in another voice: the partial line stands.
 

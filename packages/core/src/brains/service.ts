@@ -68,6 +68,12 @@ export interface Brains extends BrainService {
   harem: HaremBrain;
   /** Refresh async availability (jabby health). */
   refresh(): Promise<void>;
+  /**
+   * One tiny call per configured API backend (not the CLI) so a dead key
+   * (no credits, bad auth) is parked at boot instead of costing the first
+   * real turn. Returns backend -> ok.
+   */
+  probe(timeoutMs?: number): Promise<Record<string, boolean>>;
 }
 
 /** Said when every persona backend is down, so she never goes silent mid-demo. */
@@ -98,6 +104,28 @@ export function createBrains(deps: BrainsDeps): Brains {
   let offline = 0;
 
   const live = (b: ChatBackend) => b.configured() && !health.cooling(b.name);
+
+  async function probe(timeoutMs = 8000): Promise<Record<string, boolean>> {
+    const out: Record<string, boolean> = {};
+    await Promise.all(
+      personaBackends
+        .filter((b) => b.configured() && b.name !== "claude-cli")
+        .map(async (b) => {
+          const t0 = io.now();
+          try {
+            let text = "";
+            for await (const c of b.stream({ system: "Reply with the single word ok.", user: "ok" }, { maxTokens: 8, temperature: 0, signal: AbortSignal.timeout(timeoutMs) })) text += c;
+            health.ok(b.name, io.now() - t0, undefined, b.model());
+            out[b.name] = true;
+          } catch (err) {
+            health.fail(b.name, err);
+            out[b.name] = false;
+            log(`probe: ${b.name} is down, parked (${describe(err).replace(/\s+/g, " ").slice(0, 120)})`);
+          }
+        }),
+    );
+    return out;
+  }
 
   async function refresh() {
     await Promise.all(
@@ -266,5 +294,5 @@ export function createBrains(deps: BrainsDeps): Brains {
     return out;
   }
 
-  return { persona, frontier, quickJson, status, health, lastPersona: () => last, detail, engines, harem, refresh };
+  return { persona, frontier, quickJson, status, health, lastPersona: () => last, detail, engines, harem, refresh, probe };
 }
