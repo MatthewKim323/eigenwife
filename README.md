@@ -14,7 +14,15 @@ bun run dev              # core (:7777) + shell (:5173)
 bun run dev --all        # + webcam gaze (eye serve :8765) + macOS app watcher
 ```
 
-Open http://127.0.0.1:5173 fullscreen. Add `?gaze=mouse` to fake gaze with the pointer (dev and backup). Use headphones: she listens while she talks.
+Open http://127.0.0.1:5173 fullscreen. Add `?gaze=mouse` to fake gaze with the pointer (dev and backup). Use headphones: she listens while she talks. `?stt=deepgram|browser|auto` picks the ears (Deepgram via the core, or Chrome Web Speech).
+
+Once she's born, let her live on your real desktop while you work:
+
+```bash
+bun run overlay          # with `bun run dev` running: Eve floats bottom-right, click-through except her pixels
+```
+
+`⌘⇧E` show/hide, `⌘⇧M` mute, drag her anywhere, the menu bar heart has the rest. Mic goes through Deepgram (`DEEPGRAM_API_KEY`). See [OVERLAY](docs/OVERLAY.md).
 
 Before a demo:
 
