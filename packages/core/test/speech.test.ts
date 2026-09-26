@@ -366,7 +366,7 @@ describe("tts backends", () => {
       }) as never,
     );
     expect((await b.synth("so. apparently this is your type.")).ext).toBe("mp3");
-    expect(url).toBe("https://api.deepgram.com/v1/speak?model=aura-2-luna-en&encoding=mp3");
+    expect(url).toBe("https://api.deepgram.com/v1/speak?model=aura-2-andromeda-en&encoding=mp3");
     expect(auth.startsWith("Token ")).toBe(true);
     expect(body).toEqual({ text: "so. apparently this is your type." });
     const bad = deepgramTts(io({ fetch: async () => new Response("unauthorized", { status: 401 }) }) as never);

@@ -67,8 +67,8 @@ export function openAiTts(io: TtsIO): TtsBackend {
   };
 }
 
-/** Aura-2 voice. Luna: young, soft, a little playful; fits Eve's deadpan without going bubbly. */
-export const DEEPGRAM_DEFAULT_VOICE = "aura-2-luna-en";
+/** Aura-2 voice. Andromeda: casual and expressive, less read-aloud than the others. */
+export const DEEPGRAM_DEFAULT_VOICE = "aura-2-andromeda-en";
 
 export function deepgramTts(io: TtsIO): TtsBackend {
   const voice = () => io.secret("EVE_DEEPGRAM_VOICE") || DEEPGRAM_DEFAULT_VOICE;
