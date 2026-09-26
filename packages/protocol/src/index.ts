@@ -306,3 +306,4 @@ export function emptyWorld(): WorldSnapshot {
     slots: {},
   };
 }
+export * from "./world";

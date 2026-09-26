@@ -1,0 +1,13 @@
+{
+  "name": "@eigenwife/core",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "start": "bun run src/main.ts",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@eigenwife/protocol": "workspace:*"
+  }
+}
