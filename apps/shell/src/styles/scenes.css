@@ -1,0 +1,107 @@
+/* ---- boot ------------------------------------------------------------------ */
+.boot { position: absolute; inset: 0; display: grid; place-items: center; background: black; }
+.boot .ambient { opacity: 0.55; }
+.boot-dim { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 60%, transparent 0%, black 75%); }
+.boot-col { position: relative; width: min(640px, calc(100vw - 48px)); }
+.boot-brand { font-size: 12px; letter-spacing: 0.3em; color: var(--ink); margin-bottom: 26px; }
+.boot-brand .dim { letter-spacing: 0.12em; margin-left: 12px; }
+.boot-log { font-size: 12.5px; line-height: 2; color: var(--ink-2); min-height: 150px; letter-spacing: 0.04em; }
+.log-line { white-space: pre; animation: lamp 180ms linear both; }
+.log-line .tag { color: var(--ink-3); }
+.log-line.ok .tag { color: var(--ok); }
+.log-line.skip .tag { color: var(--warn); }
+.log-line.wait .tag { animation: blinky 0.8s steps(2) infinite; }
+.log-line .note { color: var(--ink-3); }
+@keyframes blinky { 50% { opacity: 0.3; } }
+.caret { display: inline-block; width: 8px; height: 14px; background: var(--ink-2); vertical-align: -2px; animation: blinky 0.9s steps(1) infinite; }
+
+.boot-cta { margin-top: 40px; opacity: 0; transform: translateY(10px); filter: blur(8px); transition: opacity 700ms var(--ease-out), transform 900ms var(--ease-out), filter 700ms ease; pointer-events: none; }
+.boot-cta.on { opacity: 1; transform: none; filter: none; pointer-events: auto; }
+.boot-cta h1 { margin: 0; font: 600 clamp(30px, 4.4vw, 58px)/1.02 var(--font-ui); letter-spacing: -0.035em; color: var(--ink); }
+.boot-cta p { margin: 14px 0 34px; font-size: 13px; letter-spacing: 0.34em; color: var(--pink); }
+.boot-fine { margin-top: 22px; font-size: 10.5px; letter-spacing: 0.12em; color: var(--ink-3); }
+
+/* ---- calibration ----------------------------------------------------------- */
+.calib { position: absolute; inset: 0; display: grid; place-items: center; }
+.calib-rings { position: absolute; left: 50%; top: 50%; width: 0; height: 0; }
+.calib-rings i {
+  position: absolute;
+  left: -220px;
+  top: -220px;
+  width: 440px;
+  height: 440px;
+  border-radius: 50%;
+  border: 1px solid oklch(0.85 0.1 var(--hue) / 0.5);
+  animation: calib-ring 2.4s var(--ease-out) infinite;
+  opacity: 0;
+}
+.calib-rings b {
+  position: absolute;
+  left: -9px;
+  top: -9px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: white;
+  box-shadow: 0 0 30px 8px oklch(0.85 0.15 var(--hue) / 0.8), 0 0 90px 30px oklch(0.7 0.16 var(--hue) / 0.35);
+  animation: calib-dot 1.6s ease-in-out infinite alternate;
+}
+.calib.done .calib-rings i { border-color: oklch(0.85 0.14 150 / 0.55); animation-duration: 1.2s; }
+.calib.calibrating .calib-rings { opacity: 0.25; }
+@keyframes calib-ring { 0% { opacity: 0; transform: scale(0.12); } 20% { opacity: 0.9; } 100% { opacity: 0; transform: scale(1); } }
+@keyframes calib-dot { to { transform: scale(1.35); } }
+.calib-copy { position: relative; margin-top: 340px; text-align: center; }
+.calib-copy .kicker { font-size: 10.5px; letter-spacing: 0.3em; color: var(--ink-3); }
+.calib-copy .kicker.ok { color: var(--ok); }
+.calib-copy .kicker.warn { color: var(--warn); }
+.calib-copy h2 { margin: 12px 0 10px; font: 500 28px/1.1 var(--font-ui); letter-spacing: -0.02em; }
+.calib-copy .sub { font-size: 11px; letter-spacing: 0.1em; color: var(--ink-3); }
+
+/* ---- convergence ----------------------------------------------------------- */
+.conv { position: absolute; inset: 0; display: grid; place-items: center; background: black; overflow: hidden; }
+.conv-stage { position: relative; text-align: center; }
+.conv-pct { font: 400 13px var(--font-mono); letter-spacing: 0.32em; color: var(--ink-2); }
+.conv-pct b { display: block; margin-top: 10px; font: 500 120px/1 var(--font-mono); letter-spacing: -0.04em; color: var(--ink); }
+.conv-line { margin-top: 20px; font: 500 14px var(--font-mono); letter-spacing: 0.4em; color: var(--pink); min-height: 20px; }
+.conv-found { font: 700 clamp(48px, 9vw, 150px)/0.9 var(--font-ui); letter-spacing: -0.05em; color: var(--ink); text-shadow: 0 0 60px oklch(0.8 0.18 var(--hue) / 0.8); }
+.conv-sub { margin-top: 22px; font: 400 12px var(--font-mono); letter-spacing: 0.3em; color: var(--ink-2); }
+.conv-slices { position: absolute; inset: 0; pointer-events: none; }
+.conv-slices i { position: absolute; left: 0; right: 0; background: oklch(0.8 0.18 var(--hue) / 0.16); mix-blend-mode: screen; }
+.conv.shake .conv-stage { animation: shake 90ms steps(2) infinite; }
+@keyframes shake {
+  0% { transform: translate(3px, -2px) skewX(6deg); filter: drop-shadow(-6px 0 0 oklch(0.7 0.25 25)) drop-shadow(6px 0 0 oklch(0.8 0.15 200)); }
+  100% { transform: translate(-4px, 2px) skewX(-4deg); filter: drop-shadow(5px 0 0 oklch(0.7 0.25 25)) drop-shadow(-5px 0 0 oklch(0.8 0.15 200)); }
+}
+.conv-flash { position: absolute; inset: 0; background: oklch(0.95 0.08 var(--hue)); opacity: 0; pointer-events: none; }
+.conv-flash.on { animation: flash 700ms var(--ease-out) both; }
+@keyframes flash { 0% { opacity: 0.85; } 100% { opacity: 0; } }
+
+/* ---- architecture ----------------------------------------------------------- */
+.arch { position: absolute; inset: 0; overflow: hidden; }
+.arch-inner { position: relative; height: 100%; display: grid; grid-template-rows: auto 1fr; padding: 56px 64px 40px; }
+.arch h1 { margin: 0; font: 600 clamp(34px, 4.8vw, 68px)/1 var(--font-ui); letter-spacing: -0.04em; }
+.arch .kicker { font: 400 11px var(--font-mono); letter-spacing: 0.3em; color: var(--ink-3); margin-bottom: 18px; }
+.arch-body { display: grid; grid-template-columns: minmax(260px, 0.8fr) 1.4fr; gap: 48px; align-items: center; min-height: 0; }
+.arch-figure { position: relative; height: min(64vh, 560px); }
+.arch-figure svg { width: 100%; height: 100%; }
+.arch-list { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; }
+.arch-row {
+  position: relative;
+  padding: 16px 18px 15px;
+  border-radius: 16px;
+  background: var(--glass);
+  border: 1px solid var(--glass-edge);
+  backdrop-filter: blur(16px);
+  opacity: 0;
+  animation: arch-in 600ms var(--ease-out) both;
+}
+@keyframes arch-in { from { opacity: 0; transform: translateY(10px); filter: blur(6px); } to { opacity: 1; transform: none; filter: none; } }
+.arch-row .fac { font: 400 10px var(--font-mono); letter-spacing: 0.22em; color: var(--ink-3); text-transform: uppercase; }
+.arch-row .who { margin-top: 6px; font: 600 20px/1.1 var(--font-ui); letter-spacing: -0.02em; color: var(--ink); }
+.arch-row .organ { margin-top: 4px; font: 400 12px var(--font-ui); color: var(--ink-2); }
+.arch-row .live { position: absolute; right: 16px; top: 15px; font: 500 11px var(--font-mono); color: var(--accent); letter-spacing: 0.06em; }
+.arch-row.hot { border-color: oklch(0.85 0.12 var(--hue) / 0.5); box-shadow: 0 0 30px oklch(0.7 0.15 var(--hue) / 0.25); }
+.arch-final { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; background: oklch(0.08 0.02 var(--hue) / 0.92); }
+.arch-final h2 { margin: 0; font: 700 clamp(64px, 11vw, 180px)/0.9 var(--font-ui); letter-spacing: -0.055em; }
+.arch-final p { margin: 22px 0 0; font: 400 clamp(18px, 1.8vw, 26px) var(--font-voice); color: var(--ink-2); letter-spacing: 0.01em; }
+.arch-final .fine { margin-top: 44px; font: 400 10.5px var(--font-mono); letter-spacing: 0.26em; color: var(--ink-3); }

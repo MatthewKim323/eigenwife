@@ -1,0 +1,91 @@
+.swarm { position: absolute; inset: 0; overflow: hidden; transform-origin: 40% 50%; }
+.swarm-grid {
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(oklch(0.9 0.05 var(--hue) / 0.14) 1px, transparent 1.2px);
+  background-size: 28px 28px;
+  -webkit-mask-image: radial-gradient(ellipse at 40% 50%, black 20%, transparent 75%);
+  mask-image: radial-gradient(ellipse at 40% 50%, black 20%, transparent 75%);
+}
+.swarm-head { position: absolute; left: 32px; top: 26px; z-index: 5; max-width: calc(100vw - 480px); }
+.swarm-head .mode { font-size: 10.5px; letter-spacing: 0.26em; color: var(--pink); display: flex; align-items: center; gap: 8px; }
+.swarm-head .mode .dim { color: var(--ink-3); letter-spacing: 0.1em; }
+.dotlive { width: 7px; height: 7px; border-radius: 50%; background: var(--pink); box-shadow: 0 0 10px var(--pink); animation: blinky 1s steps(2) infinite; }
+.swarm-head h1 { margin: 10px 0 8px; font: 600 clamp(26px, 3vw, 40px)/1.05 var(--font-ui); letter-spacing: -0.035em; }
+.swarm-head .plan { font-size: 11px; letter-spacing: 0.1em; color: var(--ink-3); }
+
+.swarm-lines { position: absolute; inset: 0; pointer-events: none; }
+.swarm-lines .base { fill: none; stroke: oklch(0.85 0.1 var(--hue) / 0.35); stroke-width: 1.2; stroke-dasharray: 1; stroke-dashoffset: 1; animation: draw 900ms var(--ease-out) forwards; }
+.swarm-lines .flow { fill: none; stroke: oklch(0.9 0.14 var(--hue)); stroke-width: 2; stroke-dasharray: 3 14; animation: flow 0.9s linear infinite; opacity: 0.8; filter: drop-shadow(0 0 4px oklch(0.8 0.15 var(--hue))); }
+.swarm-lines .line.done .flow { stroke: var(--ok); opacity: 0.35; animation-duration: 2.4s; }
+.swarm-lines .line.failed .flow { stroke: var(--warn); }
+.swarm-lines .line.despawned .base { opacity: 0.08; transition: opacity 800ms ease; }
+@keyframes draw { to { stroke-dashoffset: 0; } }
+@keyframes flow { to { stroke-dashoffset: -17; } }
+
+.eve-node { position: absolute; z-index: 4; transform: translate(-50%, -50%); display: grid; justify-items: center; gap: 6px; }
+.eve-node .orb { position: relative; width: 108px; height: 108px; border-radius: 50%; background: radial-gradient(circle at 40% 35%, white 0%, oklch(0.88 0.12 var(--hue)) 22%, oklch(0.6 0.18 calc(var(--hue) + 40)) 60%, oklch(0.3 0.1 var(--hue)) 100%); box-shadow: 0 0 60px oklch(0.75 0.17 var(--hue) / 0.7), 0 0 140px oklch(0.7 0.16 calc(var(--hue) + 50) / 0.4); animation: breathe 3.2s ease-in-out infinite; }
+.eve-node .orb i { position: absolute; inset: -14px; border-radius: 50%; border: 1px solid oklch(0.9 0.1 var(--hue) / 0.35); animation: calib-ring 3s var(--ease-out) infinite; }
+.eve-node .orb i:nth-child(2) { animation-delay: 1s; }
+.eve-node .orb i:nth-child(3) { animation-delay: 2s; }
+@keyframes breathe { 50% { transform: scale(1.05); } }
+.eve-node .label { margin-top: 8px; font-size: 13px; letter-spacing: 0.4em; color: var(--ink); }
+.eve-node .sub { font-size: 9.5px; letter-spacing: 0.2em; color: var(--ink-3); text-transform: uppercase; }
+.eve-node .mem { padding: 5px 10px; border-radius: 999px; font-size: 10px; letter-spacing: 0.14em; color: var(--ok); background: oklch(0.2 0.05 150 / 0.4); border: 1px solid oklch(0.85 0.14 150 / 0.35); }
+.eve-node .mem .dim { color: var(--ink-3); }
+
+.agent {
+  position: absolute;
+  z-index: 3;
+  width: 268px;
+  margin: -70px 0 0 -134px;
+  padding: 14px 15px 13px;
+  border-radius: 20px;
+  background: oklch(0.2 0.04 var(--hue) / 0.62);
+  border: 1px solid var(--glass-edge);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  box-shadow: 0 20px 60px oklch(0.04 0.03 var(--hue) / 0.5);
+}
+.agent.working { border-color: oklch(0.85 0.12 var(--hue) / 0.4); box-shadow: 0 20px 60px oklch(0.04 0.03 var(--hue) / 0.5), 0 0 30px oklch(0.75 0.15 var(--hue) / 0.2); }
+.agent.done { border-color: oklch(0.85 0.14 150 / 0.35); }
+.agent.failed { border-color: oklch(0.78 0.16 40 / 0.45); }
+.agent .top { display: flex; align-items: center; gap: 10px; }
+.agent .emoji { width: 36px; height: 36px; border-radius: 12px; display: grid; place-items: center; font-size: 20px; background: oklch(1 0 0 / 0.07); }
+.agent .who { flex: 1; display: grid; gap: 3px; min-width: 0; }
+.agent .who b { font: 600 15px/1 var(--font-ui); letter-spacing: -0.01em; }
+.agent .who span { font-size: 9px; letter-spacing: 0.2em; color: var(--ink-3); }
+.agent .state { font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase; padding: 4px 7px; border-radius: 6px; color: var(--ink-2); background: oklch(1 0 0 / 0.06); max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent .state.working { color: var(--accent); animation: blinky 1.2s steps(2) infinite; }
+.agent .state.done { color: var(--ok); }
+.agent .state.failed { color: var(--warn); }
+.agent .goal { margin-top: 10px; font: 400 12.5px/1.35 var(--font-ui); color: var(--ink-2); }
+.agent .stream { margin-top: 8px; font-size: 10.5px; line-height: 1.55; min-height: 34px; }
+.agent .stream .old { color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.agent .stream .cur { color: var(--ink); }
+.agent .stream .cur::after { content: "▍"; color: var(--accent); animation: blinky 0.8s steps(1) infinite; }
+.agent .res { margin-top: 8px; padding-top: 8px; border-top: 1px solid oklch(1 0 0 / 0.06); font: 500 12.5px/1.3 var(--font-ui); color: var(--ink); }
+.agent .res span { color: var(--ok); margin-right: 4px; }
+.agent .res.bad span { color: var(--warn); }
+
+.conflict { position: absolute; z-index: 6; margin: -70px 0 0 -140px; width: 280px; display: grid; gap: 8px; pointer-events: none; }
+.conflict .topic { justify-self: center; font-size: 9.5px; letter-spacing: 0.22em; color: var(--warn); padding: 4px 9px; border-radius: 999px; background: oklch(0.2 0.05 40 / 0.6); border: 1px solid oklch(0.78 0.16 40 / 0.4); }
+.conflict .bubble { max-width: 220px; padding: 9px 13px; border-radius: 16px; font: 500 13px/1.3 var(--font-voice); color: oklch(0.2 0.03 var(--hue)); background: oklch(0.97 0.02 var(--hue)); box-shadow: 0 10px 30px oklch(0 0 0 / 0.35); }
+.conflict .bubble.l { justify-self: start; border-bottom-left-radius: 4px; }
+.conflict .bubble.r { justify-self: end; border-bottom-right-radius: 4px; background: oklch(0.92 0.06 calc(var(--hue) + 70)); }
+
+.resolve { position: absolute; z-index: 7; left: calc((100vw - 420px) / 2 + 30px); bottom: 150px; transform: translateX(-50%); text-align: center; pointer-events: none; }
+.resolve .k { font-size: 10px; letter-spacing: 0.4em; color: var(--pink); }
+.resolve .line { margin-top: 8px; font: 700 clamp(28px, 3.4vw, 46px)/1.1 var(--font-voice); color: white; -webkit-text-stroke: 7px oklch(0.15 0.05 var(--hue)); paint-order: stroke fill; letter-spacing: -0.01em; white-space: nowrap; }
+
+.fact { position: absolute; z-index: 5; transform: translate(-50%, -50%); padding: 6px 11px; border-radius: 999px; font-size: 10.5px; white-space: nowrap; color: var(--ok); background: oklch(0.18 0.05 150 / 0.75); border: 1px solid oklch(0.85 0.14 150 / 0.4); margin-left: -60px; }
+
+.sw-approval { position: absolute; z-index: 8; left: calc((100vw - 420px) / 2 + 30px - 260px); bottom: 28px; width: 520px; padding: 16px 20px; border-radius: 20px; background: oklch(0.17 0.04 var(--hue) / 0.82); border: 1px solid oklch(0.85 0.12 var(--hue) / 0.35); backdrop-filter: blur(22px); box-shadow: 0 24px 70px oklch(0 0 0 / 0.5); }
+.sw-approval .k { font-size: 9.5px; letter-spacing: 0.2em; color: var(--warn); text-transform: uppercase; }
+.sw-approval .d { margin: 8px 0 10px; font: 500 17px/1.3 var(--font-ui); }
+.sw-approval .say { font-size: 11px; color: var(--ink-3); letter-spacing: 0.06em; }
+.sw-approval .say b { color: var(--ink); font-weight: 500; }
+.sw-approval .say .ok { color: var(--ok); letter-spacing: 0.2em; }
+.sw-approval .say .no { color: var(--warn); letter-spacing: 0.2em; }
+.sw-approval.approved { border-color: oklch(0.85 0.14 150 / 0.4); }
+.sw-approval .done { margin-top: 10px; padding-top: 10px; border-top: 1px solid oklch(1 0 0 / 0.06); font-size: 11.5px; color: var(--ink); line-height: 1.5; }
