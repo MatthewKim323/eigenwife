@@ -5,7 +5,7 @@ import { json } from "../hub";
 import type { SayOptions } from "../services";
 import { bunSpawn, whichBin } from "../brains/io";
 import { createSpeech, type Speech, type SpeechDeps } from "./service";
-import { AUDIO_NAME_RE, AUDIO_TYPES, AudioCache, elevenLabsTts, openAiTts, sayTts, Tts, type AudioExt, type TtsBackend, type TtsIO } from "./tts";
+import { AUDIO_NAME_RE, AUDIO_TYPES, AudioCache, deepgramTts, elevenLabsTts, openAiTts, sayTts, Tts, type AudioExt, type TtsBackend, type TtsIO } from "./tts";
 
 /**
  * Speech: mark splitter, sentence chunker, TTS with a disk cache, speech.*
@@ -17,9 +17,9 @@ import { AUDIO_NAME_RE, AUDIO_TYPES, AudioCache, elevenLabsTts, openAiTts, sayTt
  *   POST /api/speech/say   { text, priority?, interrupt? }
  *   POST /api/speech/stop  { reason? }
  *
- * Env: EVE_TTS=openai|elevenlabs|say|none pins the backend order (first) or
+ * Env: EVE_TTS=deepgram|openai|elevenlabs|say|none pins the backend order (first) or
  * turns synthesis off (segments go out without audioUrl; the shell falls back
- * to speechSynthesis). EVE_TTS_VOICE, ELEVENLABS_VOICE_ID, EVE_SAY_VOICE.
+ * to speechSynthesis). EVE_DEEPGRAM_VOICE, EVE_TTS_VOICE, ELEVENLABS_VOICE_ID, EVE_SAY_VOICE.
  */
 
 export function ttsIO(ctx: { config: { eveHome: string } }): TtsIO {
@@ -36,7 +36,7 @@ export function ttsIO(ctx: { config: { eveHome: string } }): TtsIO {
 /** Backends in preference order, honoring EVE_TTS. null when TTS is off. */
 export function buildTts(eveHome: string, io: TtsIO, pin = io.secret("EVE_TTS")): Tts | null {
   if (pin === "none" || pin === "off") return null;
-  const all: TtsBackend[] = [openAiTts(io), elevenLabsTts(io), sayTts(io)];
+  const all: TtsBackend[] = [deepgramTts(io), openAiTts(io), elevenLabsTts(io), sayTts(io)];
   const ordered = pin ? [...all.filter((b) => b.name === pin), ...all.filter((b) => b.name !== pin)] : all;
   return new Tts(ordered, new AudioCache(join(eveHome, "audio")), io.now);
 }

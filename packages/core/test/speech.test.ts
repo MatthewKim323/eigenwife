@@ -6,7 +6,7 @@ import type { AnyEnvelope } from "@eigenwife/protocol";
 import { EventBus } from "../src/bus";
 import { HttpError } from "../src/brains/io";
 import { createSpeech, type Speech, type SpeechDeps } from "../src/speech/service";
-import { AudioCache, audioKey, openAiTts, elevenLabsTts, sayTts, Tts, type TtsBackend } from "../src/speech/tts";
+import { AudioCache, audioKey, openAiTts, deepgramTts, elevenLabsTts, sayTts, Tts, type TtsBackend } from "../src/speech/tts";
 import { buildTts, speechModule } from "../src/speech/module";
 import { FILLERS, LINES } from "../src/speech/lines";
 import { startCore, type RunningCore } from "../src/index";
@@ -118,6 +118,23 @@ describe("speech pipeline", () => {
     // a fresh process sees the files on disk
     const t2 = new Tts([fakeBackend()], new AudioCache(dir));
     expect(t2.lookup("twenty-one dollars.")?.sha).toBe(first!.sha);
+  });
+
+  test("a live better voice beats an old cached render from a worse backend", async () => {
+    const dir = tmp();
+    const say = fakeBackend("say");
+    await new Tts([say], new AudioCache(dir)).render("so. apparently this is your type.");
+    const deepgram = fakeBackend("deepgram");
+    const t = new Tts([deepgram, fakeBackend("say")], new AudioCache(dir));
+    const r = await t.render("so. apparently this is your type.");
+    expect(r?.backend).toBe("deepgram");
+    expect(r?.cached).toBe(false);
+    expect(deepgram.calls.length).toBe(1);
+    // and when the better backend is down, the worse cached copy still plays instantly
+    const down = fakeBackend("deepgram", () => 5, () => new Error("401"));
+    const t2 = new Tts([down, fakeBackend("say")], new AudioCache(dir));
+    t2.health.fail("deepgram", new Error("401"));
+    expect((await t2.render("okay."))?.backend).toBe("say");
   });
 
   test("lookup prefers a cached better voice even when that backend is down", async () => {
@@ -334,6 +351,28 @@ describe("tts backends", () => {
     expect(body.model_id).toBe("eleven_flash_v2_5");
   });
 
+  test("deepgram: aura-2 with a token header, voice override, errors surface", async () => {
+    let url = "";
+    let auth = "";
+    let body: any;
+    const b = deepgramTts(
+      io({
+        fetch: async (u: string, init: RequestInit) => {
+          url = u;
+          auth = String((init.headers as Record<string, string>).Authorization);
+          body = JSON.parse(String(init.body));
+          return new Response(new Uint8Array(200));
+        },
+      }) as never,
+    );
+    expect((await b.synth("so. apparently this is your type.")).ext).toBe("mp3");
+    expect(url).toBe("https://api.deepgram.com/v1/speak?model=aura-2-luna-en&encoding=mp3");
+    expect(auth.startsWith("Token ")).toBe(true);
+    expect(body).toEqual({ text: "so. apparently this is your type." });
+    const bad = deepgramTts(io({ fetch: async () => new Response("unauthorized", { status: 401 }) }) as never);
+    await expect(bad.synth("x")).rejects.toThrow();
+  });
+
   test("say: say to aiff, ffmpeg to mp3", async () => {
     const argvs: string[][] = [];
     const b = sayTts(
@@ -357,8 +396,8 @@ describe("tts backends", () => {
     const home = tmp();
     const mk = (pin: string) => buildTts(home, io() as never, pin);
     expect(mk("none")).toBeNull();
-    expect(mk("say")!.backends.map((b) => b.name)).toEqual(["say", "openai", "elevenlabs"]);
-    expect(mk("")!.backends.map((b) => b.name)).toEqual(["openai", "elevenlabs", "say"]);
+    expect(mk("say")!.backends.map((b) => b.name)).toEqual(["say", "deepgram", "openai", "elevenlabs"]);
+    expect(mk("")!.backends.map((b) => b.name)).toEqual(["deepgram", "openai", "elevenlabs", "say"]);
   });
 
   test("audio keys depend on voice and normalized text", () => {

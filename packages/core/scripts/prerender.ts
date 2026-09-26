@@ -6,8 +6,8 @@
  *   bun run --cwd packages/core prerender --backend openai   (re)render with one backend
  *   bun run --cwd packages/core prerender --dry        just report what's cached
  *
- * Re-run after topping up OpenAI or adding ELEVENLABS_API_KEY: lines already
- * cached with a lesser voice get upgraded with --backend <name>.
+ * Re-run after adding a key: lines cached with a lesser voice than the best
+ * live backend are upgraded automatically (or force one with --backend <name>).
  */
 import { homedir } from "os";
 import { join } from "path";
@@ -35,11 +35,15 @@ let cached = 0;
 let failed = 0;
 const t0 = performance.now();
 
+// A cached copy only counts if its voice is at least as good as the best live backend.
+const rank = (name: string) => tts.backends.findIndex((b) => b.name === name);
+const bestLive = tts.live()[0]?.name;
+
 for (const [name, line] of entries) {
   const parts: string[] = [];
   for (const seg of segmentText(line)) {
     const hit = tts.lookup(seg.text);
-    const upgrade = only && hit && hit.backend !== only;
+    const upgrade = !!hit && (only ? hit.backend !== only : bestLive !== undefined && rank(hit.backend) > rank(bestLive));
     if (hit && !upgrade) {
       cached++;
       parts.push(`${hit.backend}:cached`);
@@ -50,7 +54,7 @@ for (const [name, line] of entries) {
       failed++;
       continue;
     }
-    const r = await tts.render(seg.text, undefined, only ? { only } : {});
+    const r = await tts.render(seg.text, undefined, only ? { only } : upgrade && bestLive ? { only: bestLive } : {});
     if (r) {
       rendered++;
       parts.push(`${r.backend}:${Math.round(r.ms)}ms`);

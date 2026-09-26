@@ -7,6 +7,7 @@ import { drainText, HttpError, type Fetcher, type Spawner } from "../brains/io";
 /**
  * Text to speech with a content-hash disk cache.
  *
+ *   deepgram     Aura-2, ~300ms to first byte (DEEPGRAM_API_KEY, EVE_DEEPGRAM_VOICE)
  *   openai       gpt-4o-mini-tts, voice + `instructions` (OPENAI_API_KEY)
  *   elevenlabs   eleven_flash_v2_5 (ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID)
  *   say          macOS `say` + ffmpeg to mp3, zero keys, always there on a Mac
@@ -61,6 +62,30 @@ export function openAiTts(io: TtsIO): TtsBackend {
       if (!res.ok) throw new HttpError(res.status, await res.text().catch(() => ""), "openai tts");
       const bytes = new Uint8Array(await res.arrayBuffer());
       if (bytes.length < 64) throw new Error("openai tts: empty audio");
+      return { bytes, ext: "mp3" };
+    },
+  };
+}
+
+/** Aura-2 voice. Luna: young, soft, a little playful; fits Eve's deadpan without going bubbly. */
+export const DEEPGRAM_DEFAULT_VOICE = "aura-2-luna-en";
+
+export function deepgramTts(io: TtsIO): TtsBackend {
+  const voice = () => io.secret("EVE_DEEPGRAM_VOICE") || DEEPGRAM_DEFAULT_VOICE;
+  return {
+    name: "deepgram",
+    voiceKey: () => `deepgram:${voice()}:v1`,
+    configured: () => !!io.secret("DEEPGRAM_API_KEY"),
+    async synth(text, signal) {
+      const res = await io.fetch(`https://api.deepgram.com/v1/speak?model=${encodeURIComponent(voice())}&encoding=mp3`, {
+        method: "POST",
+        headers: { Authorization: `Token ${io.secret("DEEPGRAM_API_KEY")}`, "content-type": "application/json" },
+        body: JSON.stringify({ text }),
+        signal,
+      });
+      if (!res.ok) throw new HttpError(res.status, await res.text().catch(() => ""), "deepgram tts");
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      if (bytes.length < 64) throw new Error("deepgram tts: empty audio");
       return { bytes, ext: "mp3" };
     },
   };
@@ -210,18 +235,26 @@ export class Tts {
     return this.backends.filter((b) => b.configured() && !this.health.cooling(b.name));
   }
 
-  /** Cache hit, else synthesize with the first backend that works. null when none do. */
+  /**
+   * Walk backends best voice first: a cached copy in that voice wins, else a
+   * live backend synthesizes. So an old render from a worse backend (say) never
+   * beats a better backend that is live right now, while a line prerendered
+   * with a backend that is down at demo time still keeps its good voice.
+   */
   async render(text: string, signal?: AbortSignal, opts: { only?: string } = {}): Promise<Rendered | null> {
     if (!/[\p{L}\p{N}]/u.test(text)) return null;
-    const hit = opts.only ? null : this.lookup(text);
-    if (hit) return hit;
-    for (const b of this.live()) {
+    for (const b of this.backends) {
       if (opts.only && b.name !== opts.only) continue;
+      const sha = audioKey(b.voiceKey(), text);
+      if (!opts.only) {
+        const ext = this.cache.get(sha);
+        if (ext) return this.rendered(sha, ext, b.name, true, 0);
+      }
+      if (!b.configured() || this.health.cooling(b.name)) continue;
       if (signal?.aborted) return null;
       const t0 = this.now();
       try {
         const { bytes, ext } = await b.synth(normalizeForCache(text), signal);
-        const sha = audioKey(b.voiceKey(), text);
         this.cache.put(sha, ext, bytes);
         this.health.ok(b.name, this.now() - t0);
         return this.rendered(sha, ext, b.name, false, this.now() - t0);
