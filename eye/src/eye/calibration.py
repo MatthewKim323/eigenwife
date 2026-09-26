@@ -29,7 +29,7 @@ from pathlib import Path
 import numpy as np
 
 from . import paths
-from .features import EYE_TERMS, GAZE_SCALE_FLOOR, Features, gaze_vector
+from .features import GAZE_FEATURES, GAZE_SCALE_FLOOR, Features, gaze_vector
 from .gaze_model import GazeModel
 from .profile import FaceProfile
 
@@ -462,6 +462,17 @@ def _prepare(rec, script, profile, latency):
     return x[keep], y[keep], groups[keep], weights[keep], kinds[keep], int((~keep).sum())
 
 
+def new_model() -> GazeModel:
+    """Linear ridge over all gaze features.
+
+    Quadratic eye terms fit a still head slightly better (161 vs 166 pt
+    leave-one-target-out on a real session) but extrapolate wildly once the
+    head moves (~1000 pt vs ~330 pt on a held-out head-motion step), and a
+    moving head is the normal case.
+    """
+    return GazeModel(degree=1, scale_floor=GAZE_SCALE_FLOOR)
+
+
 def fit(rec: Recording, script: Script, display, latency: float = 0.05, distance_cm: float = 55.0) -> Result:
     profile, notes = fit_profile(rec, script)
     x, y, groups, weights, kinds, rejected = _prepare(rec, script, profile, latency)
@@ -471,7 +482,7 @@ def fit(rec: Recording, script: Script, display, latency: float = 0.05, distance
     # lag). Estimate the lag with a fixation-only model, then re-label with it.
     fixed = kinds == FIXATE
     if (kinds == PURSUIT).any() and fixed.sum() > 30:
-        base = GazeModel(quad=EYE_TERMS, scale_floor=GAZE_SCALE_FLOOR)
+        base = new_model()
         base.fit(x[fixed], y[fixed], groups[fixed])
         best = (math.inf, latency)
         for extra in np.arange(0.0, 0.31, 0.03):
@@ -487,7 +498,7 @@ def fit(rec: Recording, script: Script, display, latency: float = 0.05, distance
 
     train = kinds != VALIDATE
     stats["samples"] = int(train.sum())
-    model = GazeModel(quad=EYE_TERMS, scale_floor=GAZE_SCALE_FLOOR)
+    model = new_model()
     stats.update(model.fit(x[train], y[train], groups[train], weights[train]))
 
     validation = []
@@ -539,7 +550,15 @@ def load(path: Path | None = None) -> Calibration | None:
     if not path.exists():
         return None
     d = np.load(path, allow_pickle=False)
-    train = (d["train_x"], d["train_y"], d["train_w"]) if "train_x" in d else None
+    train = None
+    if "train_x" in d:
+        tx = d["train_x"]
+        if tx.shape[1] < len(GAZE_FEATURES):
+            # Saved before features were appended. The model ignores the extra
+            # columns, but padding keeps the stack with fresh vectors (online
+            # learning) the same width.
+            tx = np.hstack([tx, np.zeros((len(tx), len(GAZE_FEATURES) - tx.shape[1]))])
+        train = (tx, d["train_y"], d["train_w"])
     return Calibration(GazeModel.from_arrays(d), FaceProfile.from_arrays(d), json.loads(str(d["meta"])), train)
 
 

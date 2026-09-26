@@ -53,7 +53,14 @@ class GazeModel:
     def fitted(self) -> bool:
         return self.coef is not None
 
+    @property
+    def n_features(self) -> int:
+        return len(self.x_mean)
+
     def _design(self, x: np.ndarray) -> np.ndarray:
+        # A model fitted on an older, shorter feature vector reads its leading
+        # columns (features are only ever appended, see features.GAZE_FEATURES).
+        x = x[:, : len(self.x_mean)]
         z = np.clip((x - self.x_mean) / self.x_scale, -self.clip, self.clip)
         return _expand(z, self.degree, self.quad)
 

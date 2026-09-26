@@ -53,3 +53,15 @@ def test_refit_with_extra_samples_moves_prediction():
     m.refit(xs, ys)
     after = m.predict(probe)[0]
     assert np.linalg.norm(after - [0.9, 0.9]) < np.linalg.norm(before - [0.9, 0.9])
+
+
+def test_model_fitted_on_fewer_features_reads_leading_columns():
+    """Features are only ever appended, so an older saved model keeps working."""
+    rng = np.random.default_rng(1)
+    x = rng.normal(size=(200, 12))
+    y = np.stack([0.5 + 0.1 * x[:, 0], 0.5 + 0.1 * x[:, 1]], axis=1)
+    m = GazeModel(degree=1)
+    m.fit(x, y)
+    wider = np.hstack([x, rng.normal(size=(200, 4))])
+    assert m.n_features == 12
+    assert np.allclose(m.predict(wider), m.predict(x))
