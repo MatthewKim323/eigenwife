@@ -219,9 +219,9 @@ describe("screen jev", () => {
     model: "jev-1.13.0",
     answers: {
       mode: { type: "choice", choice: "debugging", probabilities: { debugging: 0.9 } },
-      stuck: { type: "noul", noul: 0.82 },
+      stuck: { type: "boolean", probability: 0.82 },
       interesting: { type: "score", score: 1.2 },
-      sensitive: { type: "noul", noul: 0.03 },
+      sensitive: { type: "boolean", probability: 0.03 },
     },
   };
 
@@ -245,9 +245,9 @@ describe("screen jev", () => {
     expect(Object.keys(body.questions)).toEqual(["mode", "stuck", "interesting", "sensitive"]);
     expect(body.questions.mode.type).toBe("choice");
     expect(Object.keys(body.questions.mode.criteria)).toContain("debugging");
-    expect(body.questions.stuck.type).toBe("noul");
+    expect(body.questions.stuck.type).toBe("boolean");
     expect(body.questions.interesting.type).toBe("score");
-    expect(body.questions.sensitive.type).toBe("noul");
+    expect(body.questions.sensitive.type).toBe("boolean");
     expect(body.state.summary).toBe(digest.summary);
     expect(body.state.same_error_for_seconds).toBe(360);
     expect(JSON.stringify(body)).not.toContain("at main (");
@@ -420,7 +420,7 @@ describe("vision", () => {
         engine("anthropic", async () => {
           throw new Error("429");
         }),
-        engine("claude", async () => "**TextEdit** window with a TypeError in hub.ts — line 42. Contact matt@kalilabs.ai. Third sentence."),
+        engine("claude", async () => "**TextEdit** window with a TypeError in hub.ts \u2014 line 42. Contact matt@kalilabs.ai. Third sentence."),
       ],
       { imagePath: "/tmp/x.jpg" },
     );
@@ -433,6 +433,29 @@ describe("vision", () => {
     const r = await describeImage([engine("gateway", async () => "x", false)], { imagePath: "/tmp/x.jpg" });
     expect(r.ok).toBe(false);
   });
+  test("gateway: image as a data URL, a model the account can't use (403) falls through and the working one sticks", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "eve-vision-"));
+    const img = join(dir, "screen-1.jpg");
+    writeFileSync(img, Buffer.from([0xff, 0xd8, 0xff, 1, 2, 3]));
+    const models: string[] = [];
+    const io = {
+      secret: (n: string) => (n === "AI_GATEWAY_API_KEY" ? "gw" : ""),
+      fetch: async (_u: string, init?: RequestInit) => {
+        const b = JSON.parse(String(init!.body));
+        models.push(b.model);
+        expect(b.messages[1].content[1].image_url.url).toStartWith("data:image/jpeg;base64,");
+        if (b.model === "anthropic/claude-haiku-4.5") return new Response('{"error":{"message":"Free tier users do not have access to this model."}}', { status: 403 });
+        return Response.json({ choices: [{ message: { content: "A TextEdit window with a TypeError." } }] });
+      },
+    } as never;
+    const { gatewayVision } = await import("../src/screen/vision");
+    const g = gatewayVision(io);
+    expect(await g.describe({ imagePath: img }, AbortSignal.timeout(1000))).toBe("A TextEdit window with a TypeError.");
+    expect(await g.describe({ imagePath: img }, AbortSignal.timeout(1000))).toBe("A TextEdit window with a TypeError.");
+    expect(models).toEqual(["anthropic/claude-haiku-4.5", "google/gemini-2.5-flash", "google/gemini-2.5-flash"]);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
   test("claude CLI look: Read tool only, only the temp dir, no MCP, no session", () => {
     const a = claudeVisionArgs("/bin/claude", { imagePath: "/Users/m/.eve/tmp/screen-1.jpg" });
     expect(a).toContain("--strict-mcp-config");

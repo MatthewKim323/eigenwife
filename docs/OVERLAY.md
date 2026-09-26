@@ -42,11 +42,12 @@ She has to be born first (the Eigen flow in the shell: `open http://127.0.0.1:51
 |---|---|
 | `⌘⇧E` | show / hide Eve |
 | `⌘⇧M` | mute / unmute the mic |
+| `⌘⇧P` | pause / resume screen awareness (docs/SCREEN.md), persisted in `~/.eve/screen.json` |
 | `Space` (while she has focus) | push-to-talk: bypasses the half-duplex gate, release to send |
 
 ### Menu bar
 
-The heart in the menu bar: show/hide, mute mic, **pause attention** (emits `attention.pause { paused }` on the bus: ambient remarks stop, talking to her still works), move to a corner, size (small / medium / large, anchored at her feet), hide from screen capture, open at login, reload, quit.
+The heart in the menu bar: show/hide, mute mic, **pause attention** (emits `attention.pause { paused }` on the bus: ambient remarks stop, talking to her still works), **pause screen** (`screen.pause`, also `⌘⇧P`: she stops reading your windows; a 👀 chip shows on her whenever she does), move to a corner, size (small / medium / large, anchored at her feet), hide from screen capture, open at login, reload, quit.
 
 Position, size and toggles persist in `~/.eve/overlay.json`. If the monitor she was on is gone, she comes back to the primary display's bottom-right.
 
@@ -108,7 +109,7 @@ Unchanged: core `speech` -> `speech.segment` -> shell playback with lipsync, mar
 ## Permissions
 
 - **Microphone.** On first launch macOS asks whether **Electron** may use the microphone (in a packaged build it would say Eve). The overlay calls `systemPreferences.askForMediaAccess("microphone")` at startup. If you said no: System Settings > Privacy & Security > Microphone > enable Electron, then relaunch. Inside the app, `setPermissionRequestHandler` grants `media` to the shell's origin only; everything else is denied.
-- **No other permissions.** No accessibility, no screen recording, no input monitoring. Global hotkeys use Electron's `globalShortcut`.
+- **No other permissions for the overlay itself.** No accessibility, no screen recording, no input monitoring (screen awareness runs in the core and needs Accessibility and Screen Recording for the app running the core; see docs/SCREEN.md). Global hotkeys use Electron's `globalShortcut`.
 
 ## Privacy
 

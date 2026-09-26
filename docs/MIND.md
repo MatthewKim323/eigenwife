@@ -34,6 +34,8 @@ The engine's clock is the event `ts`, so replaying a recorded or simulated strea
 | `task_done` | `task.done` | always | soon | none | yes |
 | `face_return` | `eye.status`, `gaze.target` | face back after 2+ min away; once per return | soon | 60s | yes |
 | `app_opened` | `app.opened` | any non-dating app | later | 5s | yes |
+| `screen_stuck` | `screen.observation` | same error on screen 5+ min, stuck, not typing (docs/SCREEN.md) | later | 30 min per error, 10 min any | yes |
+| `screen_interesting` | `screen.observation` | interest >= 0.7 (shopping, feed, video, article), not private, not deep focus | later | 30 min per page, 8 min any | yes |
 | `poked` | `avatar.poke` | 3+ clicks on her in ~4s (overlay / shell column); one scripted line | immediate | 30s | no |
 
 "Stare" continuity: a `gaze.target` on a different key, a `gaze.fixation` on a different key, a `gaze.lost`, or a gap of more than 6s between announcements breaks it. Face presence comes from `eye.status.facePresent` or a gaze target in the last 10s.
@@ -104,6 +106,8 @@ Logits per decision, softmax into scores, argmax. Everything starts at IGNORE 0,
 | `long_silence` | IGNORE 2, ASK 0.8 + initiative, COMMENT 0.4 + 0.5·banter |
 | `face_return` | IGNORE 1.4, GLANCE 1.3, REACT 1.2 + warmth |
 | `app_opened` | IGNORE 3, GLANCE -0.5, COMMENT -0.8 + (banter-0.5) |
+| `screen_stuck` | IGNORE 0.8, GLANCE 0.4, HELP 2.3 + 0.3·min(1,(min-5)/10) + (initiative-0.5); a "yeah" within 2 min hands the error to work mode |
+| `screen_interesting` | IGNORE 2.0, GLANCE 1.2, COMMENT 1.3 + 2.5(interest-0.7) + (banter-0.5) |
 | `poked` | IGNORE -2, COMMENT 5, forced (no social modifiers), never waits on remote Jev |
 | anything else | IGNORE 2.5, GLANCE 0.5, COMMENT 0.3 |
 

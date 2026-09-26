@@ -48,7 +48,7 @@ export interface VisionEngine {
   describe(req: VisionRequest, signal: AbortSignal): Promise<string>;
 }
 
-export const VISION_MODELS = { gateway: "anthropic/claude-haiku-4.5", anthropic: "claude-haiku-4-5-20251001", claude: "haiku" };
+export const VISION_MODELS = { anthropic: "claude-haiku-4-5-20251001", claude: "haiku" };
 
 function userText(req: VisionRequest): string {
   const parts = ["Describe this window."];
@@ -59,38 +59,59 @@ function userText(req: VisionRequest): string {
 
 const mime = (p: string) => (/\.png$/i.test(p) ? "image/png" : "image/jpeg");
 
+/**
+ * Gateway vision models in order. A model the account can't use (free tier
+ * 403, missing 404, bad request 400) falls through to the next one, and the
+ * one that worked is remembered.
+ */
+export const GATEWAY_VISION_MODELS = ["anthropic/claude-haiku-4.5", "google/gemini-2.5-flash"];
+
 export function gatewayVision(io: BrainIO): VisionEngine {
+  let idx = 0;
+  const models = () => {
+    const pinned = io.secret("EVE_SCREEN_VISION_MODEL");
+    return pinned ? [pinned, ...GATEWAY_VISION_MODELS.filter((m) => m !== pinned)] : GATEWAY_VISION_MODELS;
+  };
   return {
     name: "gateway",
     configured: () => !!io.secret("AI_GATEWAY_API_KEY"),
     async describe(req, signal) {
       const b64 = readFileSync(req.imagePath).toString("base64");
-      const res = await io.fetch("https://ai-gateway.vercel.sh/v1/chat/completions", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${io.secret("AI_GATEWAY_API_KEY")}`, "content-type": "application/json" },
-        body: JSON.stringify({
-          model: io.secret("EVE_SCREEN_VISION_MODEL") || VISION_MODELS.gateway,
-          max_tokens: 160,
-          temperature: 0.2,
-          messages: [
-            { role: "system", content: VISION_SYSTEM },
-            {
-              role: "user",
-              content: [
-                { type: "text", text: userText(req) },
-                { type: "image_url", image_url: { url: `data:${mime(req.imagePath)};base64,${b64}` } },
-              ],
-            },
-          ],
-        }),
-        signal,
-      });
-      if (!res.ok) throw new HttpError(res.status, await res.text().catch(() => ""), "vision gateway");
-      const j = (await res.json()) as { choices?: { message?: { content?: unknown } }[] };
-      const c = j.choices?.[0]?.message?.content;
-      const text = typeof c === "string" ? c : Array.isArray(c) ? c.map((x) => (x as { text?: string }).text ?? "").join("") : "";
-      if (!text.trim()) throw new Error("vision gateway: empty reply");
-      return text;
+      const list = models();
+      for (let i = Math.min(idx, list.length - 1); i < list.length; i++) {
+        const res = await io.fetch("https://ai-gateway.vercel.sh/v1/chat/completions", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${io.secret("AI_GATEWAY_API_KEY")}`, "content-type": "application/json" },
+          body: JSON.stringify({
+            model: list[i],
+            max_tokens: 800, // room for models that think before answering (gemini 2.5 flash)
+            temperature: 0.2,
+            messages: [
+              { role: "system", content: VISION_SYSTEM },
+              {
+                role: "user",
+                content: [
+                  { type: "text", text: userText(req) },
+                  { type: "image_url", image_url: { url: `data:${mime(req.imagePath)};base64,${b64}` } },
+                ],
+              },
+            ],
+          }),
+          signal,
+        });
+        if (!res.ok) {
+          const err = new HttpError(res.status, await res.text().catch(() => ""), `vision gateway ${list[i]}`);
+          if ([400, 403, 404].includes(res.status) && i < list.length - 1) continue;
+          throw err;
+        }
+        const j = (await res.json()) as { choices?: { message?: { content?: unknown } }[] };
+        const c = j.choices?.[0]?.message?.content;
+        const text = typeof c === "string" ? c : Array.isArray(c) ? c.map((x) => (x as { text?: string }).text ?? "").join("") : "";
+        if (!text.trim()) throw new Error("vision gateway: empty reply");
+        idx = i;
+        return text;
+      }
+      throw new Error("vision gateway: no model");
     },
   };
 }
@@ -185,7 +206,7 @@ export function claudeVision(io: BrainIO, timeoutMs = 45_000): VisionEngine {
 export function cleanDescription(raw: string): { text: string; private: boolean } {
   const t = raw
     .replace(/[*_`#>]+/g, "")
-    .replace(/[—–]/g, ",")
+    .replace(/[\u2014\u2013]/g, ",")
     .replace(/\s+/g, " ")
     .trim();
   if (/^PRIVATE\b/i.test(t)) return { text: "", private: true };

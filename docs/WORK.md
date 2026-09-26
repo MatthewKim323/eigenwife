@@ -66,7 +66,7 @@ Ambiguous asks get one clarifying question and the next thing you say is taken a
    - other terminals: a path in the title, else the most recent Claude Code session cwd (from the hook),
 4. git facts: branch, dirty file count, last commit.
 
-It emits `work.context {app, title?, repo?, repoPath?, branch?, dirty?, lastCommit?}` when anything changes and keeps the world slot `work.working_on` ("eigenwife (main, 3 dirty files) in Cursor") so every prompt knows. Private apps (password managers, Messages, Mail, FaceTime, Signal, WhatsApp, banks and brokerages, Wallet, Health) become `{app:"private app", private:true}`: no title is read, no repo resolved. Screen contents and accessibility text beyond a window title are never read.
+It emits `work.context {app, title?, repo?, repoPath?, branch?, dirty?, lastCommit?}` when anything changes and keeps the world slot `work.working_on` ("eigenwife (main, 3 dirty files) in Cursor") so every prompt knows. Private apps (password managers, Messages, Mail, FaceTime, Signal, WhatsApp, banks and brokerages, Wallet, Health) become `{app:"private app", private:true}`: no title is read, no repo resolved. Screen contents and accessibility text beyond a window title are never read by the work module (screen awareness is a separate, pausable module: docs/SCREEN.md).
 
 Code roots: `EVE_CODE_ROOTS` (comma list), default `~/dev, ~/code, ~/projects, ~/src, ~/Developer, ~/Documents/GitHub, ~/Documents`. A repo is any direct child with a `.git`.
 

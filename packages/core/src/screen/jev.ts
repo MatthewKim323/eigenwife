@@ -3,7 +3,7 @@ import type { Digest } from "./summarize";
 
 /**
  * Jev judges the compact screen summary with four typed questions: mode
- * (choice), stuck (boolean, a TypeSafe "noul"), interesting (score) and
+ * (choice), stuck (boolean, answered with a probability), interesting (score) and
  * sensitive (boolean). Same endpoint as the reflex (AI Gateway /v1/evaluate
  * or TypeSafe systemone). Only the summary line and a few numbers are sent,
  * never raw screen text. Any failure falls back to the local guesses.
@@ -49,13 +49,13 @@ export function screenQuestions() {
   return {
     mode: { type: "choice", instructions: "What is the user doing on screen right now?", criteria: MODE_CRITERIA },
     stuck: {
-      type: "noul",
+      type: "boolean",
       instructions: "Is the user stuck: the same error or problem has been on screen for minutes without progress?",
       criteria: { true: "The same error has persisted for several minutes; they would welcome help.", false: "No error, or it just appeared, or they are making progress." },
     },
     interesting: { type: "score", instructions: "How interesting is this screen for a witty friend sitting next to them to remark on?", criteria: INTEREST_LEVELS },
     sensitive: {
-      type: "noul",
+      type: "boolean",
       instructions: "Does this look private or sensitive (banking, passwords, medical, legal, intimate messages, personal identity documents)?",
       criteria: { true: "Private: a companion should look away and not remember it.", false: "Ordinary content." },
     },

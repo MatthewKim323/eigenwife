@@ -115,23 +115,27 @@ let winFrame = frame(win)
 // The CGWindowID of that window: the frontmost on-screen, normal-layer window
 // of the pid, preferring one whose title and bounds match the AX window.
 var windowId: Int = 0
-if let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] {
+func findWindow(_ opts: CGWindowListOption, strict: Bool) -> Int {
+  guard let list = CGWindowListCopyWindowInfo(opts, kCGNullWindowID) as? [[String: Any]] else { return 0 }
   var best: Int = 0
   for w in list {
     guard (w[kCGWindowOwnerPID as String] as? Int32) == pid, (w[kCGWindowLayer as String] as? Int) == 0 else { continue }
     let id = w[kCGWindowNumber as String] as? Int ?? 0
-    if best == 0 { best = id }
     let name = w[kCGWindowName as String] as? String ?? ""
+    if !strict && best == 0 { best = id }
+    if strict && !(name == title && !title.isEmpty) { continue }
     if let b = w[kCGWindowBounds as String] as? [String: CGFloat], let f = winFrame {
       let r = CGRect(x: b["X"] ?? 0, y: b["Y"] ?? 0, width: b["Width"] ?? 0, height: b["Height"] ?? 0)
       if abs(r.origin.x - f.origin.x) < 2 && abs(r.origin.y - f.origin.y) < 2 && abs(r.width - f.width) < 2 && (name.isEmpty || name == title) {
-        best = id
-        break
+        return id
       }
     }
   }
-  windowId = best
+  return best
 }
+// On screen first; a window on another Space only when its title and bounds match exactly.
+windowId = findWindow([.optionOnScreenOnly, .excludeDesktopElements], strict: false)
+if windowId == 0 { windowId = findWindow([.optionAll, .excludeDesktopElements], strict: true) }
 
 // Walk the window's tree (depth-first, capped). Text-bearing roles only.
 let TEXT_ROLES: Set<String> = ["AXStaticText", "AXTextArea", "AXTextField", "AXHeading", "AXLink", "AXCell", "AXComboBox", "AXSearchField"]
