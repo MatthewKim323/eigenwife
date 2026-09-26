@@ -1,8 +1,8 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import type { AvatarState } from "@eigenwife/protocol";
-import { screenToFocus, userFocus } from "../avatar/attention";
-import { useTouchController, useWardrobeSync } from "../avatar/interact";
+import { userFocus } from "../avatar/attention";
+import { resolveFocus, useGazeFeed, useTouchController, useWardrobeSync } from "../avatar/interact";
 import { HEAD_IN_BOX, loadEve, type EveLive2D } from "../avatar/live2d";
 import type { RigInput } from "../avatar/rig";
 import { avatarRuntime, avatarUi, useStore } from "../avatar/store";
@@ -92,7 +92,11 @@ export function OverlayApp() {
   useEvent("avatar.mood", (e) => avatarRuntime.rig.setMood(e.data.mood, e.data.intensity ?? 0.8, performance.now(), e.data.holdMs));
   useEvent("attention.pause", (e) => setAttentionPaused(e.data.paused));
   useWardrobeSync();
+  // gaze.point from a tracker arrives in screen points, the same space as the cursor.
+  useGazeFeed();
   const touch = useTouchController("overlay");
+  // The global cursor (main polls it ~30Hz while she's visible): she follows it anywhere on screen.
+  useEffect(() => bridge.onCursor((p) => avatarRuntime.look.cursor(p, performance.now())), []);
 
   // --- renderer: Live2D with a readable drawing buffer, tachie fallback ---------
   useEffect(() => {
@@ -116,16 +120,19 @@ export function OverlayApp() {
     const timer = setTimeout(() => fallback("timeout"), LIVE2D_TIMEOUT_MS);
     const getInput = (): RigInput => {
       const now = performance.now();
-      const look = avatarRuntime.attention.current(now);
-      const head = avatarRuntime.head;
-      let focus;
-      if (look.kind === "user") {
-        // She sits somewhere on a big screen: lean toward its middle, where you are.
-        const sx = (globalThis.screenX ?? 0) + head.x;
-        focus = userFocus({ x: sx, y: head.y }, globalThis.screen?.availWidth || innerWidth);
-      } else focus = screenToFocus(look, head, innerWidth, innerHeight);
+      // Everything in screen points: her window's origin + her head in the page.
+      const ox = globalThis.screenX ?? 0;
+      const oy = globalThis.screenY ?? 0;
+      const head = { x: ox + avatarRuntime.head.x, y: oy + avatarRuntime.head.y };
+      const sw = globalThis.screen?.availWidth || innerWidth;
+      const sh = globalThis.screen?.availHeight || innerHeight;
+      // She sits somewhere on a big screen: at rest she leans toward its middle, where you are.
+      const user = () => userFocus(head, sw);
       const r = avatarRuntime;
-      return { state: avatarUi.get().state, focus, mouth: r.mouthOverride ?? r.mouth, mouthHold: r.mouthOverride === null && r.mouthHold, still: r.still, eyesClosed: r.eyesClosed };
+      const { focus, headGain } = r.still
+        ? { focus: user(), headGain: 1 }
+        : resolveFocus(now, { fromPage: (p) => ({ x: ox + p.x, y: oy + p.y }), head, size: { w: sw, h: sh }, user });
+      return { state: avatarUi.get().state, focus, headGain, mouth: r.mouthOverride ?? r.mouth, mouthHold: r.mouthOverride === null && r.mouthHold, still: r.still, eyesClosed: r.eyesClosed };
     };
     loadEve(canvas, { width: BOX_W, height: BOX_H }, getInput, fallback)
       .then((e) => {
@@ -203,10 +210,8 @@ export function OverlayApp() {
       const { x, y } = pending;
       pending = null;
       const now = performance.now();
-      const a = alphaAt(x, y);
-      gate.update(a, now);
-      // Cursor near her: eyes, then head, follow it (touch.ts).
-      touch.move({ x, y }, boxRef.current, a >= HIT.enter);
+      gate.update(alphaAt(x, y), now);
+      avatarRuntime.look.cursor({ x: (globalThis.screenX ?? 0) + x, y: (globalThis.screenY ?? 0) + y }, now);
     };
     let press: { x: number; y: number; dragging: boolean } | null = null;
     const onMove = (e: MouseEvent) => {
@@ -247,7 +252,6 @@ export function OverlayApp() {
     const onLeave = () => {
       if (press?.dragging) return;
       gate.update(-1, performance.now());
-      touch.move(null, boxRef.current, false);
     };
     const tick = setInterval(() => gate.tick(performance.now()), 60);
     addEventListener("mousemove", onMove);

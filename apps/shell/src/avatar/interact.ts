@@ -1,12 +1,16 @@
 import { useEffect, useRef } from "react";
 import { useBus, useEvent, useWorld } from "../lib/bus";
+import { screenToFocus } from "./attention";
+import { clampFocus, type LookChoice } from "./look";
 import type { FramingSlot } from "./models";
+import type { Focus } from "./rig";
 import { activeModel, avatarRuntime, avatarUi } from "./store";
-import { bodyRect, CursorWatch, distToRect, headEllipse, HoverLimiter, playTouch, PokeCounter, regionAt, TOUCH, type Box, type Pt, type TouchEvent } from "./touch";
+import { headEllipse, HoverLimiter, playTouch, PokeCounter, regionAt, type Box, type Pt, type TouchEvent } from "./touch";
 
 /**
- * Glue between the bus / pointer and the rig for outfits (wardrobe.ts) and
- * touch (touch.ts). Used by both the shell's AvatarLayer and the OverlayApp.
+ * Glue between the bus / pointer and the rig for outfits (wardrobe.ts), where
+ * she looks (look.ts) and touch (touch.ts). Used by both the shell's
+ * AvatarLayer and the OverlayApp.
  */
 
 /** Outfit from the core: the world snapshot on connect, then avatar.outfit. Tells the core which items this model can show. */
@@ -24,7 +28,7 @@ export function useWardrobeSync() {
   useEffect(() => {
     const g = globalThis as any;
     g.__eve ??= {};
-    /** Local only (capture / debug): put these items on her. The core's avatar.outfit still wins on the next change. */
+    /** Local only (capture / debug): put these items on her. The core's next avatar.outfit still wins. */
     g.__eve.wear = (list: string[] | string = []) => avatarRuntime.rig.setOutfit(typeof list === "string" ? list.split(",").filter(Boolean) : list, performance.now());
     g.__eve.wearing = () => avatarRuntime.rig.wardrobe.wearing();
     /** Play a touch reaction locally (capture): "pat" | "poke" | "annoyed" | "smile" | "hm" | "drag-start" | "drop". */
@@ -41,9 +45,38 @@ export function useWardrobeSync() {
   }, []);
 }
 
+/** Real gaze points from the bus (eye serve / a tracker) feed the look arbiter. `toSpace` maps them into its space. */
+export function useGazeFeed(toSpace: (p: Pt) => Pt = (p) => p) {
+  useEvent("gaze.point", (e) => avatarRuntime.look.gaze(toSpace({ x: e.data.x, y: e.data.y }), performance.now()));
+  useEvent("gaze.lost", () => avatarRuntime.look.clearGaze());
+}
+
+export interface LookSpace {
+  /** Page (client) px -> the arbiter's space (identity in the shell, + window origin in the overlay). */
+  fromPage(p: Pt): Pt;
+  /** Her head in the arbiter's space. */
+  head: Pt;
+  /** Extent of the space (a half extent away = a full turn). */
+  size: { w: number; h: number };
+  /** Looking at the user (out of the screen toward the camera). */
+  user(): Focus;
+}
+
+/** Arbitrate this frame's look target and map it into focus space. */
+export function resolveFocus(now: number, space: LookSpace): { focus: Focus; headGain: number; choice: LookChoice } {
+  const att = avatarRuntime.attention.current(now);
+  const choice = avatarRuntime.look.resolve(now, {
+    glance: att.kind === "point" ? space.fromPage(att) : null,
+    head: space.head,
+    spread: { x: space.size.w * 0.2, y: space.size.h * 0.15 },
+  });
+  if (!choice.point) return { focus: space.user(), headGain: choice.headGain, choice };
+  const f = screenToFocus(choice.point, space.head, space.size.w, space.size.h);
+  const tracked = choice.kind === "cursor" || choice.kind === "gaze" || choice.kind === "idle-glance";
+  return { focus: tracked ? clampFocus(f) : f, headGain: choice.headGain, choice };
+}
+
 export interface TouchController {
-  /** Pointer moved (page px). painted = her pixels are under it. */
-  move(p: Pt | null, box: Box, painted: boolean): void;
   /** Pointer went onto her pixels. */
   enter(): void;
   /** A click (not a drag). Returns the region it hit, or null. */
@@ -54,38 +87,18 @@ export interface TouchController {
 
 /** Everything is rate limited and subtle; asleep, she doesn't react at all. */
 export function createTouchController(slot: FramingSlot, emitPoke: (region: "head" | "body", count: number) => void): TouchController {
-  const watch = new CursorWatch();
   const hover = new HoverLimiter();
   const pokes = new PokeCounter();
   const f = () => activeModel.framing[slot];
   const asleep = () => avatarUi.get().state === "sleeping";
   const head = (box: Box) => headEllipse(box, f().head, f().scale, activeModel.headShape);
-  const look = (p: Pt) => (ms: number) => avatarRuntime.attention.look(p, ms, performance.now());
-  let followTimer: ReturnType<typeof setInterval> | null = null;
-  const sync = () => {
-    const pt = asleep() ? null : watch.follow(performance.now());
-    avatarRuntime.attention.follow(pt);
-    if (!pt && followTimer) {
-      clearInterval(followTimer);
-      followTimer = null;
-    }
-  };
+  const lookAt = (p: Pt) => (ms: number) => avatarRuntime.attention.look(p, ms, performance.now());
   return {
-    move(p, box, painted) {
-      const now = performance.now();
-      if (p) {
-        const h = head(box);
-        const near = painted || distToRect(p, bodyRect(h, box)) <= TOUCH.nearPx;
-        watch.update(p, near, now);
-      }
-      sync();
-      // Keep checking so she lets go ~1s after the cursor leaves, without more moves.
-      followTimer ??= setInterval(sync, 200);
-    },
     enter() {
       if (asleep()) return;
-      const r = hover.enter(performance.now());
-      if (r) playTouch({ kind: "hover", reaction: r }, avatarRuntime.rig, performance.now(), look(watch.follow(performance.now()) ?? avatarRuntime.head));
+      const now = performance.now();
+      const r = hover.enter(now);
+      if (r) playTouch({ kind: "hover", reaction: r }, avatarRuntime.rig, now, () => {});
     },
     click(p, box, painted) {
       if (asleep()) return null;
@@ -94,7 +107,7 @@ export function createTouchController(slot: FramingSlot, emitPoke: (region: "hea
       const now = performance.now();
       const r = pokes.click(region, now);
       if (!r) return region;
-      playTouch(r, avatarRuntime.rig, now, look(p));
+      playTouch(r, avatarRuntime.rig, now, lookAt(p));
       if (r.emit) emitPoke(r.region, r.count);
       return region;
     },

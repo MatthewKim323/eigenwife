@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from "react";
 import type { AvatarState } from "@eigenwife/protocol";
 import { AttentionController } from "./attention";
+import { LookArbiter } from "./look";
 import { resolveModel, type FramingSlot } from "./models";
 import { EveRig } from "./rig";
 
@@ -76,6 +77,8 @@ export const avatarRuntime = {
   /** Which framing she's in right now (the head position in the box depends on it). */
   slot: "column" as FramingSlot,
   attention: new AttentionController(),
+  /** Look source arbiter (look.ts): glance > hold > real gaze > cursor > idle. */
+  look: new LookArbiter(Math.random, typeof performance !== "undefined" ? performance.now() : 0),
   mouth: 0,
   mouthHold: false,
   speaking: false,

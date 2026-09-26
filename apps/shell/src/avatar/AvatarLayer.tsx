@@ -5,8 +5,8 @@ import { useBus, useEvent, useWorld } from "../lib/bus";
 import { useScene } from "../lib/scene";
 import { MicIndicator } from "../voice/MicIndicator";
 import { Subtitles } from "../voice/Subtitles";
-import { screenToFocus, userFocus } from "./attention";
-import { useTouchController, useWardrobeSync } from "./interact";
+import { userFocus } from "./attention";
+import { resolveFocus, useGazeFeed, useTouchController, useWardrobeSync } from "./interact";
 import { bodyRect, headEllipse, inEllipse } from "./touch";
 import { loadModel, type EveLive2D } from "./live2d";
 import type { FramingSlot } from "./models";
@@ -171,9 +171,16 @@ export function AvatarLayer() {
     avatarRuntime.attention.onUserTarget(t.key, elementCenter(t.key), performance.now());
   });
 
-  // --- outfits + touch ---------------------------------------------------------------
+  // --- outfits, where she looks, touch -------------------------------------------------
   useWardrobeSync();
+  useGazeFeed();
   const touch = useTouchController("column");
+  // She follows the cursor anywhere on the page (look.ts arbiter), in every dock.
+  useEffect(() => {
+    const onMove = (e: PointerEvent) => avatarRuntime.look.cursor({ x: e.clientX, y: e.clientY }, performance.now());
+    addEventListener("pointermove", onMove, { passive: true });
+    return () => removeEventListener("pointermove", onMove);
+  }, []);
   // In the desktop column she's pointer-events: none (the page stays usable), so
   // touch is geometric (head ellipse + a body column) and never over real UI.
   useEffect(() => {
@@ -192,21 +199,16 @@ export function AvatarLayer() {
       const on = onHer(e.clientX, e.clientY) && !isUi(e.target);
       if (on && !over) touch.enter();
       over = on;
-      touch.move({ x: e.clientX, y: e.clientY }, boxNow(), on);
     };
     const onDown = (e: PointerEvent) => {
       if (e.button !== 0 || isUi(e.target) || !onHer(e.clientX, e.clientY)) return;
       touch.click({ x: e.clientX, y: e.clientY }, boxNow(), true);
     };
-    const onLeave = () => touch.move(null, boxNow(), false);
     addEventListener("pointermove", onMove, { passive: true });
     addEventListener("pointerdown", onDown, { passive: true });
-    document.documentElement.addEventListener("pointerleave", onLeave);
     return () => {
       removeEventListener("pointermove", onMove);
       removeEventListener("pointerdown", onDown);
-      document.documentElement.removeEventListener("pointerleave", onLeave);
-      avatarRuntime.attention.follow(null);
     };
   }, [dock, x, y, s, touch]);
 
@@ -226,13 +228,16 @@ export function AvatarLayer() {
     const timer = setTimeout(() => fallback("timeout"), LIVE2D_TIMEOUT_MS);
     const getInput = (): RigInput => {
       const now = performance.now();
-      const look = avatarRuntime.attention.current(now);
       const head = avatarRuntime.head;
-      const focus = look.kind === "user" ? userFocus(head, innerWidth) : screenToFocus(look, head, innerWidth, innerHeight);
       const r = avatarRuntime;
+      // Capture (still): straight at the user. Otherwise the arbiter: glance > hold > gaze > cursor > idle.
+      const { focus, headGain } = r.still
+        ? { focus: userFocus(head, innerWidth), headGain: 1 }
+        : resolveFocus(now, { fromPage: (p) => p, head, size: { w: innerWidth, h: innerHeight }, user: () => userFocus(head, innerWidth) });
       return {
         state: avatarUi.get().state,
         focus,
+        headGain,
         mouth: r.mouthOverride ?? r.mouth,
         mouthHold: r.mouthOverride === null && r.mouthHold,
         still: r.still,

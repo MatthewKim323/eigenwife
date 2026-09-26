@@ -220,6 +220,19 @@ async function toggleOutfit(id: string, on: boolean) {
   await refreshOutfit();
 }
 
+// ---------------------------------------------------------------------------
+// global cursor: she looks where the mouse is, anywhere on screen (look.ts)
+// ---------------------------------------------------------------------------
+
+let lastCursor = { x: NaN, y: NaN };
+function pollCursor() {
+  if (!win || win.isDestroyed() || !win.isVisible() || !shellUp) return;
+  const p = screen.getCursorScreenPoint();
+  if (p.x === lastCursor.x && p.y === lastCursor.y) return;
+  lastCursor = p;
+  win.webContents.send("overlay:cursor", { x: p.x, y: p.y });
+}
+
 function moveTo(corner: Corner) {
   if (!win) return;
   const b = win.getBounds();
@@ -407,6 +420,8 @@ if (!app.requestSingleInstanceLock()) {
     // The tray's Outfit submenu mirrors the core (spoken changes show up here too).
     void refreshOutfit();
     setInterval(() => void refreshOutfit(), 4000);
+    // ~30Hz, only while she's visible, only when it moved.
+    setInterval(pollCursor, 33);
 
     const reclamp = () => {
       if (!win) return;

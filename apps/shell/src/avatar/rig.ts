@@ -22,6 +22,8 @@ export interface RigInput {
   still?: boolean;
   /** Capture mode: eyes shut. */
   eyesClosed?: boolean;
+  /** How much the head follows the focus (eyes always follow fully). Default 1; ~0.5 while tracking the cursor. */
+  headGain?: number;
 }
 
 export interface ParamIO {
@@ -179,8 +181,9 @@ export class EveRig {
     const lookGain = state === "thinking" ? 0.25 : sleeping ? 0 : 1;
     const fx = clamp(input.focus.x, -1, 1) * lookGain;
     const fy = clamp(input.focus.y, -1, 1) * lookGain + (sleeping ? -0.35 : 0);
-    const hx = this.headX.step(fx + this.saccade.x * LOOK.headFollow, dtMs);
-    const hy = this.headY.step(fy + this.saccade.y * LOOK.headFollow, dtMs);
+    const hg = input.headGain ?? 1;
+    const hx = this.headX.step(fx * hg + this.saccade.x * LOOK.headFollow, dtMs);
+    const hy = this.headY.step(fy * hg + this.saccade.y * LOOK.headFollow, dtMs);
     const a = frameLerp(LOOK.eyeLerp, dtMs);
     this.eyeX += (clamp(fx + this.saccade.x, -1, 1) - this.eyeX) * a;
     this.eyeY += (clamp(fy + this.saccade.y, -1, 1) - this.eyeY) * a;

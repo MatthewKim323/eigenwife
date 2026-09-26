@@ -3,9 +3,7 @@
  * Pure logic: geometry, rate limits, poke counting. The glue that turns a
  * reaction into rig calls is `playTouch` at the bottom.
  *
- * - near: cursor within NEAR_PX of her -> her eyes (then head, via the
- *   look-at spring) follow it, below gaze/shared attention; back to you 1s
- *   after it leaves.
+ * - where she looks (cursor anywhere, real gaze, idle) is look.ts, not here.
  * - hover on her pixels: a tiny smile or a "hm?" glance, at most every 8s.
  * - click body: surprised blink + a small hop. Click head: a pat (happy,
  *   blush, eyes shut). 3+ clicks inside 4s: annoyed, and the core gets
@@ -36,8 +34,6 @@ export interface HeadShape {
 export const DEFAULT_HEAD: HeadShape = { rx: 0.055, ry: 0.06, dy: -0.02 };
 
 export const TOUCH = {
-  nearPx: 150,
-  followHoldMs: 1000,
   hoverGapMs: 8000,
   pokeWindowMs: 4000,
   pokeAnnoyed: 3,
@@ -70,17 +66,11 @@ export function inEllipse(p: Pt, e: Ellipse): boolean {
   return dx * dx + dy * dy <= 1;
 }
 
-/** Rough silhouette for "near": a column under her head, as wide as ~3 heads, down to the box bottom. */
+/** Rough silhouette (the shell column's hit area): under her head, ~3 heads wide, down to the box bottom. */
 export function bodyRect(head: Ellipse, box: Box): Box {
   const w = head.rx * 3.2;
   const top = head.cy - head.ry;
   return { x: head.cx - w / 2, y: top, w, h: Math.max(0, box.y + box.h - top) };
-}
-
-export function distToRect(p: Pt, r: Box): number {
-  const dx = Math.max(r.x - p.x, 0, p.x - (r.x + r.w));
-  const dy = Math.max(r.y - p.y, 0, p.y - (r.y + r.h));
-  return Math.hypot(dx, dy);
 }
 
 export type Region = "head" | "body";
@@ -93,23 +83,6 @@ export type Region = "head" | "body";
 export function regionAt(p: Pt, head: Ellipse, painted: boolean): Region | null {
   if (inEllipse(p, head)) return "head";
   return painted ? "body" : null;
-}
-
-/** Cursor follow: a point to look at while the cursor is near, and for followHoldMs after. */
-export class CursorWatch {
-  private last: { p: Pt; at: number } | null = null;
-  constructor(private holdMs = TOUCH.followHoldMs) {}
-
-  /** Feed each pointer move (null = pointer left the window). */
-  update(p: Pt | null, near: boolean, now: number) {
-    if (p && near) this.last = { p, at: now };
-  }
-
-  /** Where to look now, or null (back to the user). Holds the last near point for holdMs. */
-  follow(now: number): Pt | null {
-    if (!this.last || now - this.last.at > this.holdMs) return null;
-    return this.last.p;
-  }
 }
 
 export type HoverReaction = "smile" | "hm";

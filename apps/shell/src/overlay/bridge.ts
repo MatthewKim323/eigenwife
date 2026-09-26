@@ -15,6 +15,8 @@ export interface OverlayBridge {
   on(channel: OverlayChannel, cb: (value: boolean) => void): () => void;
   /** Renderer is up: main replies with the current mute / attention state. */
   ready(): void;
+  /** The global cursor in screen points (~30Hz while visible, only when it moved). Returns an unsubscribe. */
+  onCursor(cb: (p: { x: number; y: number }) => void): () => void;
 }
 
 const noop: OverlayBridge = {
@@ -24,7 +26,10 @@ const noop: OverlayBridge = {
   log() {},
   on: () => () => {},
   ready() {},
+  onCursor: () => () => {},
 };
 
-export const bridge: OverlayBridge = (typeof window !== "undefined" && (window as any).eveOverlay) || noop;
+const real = typeof window !== "undefined" ? (window as any).eveOverlay : null;
+// An older preload without onCursor still works (the cursor then only counts over her window).
+export const bridge: OverlayBridge = real ? { ...noop, ...real } : noop;
 export const inElectron = typeof window !== "undefined" && !!(window as any).eveOverlay;

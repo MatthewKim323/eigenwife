@@ -13,7 +13,6 @@ export type LookAt = { kind: "user" } | { kind: "point"; x: number; y: number };
 export class AttentionController {
   private glance: { x: number; y: number; until: number } | null = null;
   private sustained: { x: number; y: number } | null = null;
-  private cursor: { x: number; y: number } | null = null;
   private lastGlanceAt = -Infinity;
   private lastKey: string | null = null;
 
@@ -41,16 +40,10 @@ export class AttentionController {
     this.sustained = point;
   }
 
-  /** Soft cursor follow (touch.ts CursorWatch): lowest priority, below glances and holds. */
-  follow(point: { x: number; y: number } | null) {
-    this.cursor = point;
-  }
-
   current(now: number): LookAt {
     if (this.glance && now < this.glance.until) return { kind: "point", x: this.glance.x, y: this.glance.y };
     this.glance = null;
     if (this.sustained) return { kind: "point", ...this.sustained };
-    if (this.cursor) return { kind: "point", ...this.cursor };
     return { kind: "user" };
   }
 }

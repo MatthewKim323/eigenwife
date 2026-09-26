@@ -13,6 +13,11 @@ contextBridge.exposeInMainWorld("eveOverlay", {
   dragEnd: () => ipcRenderer.send("overlay:drag-end"),
   log: (msg: string) => ipcRenderer.send("overlay:log", String(msg).slice(0, 500)),
   ready: () => ipcRenderer.send("overlay:ready"),
+  onCursor(cb: (p: { x: number; y: number }) => void) {
+    const fn = (_e: IpcRendererEvent, p: { x: number; y: number }) => cb({ x: Number(p?.x) || 0, y: Number(p?.y) || 0 });
+    ipcRenderer.on("overlay:cursor", fn);
+    return () => void ipcRenderer.removeListener("overlay:cursor", fn);
+  },
   on(channel: string, cb: (value: boolean) => void) {
     if (!CHANNELS.has(channel)) return () => {};
     const fn = (_e: IpcRendererEvent, v: boolean) => cb(!!v);
