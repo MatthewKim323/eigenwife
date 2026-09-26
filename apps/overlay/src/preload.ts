@@ -13,6 +13,8 @@ contextBridge.exposeInMainWorld("eveOverlay", {
   dragEnd: () => ipcRenderer.send("overlay:drag-end"),
   log: (msg: string) => ipcRenderer.send("overlay:log", String(msg).slice(0, 500)),
   ready: () => ipcRenderer.send("overlay:ready"),
+  // What she's looking at (screen points) so her cursor can wander there; null = nothing in particular.
+  reportLook: (p: { x: number; y: number } | null) => ipcRenderer.send("overlay:look", p ? { x: Number(p.x) || 0, y: Number(p.y) || 0 } : null),
   onCursor(cb: (p: { x: number; y: number }) => void) {
     const fn = (_e: IpcRendererEvent, p: { x: number; y: number }) => cb({ x: Number(p?.x) || 0, y: Number(p?.y) || 0 });
     ipcRenderer.on("overlay:cursor", fn);

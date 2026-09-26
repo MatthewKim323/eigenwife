@@ -6,7 +6,7 @@ import type { ScreenRect } from "@eigenwife/protocol";
 import { CursorSim, isCursorEvent, onDisplay, toLocal, type CursorFrame } from "./sim";
 
 interface Bridge {
-  on(channel: "event" | "browser" | "hue" | "display" | "reset", cb: (p: unknown) => void): () => void;
+  on(channel: "event" | "browser" | "hue" | "display" | "reset" | "level", cb: (p: unknown) => void): () => void;
 }
 
 const bridge: Bridge = (window as unknown as { eveCursor?: Bridge }).eveCursor ?? { on: () => () => {} };
@@ -17,7 +17,10 @@ let hue = Number(q.get("hue")) || 330;
 const canvas = document.getElementById("c") as HTMLCanvasElement;
 const g = canvas.getContext("2d")!;
 const sim = new CursorSim();
+// The layer's co-op presence: she's always on screen (idle never fades her out).
+if (q.get("presence") === "1") sim.setAlwaysOn(true);
 let raf = 0;
+let slow: ReturnType<typeof setTimeout> | undefined;
 
 function resize() {
   const dpr = devicePixelRatio || 1;
@@ -180,7 +183,7 @@ function drawBrowser(b: NonNullable<CursorFrame["browser"]>) {
   g.restore();
 }
 
-function draw(now: number): boolean {
+function draw(now: number): "busy" | "calm" | "sleep" {
   const f = sim.frame(now);
   g.clearRect(0, 0, innerWidth, innerHeight);
   if (f.browser) drawBrowser(f.browser);
@@ -215,6 +218,20 @@ function draw(now: number): boolean {
       g.fill();
       g.restore();
     }
+    if (f.point > 0) {
+      // Pointing: two soft rings pulsing out from the tip, "this, here".
+      const t = performance.now() / 700;
+      g.save();
+      for (let i = 0; i < 2; i++) {
+        const ph = (t + i * 0.5) % 1;
+        g.strokeStyle = hsl(hue, 95, 70, (1 - ph) * 0.55 * f.opacity * f.point);
+        g.lineWidth = 2;
+        g.beginPath();
+        g.arc(p.x, p.y, 6 + ph * 22, 0, Math.PI * 2);
+        g.stroke();
+      }
+      g.restore();
+    }
     if (f.hover > 0) {
       g.save();
       g.fillStyle = hsl(hue, 95, 70, 0.16 * f.hover * f.opacity);
@@ -237,15 +254,25 @@ function draw(now: number): boolean {
       drawPointer(f, p.x, p.y);
     }
   }
-  return f.active;
+  if (!f.active) return "sleep";
+  // Only breathing at rest: 20fps is plenty and keeps the GPU cool.
+  const calm = !f.moving && !f.ripples.length && !f.particles.length && !f.scroll && !f.typing && f.hover === 0 && f.point === 0 && (!f.browser || f.browser.alpha >= 1);
+  return calm ? "calm" : "busy";
 }
 
 function loop() {
   raf = 0;
-  if (draw(performance.now())) raf = requestAnimationFrame(loop);
+  slow = undefined;
+  const r = draw(performance.now());
+  if (r === "busy") raf = requestAnimationFrame(loop);
+  else if (r === "calm") slow = setTimeout(() => (raf = requestAnimationFrame(loop)), 50);
 }
 
 function wake() {
+  if (slow) {
+    clearTimeout(slow);
+    slow = undefined;
+  }
   if (!raf) raf = requestAnimationFrame(loop);
 }
 
@@ -267,6 +294,10 @@ bridge.on("hue", (h) => {
 bridge.on("display", (d) => {
   const r = d as ScreenRect;
   if (r && Number.isFinite(r.x) && Number.isFinite(r.width)) display = { x: r.x, y: r.y, width: r.width, height: r.height };
+  wake();
+});
+bridge.on("level", (lv) => {
+  if (typeof lv === "number" && Number.isFinite(lv)) sim.setLevel(lv, performance.now());
   wake();
 });
 bridge.on("reset", () => {

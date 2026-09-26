@@ -30,6 +30,8 @@ export interface OverlayState {
   openAtLogin: boolean;
   /** false = setContentProtection(true): she doesn't show up in screenshots / screen shares. */
   capturable: boolean;
+  /** Tray "Show Eve's cursor": her co-op cursor on the desktop (docs/AGENT_CURSOR.md). */
+  cursorVisible: boolean;
 }
 
 export const DEFAULT_STATE: OverlayState = {
@@ -40,6 +42,7 @@ export const DEFAULT_STATE: OverlayState = {
   attentionPaused: false,
   openAtLogin: false,
   capturable: false,
+  cursorVisible: true,
 };
 
 const isNum = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n);
@@ -68,6 +71,7 @@ export function parseState(raw: string | null | undefined): OverlayState {
     attentionPaused: bool("attentionPaused"),
     openAtLogin: bool("openAtLogin"),
     capturable: bool("capturable"),
+    cursorVisible: bool("cursorVisible"),
   };
 }
 

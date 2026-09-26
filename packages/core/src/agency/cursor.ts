@@ -25,6 +25,7 @@ export class AgentCursor {
   private pos: CursorPt | null = null;
   private idleTimer: ReturnType<typeof setTimeout> | undefined;
   private seenAt = 0;
+  private lastAt = 0;
   private offHello: () => void;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly now: () => number;
@@ -59,6 +60,7 @@ export class AgentCursor {
 
   private emit(action: AgentCursorAction, p: CursorPt, extra: { label?: string; target?: string; ms?: number } = {}): void {
     clearTimeout(this.idleTimer);
+    this.lastAt = this.now();
     this.bus.emit("agent.cursor", { x: Math.round(p.x), y: Math.round(p.y), space: "screen", action, ...clean(extra) }, SRC);
   }
 
@@ -85,6 +87,16 @@ export class AgentCursor {
 
   hover(extra: { label?: string; target?: string } = {}): void {
     if (this.pos) this.emit("hover", this.pos, extra);
+  }
+
+  /** Shared attention: a little wiggle at where she already is, while she talks about it. */
+  point(extra: { label?: string; target?: string } = {}): void {
+    if (this.pos) this.emit("point", this.pos, extra);
+  }
+
+  /** When she last did anything with her cursor (task steps, glides, points). */
+  lastActionAt(): number {
+    return this.lastAt;
   }
 
   /** Done for now: after a short beat she goes idle (and fades). Any new action cancels it. */

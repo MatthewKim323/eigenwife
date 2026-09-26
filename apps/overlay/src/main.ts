@@ -175,7 +175,32 @@ function setVisible(v: boolean) {
   }
   send("visible", v);
   persist({ visible: v });
+  // Her cursor hides and comes back with her.
+  cursorLayer?.refresh();
   refreshTray();
+}
+
+function setCursorVisible(on: boolean) {
+  persist({ cursorVisible: on });
+  cursorLayer?.refresh();
+  log(`eve's cursor ${on ? "shown" : "hidden"}`);
+  refreshTray();
+}
+
+// What her avatar is looking at (glance / hold / gaze), for the cursor's idle wander.
+let lookTarget: { p: { x: number; y: number }; at: number } | null = null;
+
+/** Everything the cursor layer needs to know about her body and his settings. */
+function cursorLayerOpts() {
+  return {
+    coreHost: CORE_HOST,
+    capturable: () => state.capturable || capturableEnv,
+    log,
+    avatar: () => (win && !win.isDestroyed() && win.isVisible() ? win.getBounds() : null),
+    // Cursor-only (no avatar window): shown follows the tray setting alone.
+    shown: () => state.cursorVisible && (CURSOR_ONLY || (!!win && !win.isDestroyed() && win.isVisible())),
+    look: () => lookTarget,
+  };
 }
 
 function toggleVisible() {
@@ -358,6 +383,11 @@ ipcMain.on("overlay:drag-end", (e) => {
 
 ipcMain.on("overlay:log", (_e, msg: string) => log(`page: ${msg}`));
 
+ipcMain.on("overlay:look", (e, p: { x: number; y: number } | null) => {
+  if (!win || e.sender !== win.webContents) return;
+  lookTarget = p && Number.isFinite(p.x) && Number.isFinite(p.y) ? { p: { x: p.x, y: p.y }, at: Date.now() } : null;
+});
+
 ipcMain.on("overlay:ready", (e) => {
   if (!win || e.sender !== win.webContents) return;
   send("mute", state.muted);
@@ -413,6 +443,7 @@ function refreshTray() {
     },
     { label: "Size", submenu: [size("small", "Small"), size("medium", "Medium"), size("large", "Large")] },
     { type: "separator" },
+    { label: "Show Eve's cursor", type: "checkbox", checked: state.cursorVisible, enabled: !!cursorLayer, click: (i) => setCursorVisible(i.checked) },
     {
       label: "Hide from screen capture",
       type: "checkbox",
@@ -460,7 +491,7 @@ if (!app.requestSingleInstanceLock()) {
     // A companion, not an app: no dock icon, no app switcher entry.
     if (process.platform === "darwin") app.dock?.hide();
     if (CURSOR_ONLY) {
-      cursorLayer = startCursorLayer({ coreHost: CORE_HOST, capturable: () => state.capturable || capturableEnv, log });
+      cursorLayer = startCursorLayer(cursorLayerOpts());
       log(`cursor layer only (core ${CORE_HOST}${capturableEnv ? ", capturable for recording" : ""})`);
       return;
     }
@@ -487,7 +518,8 @@ if (!app.requestSingleInstanceLock()) {
     // IPC is registered at module load, before the first loadURL.
     createWindow();
     refreshTray();
-    if (process.env.EVE_CURSOR_LAYER !== "0") cursorLayer = startCursorLayer({ coreHost: CORE_HOST, capturable: () => state.capturable || capturableEnv, log });
+    if (process.env.EVE_CURSOR_LAYER !== "0") cursorLayer = startCursorLayer(cursorLayerOpts());
+    refreshTray();
     registerHotkeys();
     // The tray's Outfit submenu mirrors the core (spoken changes show up here too).
     void refreshOutfit();

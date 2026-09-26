@@ -16,6 +16,7 @@ import { mapsQuery } from "./actions/places";
 import { EveBrowser } from "./browser/driver";
 import { playwrightBackend } from "./browser/playwright";
 import { AgentCursor } from "./cursor";
+import { startPointer } from "./pointer";
 import { Gate, SRC } from "./gate";
 import { effectivePermission } from "./policy";
 import { Policy } from "./policy";
@@ -111,6 +112,8 @@ export function createAgency(ctx: CoreContext, opts: AgencyOptions = {}) {
   const backend = deps.browserBackend?.() ?? null;
   const browser = backend ? new EveBrowser(backend, cursor, ctx.bus, { sleep: deps.sleep }) : null;
   gate.tools = { cursor, browser };
+  // Shared attention: she points at what she's talking about (pointer.ts).
+  const offPointer = startPointer(ctx, cursor, { osa: deps.osa, now: deps.now, browserOpen: () => browser?.isOpen() ?? false });
 
   /**
    * The show: visible browsing that runs next to a task, never in its way.
@@ -248,6 +251,7 @@ export function createAgency(ctx: CoreContext, opts: AgencyOptions = {}) {
 
   const stop = () => {
     offExternal();
+    offPointer();
     cursor.stop();
     void browser?.close();
   };

@@ -4,7 +4,7 @@
  */
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 
-const CHANNELS = new Set(["event", "browser", "hue", "display", "reset"]);
+const CHANNELS = new Set(["event", "browser", "hue", "display", "reset", "level"]);
 
 contextBridge.exposeInMainWorld("eveCursor", {
   on(channel: string, cb: (payload: unknown) => void) {

@@ -307,7 +307,8 @@ export interface EventMap {
   "agent.browser": { status: "open" | "closed"; bounds?: ScreenRect; url?: string };
 }
 
-export type AgentCursorAction = "move" | "click" | "type" | "scroll" | "hover" | "idle";
+/** point: shared attention, a small wiggle at something she is talking about. */
+export type AgentCursorAction = "move" | "click" | "type" | "scroll" | "hover" | "point" | "idle";
 
 export interface ScreenRect {
   x: number;

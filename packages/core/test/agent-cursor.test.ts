@@ -407,3 +407,63 @@ describe("the show during a task", () => {
     expect(h.log).not.toContain("launch");
   });
 });
+
+describe("shared attention: she points at what she's talking about", () => {
+  const talk = (h: ReturnType<typeof harness>, id: string, text: string) => h.bus.emit("speech.begin", { utteranceId: id, text, brain: "persona" }, "speech");
+  const cursorLog = (h: ReturnType<typeof harness>) => h.of("agent.cursor").map((e) => `${e.data.action}${e.data.label ? ` ${e.data.label}` : ""}`);
+
+  test("names an app: glide to its window, point while talking, idle when done", async () => {
+    const h = harness();
+    h.agency.cursor.markWatching();
+    talk(h, "u1", "your Spotify has been open all day btw");
+    await Bun.sleep(30);
+    expect(cursorLog(h)).toEqual(["move Spotify", "point Spotify"]);
+    expect(h.of("agent.cursor")[0]!.data).toMatchObject({ x: 1100, target: "Spotify" });
+    h.bus.emit("speech.end", { utteranceId: "u1", interrupted: false }, "speech");
+    await Bun.sleep(1300);
+    expect(cursorLog(h).at(-1)).toBe("idle");
+  });
+
+  test("a fresh gaze point wins; nothing known = no point", async () => {
+    const h = harness();
+    h.agency.cursor.markWatching();
+    talk(h, "u0", "hm, interesting");
+    await Bun.sleep(20);
+    expect(h.of("agent.cursor").length).toBe(0);
+    h.bus.emit("gaze.point", { x: 640, y: 222, nx: 0.4, ny: 0.2 }, "eye");
+    talk(h, "u1", "wait what is that");
+    await Bun.sleep(20);
+    expect(h.of("agent.cursor").map((e) => [e.data.action, e.data.x, e.data.y])).toEqual([
+      ["move", 640, 222],
+      ["point", 640, 222],
+    ]);
+  });
+
+  test("rate limited, never while busy, never when nobody's watching", async () => {
+    const h = harness();
+    talk(h, "u1", "Spotify again?");
+    await Bun.sleep(20);
+    expect(h.of("agent.cursor").length).toBe(0); // not watching
+    h.agency.cursor.markWatching();
+    await h.agency.cursor.move({ x: 5, y: 5 }); // a task step just happened
+    talk(h, "u2", "Spotify again?");
+    await Bun.sleep(20);
+    expect(h.of("agent.cursor").length).toBe(1);
+    const fresh = harness();
+    fresh.agency.cursor.markWatching();
+    talk(fresh, "a", "Spotify");
+    await Bun.sleep(20);
+    fresh.bus.emit("speech.end", { utteranceId: "a", interrupted: false }, "speech");
+    talk(fresh, "b", "Calendar though");
+    await Bun.sleep(20);
+    expect(fresh.of("agent.cursor").filter((e) => e.data.action === "point").length).toBe(1);
+  });
+
+  test("appMentioned", async () => {
+    const { appMentioned } = await import("../src/agency/pointer");
+    expect(appMentioned("open chrome real quick")).toBe("Google Chrome");
+    expect(appMentioned("what's that", "Figma")).toBe("Figma");
+    expect(appMentioned("nice weather")).toBeNull();
+    expect(appMentioned("look at this", "Electron")).toBeNull();
+  });
+});

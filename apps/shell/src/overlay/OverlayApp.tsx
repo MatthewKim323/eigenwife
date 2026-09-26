@@ -4,6 +4,7 @@ import type { AvatarState } from "@eigenwife/protocol";
 import { userFocus } from "../avatar/attention";
 import { resolveFocus, useGazeFeed, useTouchController, useWardrobeSync } from "../avatar/interact";
 import { HEAD_IN_BOX, loadEve, type EveLive2D } from "../avatar/live2d";
+import type { LookChoice } from "../avatar/look";
 import type { RigInput } from "../avatar/rig";
 import { avatarRuntime, avatarUi, useStore } from "../avatar/store";
 import { Tachie } from "../avatar/Tachie";
@@ -29,6 +30,20 @@ interface Flash {
   id: number;
   kind: "memory" | "attention" | "saved";
   text: string;
+}
+
+/**
+ * Tell main what she's looking at (things worth wandering her cursor over to:
+ * a shared glance, a held target, his real gaze). At most twice a second, and
+ * only when it changed.
+ */
+let lookSent: { key: string; at: number } = { key: "", at: 0 };
+function reportLook(choice: LookChoice | undefined, now: number) {
+  const worth = choice && choice.point && (choice.kind === "glance" || choice.kind === "hold" || choice.kind === "gaze");
+  const key = worth ? `${Math.round(choice!.point!.x / 40)},${Math.round(choice!.point!.y / 40)}` : "";
+  if (key === lookSent.key || now - lookSent.at < 500) return;
+  lookSent = { key, at: now };
+  bridge.reportLook(worth ? choice!.point : null);
 }
 
 /**
@@ -132,9 +147,9 @@ export function OverlayApp() {
       // She sits somewhere on a big screen: at rest she leans toward its middle, where you are.
       const user = () => userFocus(head, sw);
       const r = avatarRuntime;
-      const { focus, headGain } = r.still
-        ? { focus: user(), headGain: 1 }
-        : resolveFocus(now, { fromPage: (p) => ({ x: ox + p.x, y: oy + p.y }), head, size: { w: sw, h: sh }, user });
+      const resolved = r.still ? null : resolveFocus(now, { fromPage: (p) => ({ x: ox + p.x, y: oy + p.y }), head, size: { w: sw, h: sh }, user });
+      const { focus, headGain } = resolved ?? { focus: user(), headGain: 1 };
+      reportLook(resolved?.choice, now);
       return { state: avatarUi.get().state, focus, headGain, mouth: r.mouthOverride ?? r.mouth, mouthHold: r.mouthOverride === null && r.mouthHold, still: r.still, eyesClosed: r.eyesClosed };
     };
     loadEve(canvas, { width: BOX_W, height: BOX_H }, getInput, fallback)

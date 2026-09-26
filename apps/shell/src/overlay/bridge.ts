@@ -17,6 +17,8 @@ export interface OverlayBridge {
   ready(): void;
   /** The global cursor in screen points (~30Hz while visible, only when it moved). Returns an unsubscribe. */
   onCursor(cb: (p: { x: number; y: number }) => void): () => void;
+  /** What she's looking at in screen points (glance / hold / gaze), for her cursor's idle wander. */
+  reportLook(p: { x: number; y: number } | null): void;
 }
 
 const noop: OverlayBridge = {
@@ -27,6 +29,7 @@ const noop: OverlayBridge = {
   on: () => () => {},
   ready() {},
   onCursor: () => () => {},
+  reportLook() {},
 };
 
 const real = typeof window !== "undefined" ? (window as any).eveOverlay : null;
