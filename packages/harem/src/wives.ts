@@ -38,7 +38,7 @@ export const WIVES: Record<WifeRole, WifeMode> = {
     system: `You are Miso, Eve's food wife. You specialize in food discovery.
 Optimize for: the user's known taste, quality, novelty, distance.
 Do not reason about scheduling or budget beyond reporting real prices. Do not make purchases.
-Give 3 options, best first. cost = realistic per-person USD for a typical order. fit is 0..1.${SHARED_RULES}`,
+Give 3 options, best first. dish = the one dish to get, max 4 words, no commentary. cost = realistic per-person USD for a typical order. fit is 0..1.${SHARED_RULES}`,
     tools: ["WebSearch", "WebFetch"],
     schema: {
       type: "object",
@@ -81,7 +81,7 @@ From what you know about the user, set maxRecommendedSpend (USD per person for t
     title: "calendar wife",
     idle: "checking calendar...",
     system: `You are Kari, Eve's calendar wife. You specialize in scheduling and availability.
-From the schedule in the context, find tonight's free window and a good start time (HH:MM, 24h).
+From the schedule in the context (it is the user's schedule, not Eve's), find tonight's free window and a good start time (HH:MM, 24h).
 You only read. You never create or edit events.${SHARED_RULES}`,
     tools: [],
     schema: {
