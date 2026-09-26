@@ -225,3 +225,30 @@ test("deep focus: ambient remarks get quieter while he types", async () => {
   expect(focused.decision).toBe("IGNORE");
   await r.stop();
 });
+
+test("fast path: 'what am i doing' answers from the fresh window text, no screenshot", async () => {
+  const r = await rig();
+  r.screen.snap = { ...r.screen.snap!, at: r.clock.now() };
+  r.emit("voice.final", { text: "yo what am i doing right now" });
+  await settle(15);
+  expect(r.screen.looks).toEqual([]);
+  expect(r.brains.requests.at(-1)!.extra).toContain("on their screen right now (TextEdit): TextEdit: bug.txt");
+  // a visual ask still takes the screenshot
+  r.clock.advance(30_000);
+  r.screen.snap = { ...r.screen.snap!, at: r.clock.now() };
+  r.emit("voice.final", { text: "rate this fit" });
+  await settle(15);
+  expect(r.screen.looks.map((l) => l.reason)).toEqual(["deictic"]);
+  await r.stop();
+});
+
+test("private window: she says she won't look instead of answering blind", async () => {
+  const r = await rig();
+  r.screen.can = false;
+  (r.screen as any).blocked = () => "private window (private title)";
+  r.emit("voice.final", { text: "what am i doing rn" });
+  await settle(15);
+  expect(r.screen.looks).toEqual([]);
+  expect(r.brains.requests.at(-1)!.extra).toContain("you can't look right now: private window");
+  await r.stop();
+});

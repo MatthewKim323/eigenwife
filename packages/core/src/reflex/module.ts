@@ -505,13 +505,26 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
    * offer, the summary for an interesting remark. null = a stop word
    * arrived while she was looking; drop the reply.
    */
+  /** Questions only a picture answers: these get the (slower) screenshot look. */
+  const VISUAL_ASK = /\b(?:look|looks|rate|fire|mid|cute|ugly|pretty|fit|outfit|drip|picture|pic|photo|image|video|design|color|colour|thumbnail|meme|see this|see that)\b/i;
+  const freshText = (cur: { summary?: string; private?: boolean; at?: number } | null | undefined) =>
+    !!cur && !cur.private && !!cur.summary && cur.summary.length > 20 && cur.at !== undefined && now() - cur.at < 20_000;
+
   async function screenContext(t: Trigger, userText: string | undefined, myGen: number): Promise<string[] | null> {
     const screen = ctx.tryUse("screen");
     if (!screen) return [];
     const lines: string[] = [];
     const w = ctx.world();
     const gazeFreshNow = !!w.user.gazeTarget && w.user.gazeTargetAt !== undefined && now() - w.user.gazeTargetAt <= gazeFresh;
-    if (userText && screenDeictic(userText) && !gazeFreshNow && screen.canLook()) {
+    if (userText && screenDeictic(userText) && !gazeFreshNow && !screen.canLook()) {
+      // Asked about the screen but she can't look: say why instead of answering blind.
+      const why = screen.blocked?.() ?? "can't see it right now";
+      lines.push(`they asked about their screen, but you can't look right now: ${why}. private windows (passwords, banking, sign-in pages) you never look at on purpose. say that in one short line and ask what it is.`);
+    } else if (userText && screenDeictic(userText) && !gazeFreshNow && screen.canLook() && !VISUAL_ASK.test(userText) && freshText(screen.current())) {
+      // Fast path (~0s): the window text she already read answers "what am i doing". No screenshot.
+      const cur = screen.current()!;
+      lines.push(`on their screen right now (${cur.app}): ${cur.summary}`, `answer from that directly and specifically, like a friend glancing over.`);
+    } else if (userText && screenDeictic(userText) && !gazeFreshNow && screen.canLook()) {
       await say(pick(LOOK_LINES, t.id), t, t.parent, "thinking");
       const look = await screen.look("deictic", { question: userText, parent: t.parent });
       if (gen !== myGen) return null;

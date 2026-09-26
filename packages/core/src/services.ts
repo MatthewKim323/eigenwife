@@ -141,6 +141,8 @@ export interface ScreenService {
   current(): ScreenSnapshot | null;
   /** Could "this" mean the screen right now: enabled, not paused, a non-Eve, non-private app in front. */
   canLook(): boolean;
+  /** Why she can't look right now (never the window's content), or null. */
+  blocked?(): string | null;
   /** Level 3: capture the focused window once, describe it with a vision model, delete the image. */
   look(reason: "deictic" | "stuck" | "auto", opts?: { question?: string; parent?: string }): Promise<{ ok: boolean; description: string; app?: string; by: string; error?: string }>;
   paused(): boolean;

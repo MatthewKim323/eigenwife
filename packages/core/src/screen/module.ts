@@ -154,6 +154,10 @@ export function createScreen(ctx: CoreContext, opts: ScreenOptions = {}) {
   let attentionPaused = false;
   let snapshot: ScreenSnapshot | null = null;
   let frontIsEve = false;
+  /** The last window that wasn't Eve: clicking her shouldn't blind her. */
+  let lastRealFront: { app?: string; bundleId?: string; pid?: number } | null = null;
+  /** Why the current window is off limits (for her reply and debugging), never its content. */
+  let privateWhy: string | null = null;
   let last: { signature: string; app: string; emittedAt: number; scores?: ScreenScores; private?: boolean } | null = null;
   let track: { key: string; since: number; lastSeen: number } | null = null;
   let perms: Permissions | null = null;
@@ -224,8 +228,11 @@ export function createScreen(ctx: CoreContext, opts: ScreenOptions = {}) {
         return "eve";
       }
       frontIsEve = false;
+      lastRealFront = front;
       // Private apps are skipped before a single accessibility call.
-      if (privateReason(front, settings)) {
+      const why = privateReason(front, settings);
+      privateWhy = why;
+      if (why) {
         emitPrivate(front.app);
         return "private";
       }
@@ -333,7 +340,8 @@ export function createScreen(ctx: CoreContext, opts: ScreenOptions = {}) {
     looking = true;
     let flashed = false;
     try {
-      const front = await deps.front().catch(() => ({}) as { app?: string; bundleId?: string; pid?: number });
+      let front = await deps.front().catch(() => ({}) as { app?: string; bundleId?: string; pid?: number });
+      if (front.app && isEve(front) && lastRealFront?.app) front = lastRealFront;
       if (!front.app || isEve(front)) return fail("nothing to look at");
       if (privateReason(front, settings)) return fail("private app");
       if (perms === null) await checkPermissions().catch(() => null);
@@ -380,7 +388,10 @@ export function createScreen(ctx: CoreContext, opts: ScreenOptions = {}) {
 
   const service: ScreenService = {
     current: () => (paused() ? null : snapshot),
-    canLook: () => enabled && !paused() && !frontIsEve && !snapshot?.private,
+    canLook: () => enabled && !paused() && (!frontIsEve || !!lastRealFront?.app) && !snapshot?.private,
+    /** Why she can't look right now, or null. */
+    blocked: (): string | null =>
+      !enabled ? "screen is off" : paused() ? "screen is paused" : snapshot?.private ? `private window (${privateWhy ?? "private"})` : frontIsEve && !lastRealFront?.app ? "nothing to look at" : null,
     look,
     paused,
   };
