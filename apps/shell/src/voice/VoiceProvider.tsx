@@ -2,9 +2,12 @@ import { useEffect, type ReactNode } from "react";
 import { envelope, type SpeechMark } from "@eigenwife/protocol";
 import { avatarRuntime, createStore } from "../avatar/store";
 import { CORE_HTTP, useBus } from "../lib/bus";
-import { wireAudioUnlock } from "./audio";
 import { SpeechPlayer } from "./player";
-import { Recognizer } from "./recognition";
+import { OVERLAY } from "../overlay/mode";
+import { unlockAudio, wireAudioUnlock } from "./audio";
+import { EarsClient } from "./ears";
+import { Recognizer, type MicStatus } from "./recognition";
+import { chooseStt, earsAvailable, earsUrl, sttPref } from "./stt";
 
 export interface SubtitleState {
   utteranceId: string;
@@ -21,7 +24,7 @@ export interface VoiceUi {
   subtitle: SubtitleState | null;
   /** Last utterance finished at (for the fade-out). */
   subtitleEndedAt: number;
-  mic: { supported: boolean; listening: boolean; ptt: boolean; error?: string };
+  mic: MicStatus;
   /** What the user is saying right now (interim), cleared on commit. */
   heard: string;
   speaking: boolean;
@@ -39,6 +42,8 @@ type DoneListener = (utteranceId: string, interrupted: boolean) => void;
 const doneListeners = new Set<DoneListener>();
 const beginListeners = new Set<(utteranceId: string) => void>();
 let player: SpeechPlayer | null = null;
+let ears: { setMuted(on: boolean): void } | null = null;
+let mutedWanted = false;
 
 /** Imperative handle for scenes (emergence gates her first line until she's out of the card). */
 export const voice = {
@@ -55,6 +60,15 @@ export const voice = {
   },
   speaking() {
     return player?.speaking ?? false;
+  },
+  /** Mute / unmute the mic (overlay tray, Cmd+Shift+M). */
+  mute(on: boolean) {
+    mutedWanted = on;
+    ears?.setMuted(on);
+    if (!ears) voiceUi.set({ mic: { ...voiceUi.get().mic, muted: on } });
+  },
+  muted() {
+    return mutedWanted;
   },
 };
 
@@ -122,10 +136,19 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
       client.on("speech.stop", (e) => p.stop(e.data.reason)),
     ];
 
-    // --- ears -------------------------------------------------------------
-    let rec: Recognizer | null = null;
-    if (MIC) {
-      rec = new Recognizer({
+    // --- ears: Web Speech in a browser tab, Deepgram via core ws /ears in the overlay ---
+    type Ears = { start(): void | Promise<void>; pttDown(): void; pttUp(): void; dispose(): void; setMuted(on: boolean): void };
+    let rec: Ears | null = null;
+    let disposed = false;
+    const eve = () => ({ speaking: p.speaking, msSinceStopped: performance.now() - p.stoppedAt });
+    const status = (s: MicStatus) => voiceUi.set({ mic: s });
+    const stopHer = () => {
+      // Stop her right now locally; the core hears the partial and stops too.
+      p.stop("barge-in");
+      client.emit("speech.stop", { reason: "barge-in" });
+    };
+    const useBrowser = () =>
+      new Recognizer({
         partial: (text) => {
           voiceUi.set({ heard: text });
           client.emit("voice.partial", { text });
@@ -134,20 +157,48 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
           voiceUi.set({ heard: "" });
           client.emit("voice.final", { text });
         },
-        bargeIn: () => {
-          // Stop her right now locally; the core hears the partial and stops too.
-          p.stop("barge-in");
-          client.emit("speech.stop", { reason: "barge-in" });
-        },
-        status: (s) => voiceUi.set({ mic: s }),
-        eve: () => ({ speaking: p.speaking, msSinceStopped: performance.now() - p.stoppedAt }),
+        bargeIn: stopHer,
+        status,
+        eve,
       });
+    // The core publishes voice.* itself for Deepgram: these only drive the UI.
+    const useDeepgram = () =>
+      new EarsClient(
+        {
+          partial: (text) => voiceUi.set({ heard: text }),
+          final: () => voiceUi.set({ heard: "" }),
+          bargeIn: () => p.stop("barge-in"),
+          status,
+          eve,
+        },
+        earsUrl(CORE_HTTP, OVERLAY ? "overlay" : "shell"),
+      );
+    const attach = (r: Ears, startNow: boolean) => {
+      if (disposed) return r.dispose();
+      rec = r;
+      ears = r;
+      if (mutedWanted) r.setMuted(true);
+      if (startNow) void r.start();
+    };
+
+    if (MIC) {
+      const pref = sttPref(location.search, OVERLAY);
+      const browserOk = !!((globalThis as any).SpeechRecognition ?? (globalThis as any).webkitSpeechRecognition);
+      if (pref === "auto") {
+        void earsAvailable(CORE_HTTP).then((avail) => {
+          const src = chooseStt(pref, avail, browserOk);
+          attach(src === "deepgram" ? useDeepgram() : useBrowser(), src === "deepgram");
+        });
+      } else if (pref === "deepgram") attach(useDeepgram(), true);
+      else attach(useBrowser(), false);
     } else {
       voiceUi.set({ mic: { supported: false, listening: false, ptt: false, error: "mic off (?mic=0)" } });
     }
 
-    // Audio + mic both need a gesture: the first click anywhere does both.
+    // Audio + mic both need a gesture in a browser: the first click anywhere does both.
+    // Electron's overlay runs with autoplay allowed, so it unlocks right away.
     wireAudioUnlock(() => rec?.start());
+    if (OVERLAY) void unlockAudio();
     const onDown = (e: KeyboardEvent) => {
       if (e.code !== "Space" || e.repeat || isTyping(e.target)) return;
       e.preventDefault();
@@ -164,7 +215,9 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
       offs.forEach((o) => o());
       removeEventListener("keydown", onDown);
       removeEventListener("keyup", onUp);
+      disposed = true;
       rec?.dispose();
+      if (ears === rec) ears = null;
       p.dispose();
       if (player === p) player = null;
     };

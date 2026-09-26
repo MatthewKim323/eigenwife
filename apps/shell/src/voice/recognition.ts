@@ -1,11 +1,20 @@
 import { acceptWhileSpeaking, TurnCommitter } from "./turn";
 
+export interface MicStatus {
+  supported: boolean;
+  listening: boolean;
+  ptt: boolean;
+  muted?: boolean;
+  source?: "browser" | "deepgram";
+  error?: string;
+}
+
 export interface RecognizerHooks {
   partial(text: string): void;
   final(text: string): void;
   /** User talked over her with 3+ words. */
   bargeIn(text: string): void;
-  status(s: { supported: boolean; listening: boolean; ptt: boolean; error?: string }): void;
+  status(s: MicStatus): void;
   /** Is she talking right now, and how long since she stopped. */
   eve(): { speaking: boolean; msSinceStopped: number };
 }
@@ -70,8 +79,24 @@ export class Recognizer {
   }
 
   private emitStatus() {
-    this.hooks.status({ supported: this.supported, listening: this.running, ptt: this.ptt });
+    this.hooks.status({ supported: this.supported, listening: this.running && !this.muted, ptt: this.ptt, muted: this.muted, source: "browser" });
   }
+
+  private muted = false;
+
+  /** Mute: stop the engine and ignore push-to-talk until unmuted. */
+  setMuted(on: boolean) {
+    this.muted = on;
+    if (on) {
+      const wanted = this.wanted;
+      this.stop();
+      this.wanted = false;
+      this.resumeOnUnmute = wanted;
+    } else if (this.resumeOnUnmute) this.start();
+    this.emitStatus();
+  }
+
+  private resumeOnUnmute = false;
 
   private startEngine() {
     if (!this.rec || this.running) return;
@@ -85,6 +110,10 @@ export class Recognizer {
   /** Start continuous listening (call after a user gesture). */
   start() {
     if (!this.opts.continuous) return;
+    if (this.muted) {
+      this.resumeOnUnmute = true;
+      return;
+    }
     this.wanted = true;
     this.startEngine();
   }
@@ -97,7 +126,7 @@ export class Recognizer {
   }
 
   pttDown() {
-    if (this.ptt || !this.rec) return;
+    if (this.ptt || !this.rec || this.muted) return;
     this.ptt = true;
     this.emitStatus();
     this.startEngine();

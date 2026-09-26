@@ -6,10 +6,10 @@ export function MicIndicator({ placement }: { placement: "stage" | "column" | "h
   const mic = useStore(voiceUi, (s) => s.mic);
   const heard = useStore(voiceUi, (s) => s.heard);
   if (placement === "hidden") return null;
-  const state = !mic.supported || mic.error ? "off" : mic.ptt ? "ptt" : mic.listening ? "on" : "idle";
+  const state = mic.muted ? "off" : !mic.supported || mic.error ? "off" : mic.ptt ? "ptt" : mic.listening ? "on" : "idle";
   const label =
     state === "off"
-      ? (mic.error ?? "no speech recognition (use chrome)")
+      ? mic.muted ? "mic muted" : (mic.error ?? "no speech recognition (use chrome)")
       : state === "ptt"
         ? "listening (space)"
         : state === "on"
