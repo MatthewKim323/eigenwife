@@ -94,17 +94,27 @@ export function deepgramTts(io: TtsIO): TtsBackend {
 /** ElevenLabs "Rachel": calm young female voice, a safe default when no voice id is configured. */
 export const ELEVEN_DEFAULT_VOICE = "21m00Tcm4TlvDq8ikWAM";
 
+/**
+ * Live lines use the fast model; `prerender` sets EVE_ELEVEN_MODEL=eleven_v3 so
+ * scripted lines get the expressive one. The cache key is model-agnostic (same
+ * voice), so a v3 prerender is what plays live for scripted lines.
+ */
+export const ELEVEN_LIVE_MODEL = "eleven_flash_v2_5";
+
 export function elevenLabsTts(io: TtsIO): TtsBackend {
   const voice = () => io.secret("EVE_ELEVEN_VOICE_ID") || io.secret("ELEVENLABS_VOICE_ID") || ELEVEN_DEFAULT_VOICE;
+  const model = () => io.secret("EVE_ELEVEN_MODEL") || ELEVEN_LIVE_MODEL;
   return {
     name: "elevenlabs",
-    voiceKey: () => `elevenlabs:eleven_flash_v2_5:${voice()}:v1`,
+    voiceKey: () => `elevenlabs:${voice()}:v2`,
     configured: () => !!io.secret("ELEVENLABS_API_KEY"),
     async synth(text, signal) {
+      const m = model();
+      const settings = m === "eleven_v3" ? { stability: 0.5 } : { stability: 0.45, similarity_boost: 0.8, style: 0.35, use_speaker_boost: true };
       const res = await io.fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice()}?output_format=mp3_44100_128`, {
         method: "POST",
         headers: { "xi-api-key": io.secret("ELEVENLABS_API_KEY"), "content-type": "application/json", accept: "audio/mpeg" },
-        body: JSON.stringify({ text, model_id: "eleven_flash_v2_5", voice_settings: { stability: 0.45, similarity_boost: 0.8, style: 0.35, use_speaker_boost: true } }),
+        body: JSON.stringify({ text, model_id: m, voice_settings: settings }),
         signal,
       });
       if (!res.ok) throw new HttpError(res.status, await res.text().catch(() => ""), "elevenlabs");

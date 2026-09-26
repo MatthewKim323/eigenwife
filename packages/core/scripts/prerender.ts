@@ -17,6 +17,8 @@ import { LINES, FILLERS } from "../src/speech/lines";
 import { buildTts, ttsIO } from "../src/speech/module";
 
 const args = process.argv.slice(2);
+// Scripted lines are cached once, so they can afford ElevenLabs' most expressive model.
+process.env.EVE_ELEVEN_MODEL ||= "eleven_v3";
 const only = args.includes("--backend") ? args[args.indexOf("--backend") + 1] : undefined;
 const dry = args.includes("--dry");
 const eveHome = secret("EVE_HOME") || join(homedir(), ".eve");

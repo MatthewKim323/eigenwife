@@ -373,6 +373,27 @@ describe("tts backends", () => {
     await expect(bad.synth("x")).rejects.toThrow();
   });
 
+  test("elevenlabs: live lines use flash, prerender can pick v3, cache key ignores the model", async () => {
+    const models: string[] = [];
+    const mk = (extra: Record<string, string>) =>
+      elevenLabsTts(
+        io({
+          secret: (n: string) => (({ ELEVENLABS_API_KEY: "el", ELEVENLABS_VOICE_ID: "vox", ...extra }) as Record<string, string>)[n] ?? "",
+          fetch: async (_u: string, init: RequestInit) => {
+            models.push(JSON.parse(String(init.body)).model_id);
+            return new Response(new Uint8Array(200));
+          },
+        }) as never,
+      );
+    const live = mk({});
+    const pre = mk({ EVE_ELEVEN_MODEL: "eleven_v3" });
+    await live.synth("hi.");
+    await pre.synth("hi.");
+    expect(models).toEqual(["eleven_flash_v2_5", "eleven_v3"]);
+    expect(live.voiceKey()).toBe(pre.voiceKey());
+    expect(live.voiceKey()).toBe("elevenlabs:vox:v2");
+  });
+
   test("say: say to aiff, ffmpeg to mp3", async () => {
     const argvs: string[][] = [];
     const b = sayTts(
