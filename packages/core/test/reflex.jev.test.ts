@@ -19,7 +19,29 @@ function input(t: Trigger, over: Partial<JevInput> = {}): JevInput {
   return { trigger: t, world: born(), relationship: { ...DEFAULT_RELATIONSHIP }, now: NOW, ...over };
 }
 
-const say = (text: string, over: Partial<JevInput> = {}) => localScore(input(trig("utterance", { text }, { urgency: "immediate" }), over));
+// Mid-conversation by default (she answered 5s ago): the addressing gate has its own tests below.
+const say = (text: string, over: Partial<JevInput> = {}) =>
+  localScore(input(trig("utterance", { text }, { urgency: "immediate" }), { lastReactionAt: NOW - 5000, ...over }));
+
+test("addressing gate: the mic hears the room, she only answers when it's for her", () => {
+  const cold = { lastReactionAt: NOW - 120_000 };
+  // friends talking in the room: ignored
+  expect(say("hella beef", cold).decision).toBe("IGNORE");
+  expect(say("why are they so serious bro", cold).decision).toBe("IGNORE");
+  expect(say("hella beef", cold).reason).toBe("not talking to her");
+  // her name, things she does, deictic questions, mid-conversation: answered
+  expect(say("eve why are they so serious", cold).decision).not.toBe("IGNORE");
+  expect(say("yo babe you up", cold).decision).not.toBe("IGNORE");
+  expect(say("put your pajamas on", cold).decision).toBe("ACT");
+  expect(say("let's listen to music", cold).decision).toBe("ACT");
+  expect(say("thoughts?", cold).decision).not.toBe("IGNORE");
+  expect(say("wait", cold).stopSpeech).toBe(true);
+  expect(say("hella beef").decision).not.toBe("IGNORE");
+  // opt out
+  process.env.EVE_ADDRESS_MODE = "always";
+  expect(say("hella beef", cold).decision).not.toBe("IGNORE");
+  delete process.env.EVE_ADDRESS_MODE;
+});
 
 test("intent reader", () => {
   expect(readIntent("wait").stop).toBe(true);
@@ -201,7 +223,7 @@ test("jev adapter: guardrails (stop words skip the network, utterances never ign
   expect(stop.decision).toBe("IGNORE");
   expect(stop.stopSpeech).toBe(true);
   expect(calls).toBe(0);
-  const q = await jev.decide(input(trig("utterance", { text: "what do you think of it" }, { urgency: "immediate" })));
+  const q = await jev.decide(input(trig("utterance", { text: "what do you think of it" }, { urgency: "immediate" }), { lastReactionAt: NOW - 5000 }));
   expect(q.decision).not.toBe("IGNORE");
   expect(q.by).toBe("jev");
   const task = await jev.decide(input(trig("utterance", { text: "figure out dinner for tonight" }, { urgency: "immediate" })));

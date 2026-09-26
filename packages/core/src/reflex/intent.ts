@@ -106,12 +106,15 @@ export function readIntent(text: string): UtteranceIntent {
       }
     }
   }
+  // Clothes beat music: "put on your pajamas" is an outfit, not a song.
+  const outfit = stop ? null : readOutfit(t);
+  if (outfit) music = null;
   const question = /\?\s*$/.test(t) || QUESTION_START.test(t);
-  const browse = stop || music ? null : readBrowse(t);
+  const browse = stop || music || outfit ? null : readBrowse(t);
   return {
     stop,
     task: !stop && !browse && TASK.test(t),
-    command: stop || music || browse ? null : command,
+    command: stop || music || browse || outfit ? null : command,
     music,
     help: HELP.test(t),
     question,
@@ -120,7 +123,7 @@ export function readIntent(text: string): UtteranceIntent {
     down: DOWN.test(t),
     approval: APPROVAL.test(t),
     filler: FILLER.test(t),
-    outfit: stop || music ? null : readOutfit(t),
+    outfit,
     browse,
     work: !stop && !command && !music && !browse && readWorkIntent(t) !== null,
     words,

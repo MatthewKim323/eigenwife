@@ -98,11 +98,41 @@ export interface LocalResult {
   intent?: UtteranceIntent;
 }
 
+/** How long after an exchange she treats speech as still talking to her. */
+export const CONVERSATION_WINDOW_MS = 25_000;
+const NAME_CALL = /\b(?:eve|evie|eva|babe|bae|girl|wifey|wife|queen)\b/i;
+
+/**
+ * Is he talking to HER? Her mic hears the whole room. Speech counts as
+ * addressed when: he says her name, or they're mid-conversation (she spoke or
+ * answered within the window), or it's something she acts on (stop, music,
+ * outfits, commands, tasks, work, approvals), or a "this/that/thoughts?"
+ * question while his eyes are on something right now. EVE_ADDRESS_MODE=always
+ * turns the gate off.
+ */
+export function addressed(input: JevInput, text: string, it: ReturnType<typeof readIntent>): { yes: boolean; why: string } {
+  if ((process.env.EVE_ADDRESS_MODE ?? "").toLowerCase() === "always") return { yes: true, why: "always listening" };
+  const w = input.world;
+  const name = w.companion.persona?.name;
+  if (NAME_CALL.test(text) || (name && new RegExp(`\\b${name.replace(/[^a-z]/gi, "")}\\b`, "i").test(text))) return { yes: true, why: "said her name" };
+  if (it.stop || (it.approval && input.pendingApproval) || it.outfit || it.music || it.command || it.task || it.work || it.browse) return { yes: true, why: "something she does" };
+  const last = Math.max(w.companion.lastSpokeAt ?? -Infinity, input.lastReactionAt ?? -Infinity);
+  if (input.now - last < CONVERSATION_WINDOW_MS) return { yes: true, why: "mid-conversation" };
+  if (it.deictic && it.question) return { yes: true, why: "asking about what he's looking at" };
+  return { yes: false, why: "not talking to her" };
+}
+
 function scoreUtterance(input: JevInput, text: string): LocalResult {
   const it = readIntent(text);
   const l = base();
   const why: string[] = [];
   let stopSpeech = false;
+  const to = addressed(input, text, it);
+  if (!to.yes && input.world.companion.born) {
+    l.IGNORE = 8;
+    const scores = softmax(l);
+    return { logits: l, scores, decision: "IGNORE", reason: to.why, intent: it, stopSpeech: false };
+  }
   if (it.stop) {
     l.IGNORE = 6;
     stopSpeech = true;
@@ -415,7 +445,7 @@ export function createJev(opts: JevOptions = {}): JevDecider {
         intent: local.intent,
       });
       // Hard cases never wait on the network.
-      const hard = local.stopSpeech || local.reason.includes("not born") || local.reason.includes("agency owns") || local.reason.includes("own escalation") || local.reason.includes("outfit request") || local.reason.includes("poked");
+      const hard = local.stopSpeech || local.reason.includes("not born") || local.reason.includes("agency owns") || local.reason.includes("own escalation") || local.reason.includes("outfit request") || local.reason.includes("poked") || local.reason === "not talking to her";
       if (!opts.apiKey || hard) return localVerdict("");
       if (clock() < openUntil) return localVerdict("jev breaker open");
       try {
@@ -429,7 +459,7 @@ export function createJev(opts: JevOptions = {}): JevDecider {
           decision = local.decision;
         }
         if (decision === "IGNORE" && input.trigger.rule === "utterance") {
-          reason += "; utterances are never ignored";
+          reason += "; utterances to her are never ignored";
           decision = local.decision === "IGNORE" ? "REACT" : local.decision;
         }
         return { decision, scores: r.scores, by: "jev", latencyMs: ms(), reason: `${reason} (${local.reason})`, intent: local.intent };
