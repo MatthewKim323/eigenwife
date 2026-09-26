@@ -258,6 +258,26 @@ export interface EventMap {
     branch?: string;
     detail?: string;
   };
+
+  // --- agent cursor: Eve's own pointer on the desktop (docs/AGENT_CURSOR.md) --------
+  /**
+   * Where Eve's own cursor goes and what it does there, in macOS screen points
+   * (top-left origin, same space as Electron's screen API). Purely visual: the
+   * real work happens in her browser or through AppleScript. matt's cursor is never moved.
+   * ms: glide duration hint for "move" (agentGlideMs when absent).
+   */
+  "agent.cursor": { x: number; y: number; space: "screen"; action: AgentCursorAction; label?: string; target?: string; ms?: number };
+  /** Her visible browser window (Playwright Chromium) opened, moved, or closed. bounds in screen points. */
+  "agent.browser": { status: "open" | "closed"; bounds?: ScreenRect; url?: string };
+}
+
+export type AgentCursorAction = "move" | "click" | "type" | "scroll" | "hover" | "idle";
+
+export interface ScreenRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 export type EventType = keyof EventMap;
@@ -369,3 +389,4 @@ export function emptyWorld(): WorldSnapshot {
 export * from "./world";
 export * from "./wardrobe";
 export * from "./candidates";
+export * from "./cursor";
