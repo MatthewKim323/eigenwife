@@ -61,7 +61,7 @@ Switch from the menu bar icon or with `eye run --mode head`.
 Needs Python 3.12+, [uv](https://docs.astral.sh/uv/), and macOS.
 
 ```bash
-cd ~/dev/eye
+cd eye  # in the eigenwife repo
 uv sync
 uv run eye doctor
 ```
@@ -87,6 +87,51 @@ eye config                 print the effective settings
 
 Useful flags: `--camera "FaceTime"`, `--display 1`, `--mode gaze|head|hybrid`,
 `--debug` (draws the raw gaze estimate and fixation radius on the overlay).
+
+## eye serve (gaze for apps)
+
+`eye serve` tracks without touching the mouse and streams events to apps:
+
+```bash
+uv run eye serve          # http://127.0.0.1:8765/ demo page, ws://127.0.0.1:8765/ws events
+```
+
+Open the demo page, hit **quick calibrate** (5 dots, ~10 s), look around. The full
+`eye calibrate` should happen beforehand; the quick one fits a small drift correction on
+top of it (saved to `~/.eye/correction.json`, `--fresh` ignores it) and is only applied
+if it beats no correction on held-out dots.
+
+From a page, use the client (no deps):
+
+```js
+import { EyeClient } from "http://127.0.0.1:8765/eye-client.js";
+const eye = new EyeClient();                  // watches every [data-gaze="key"] element
+eye.on("fixation", ({ key, el }) => {});      // a fixation landed on an element (snaps within 2 deg)
+eye.on("fixation_end", ({ key, ms }) => {});
+eye.on("confirm", ({ key, el }) => {});       // held blink = click
+eye.stats();   // { prompt_1: { dwellMs, visits, revisits, fixations, longestMs, firstAt, lastAt } }
+await eye.calibrate();                        // the LOOK HERE dots
+```
+
+Screen to page coords assume the browser chrome is on top and zoom is 100%. Fullscreen
+the page for the demo; the quick calibration absorbs whatever offset is left.
+
+Raw protocol, for non-browser consumers (jabby): JSON messages, coordinates in macOS
+screen points (`x`, `y`) and normalized display coords (`nx`, `ny`), times in epoch ms.
+
+| out | fields |
+|---|---|
+| `hello` | `display {x,y,w,h,ptPerDeg}`, `calibrated`, `accuracyDeg`, `corrected` |
+| `face` | `present` |
+| `gaze` (~30 Hz) | `x y nx ny`, `blink` (true = frozen at blink onset), `raw`, `fix {id, ms}` |
+| `fixation_start` / `fixation_end` | `id x y nx ny t`, end has `ms` |
+| `gesture` | `kind`: `confirm` (held blink), `back` (longer hold), `long_close`, `brow`, `mouth`, `tier_confirm`/`tier_back` (still holding) |
+| `calib_result` | `beforeDeg afterDeg looDeg applied points perPoint` |
+
+| in | fields |
+|---|---|
+| `calib_begin`, then per dot `calib_target {x,y}` or `{nx,ny}` ... `calib_target_end`, then `calib_finish` | |
+| `calib_reset` | drop the drift correction |
 
 ## Calibration
 
@@ -139,7 +184,7 @@ Actions: `left_click`, `right_click`, `double_click`, `drag`, `scroll`, `pause`,
 ## Development
 
 ```bash
-uv run pytest             # 44 tests, no camera needed
+uv run pytest             # no camera needed
 uv run eye fit --save     # refit the newest saved session and make it active
 ```
 

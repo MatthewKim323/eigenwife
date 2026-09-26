@@ -339,3 +339,5 @@ The tracker lives in `eye/` (Python, MediaPipe 1.0.0, 47 tests passing). Finding
 - **Calibration is ~90s full, ~45s `--quick`.** Demo should use quick mode or calibrate before walking on stage.
 - **Snap to targets.** Gaze resolves to the nearest semantic element, not a raw pixel. Same idea as the DOM-region resolver in the attention pipeline.
 - Pins: `mediapipe==1.0.0` (1.0.1 aborts on macOS), `opencv-contrib-python==4.13` (5.0 arm64 segfaults). Don't bump.
+- **Integration point: `eye serve`.** Localhost websocket (`ws://127.0.0.1:8765/ws`) streaming gaze, fixations and held-blink `confirm`, plus `eye-client.js` which maps gaze onto `[data-gaze]` elements and keeps dwell / revisit stats per element (the Act I signal). In-app quick calibration (5 dots) is built in. Schema in `eye/README.md`.
+- **Model is linear now** (2026-09-26): quadratic terms blew up with head motion. Real-session validation 3.87° -> 2.62°, head-motion error ~3x lower.
