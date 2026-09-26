@@ -1,6 +1,7 @@
 import type { Module } from "../context";
 import { agencyModule } from "../agency/module";
 import { brainsModule } from "../brains/module";
+import { earsModule } from "../ears/module";
 import { homeModule } from "../home/module";
 import { memoryModule } from "../memory/module";
 import { relationshipModule } from "../mind/module";
@@ -22,6 +23,7 @@ export function allModules(): Module[] {
     relationshipModule(),
     brainsModule(),
     speechModule(),
+    earsModule(),
     reflexModule(),
     agencyModule(),
   ];

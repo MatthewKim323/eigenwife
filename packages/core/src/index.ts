@@ -7,7 +7,7 @@ export { EventBus } from "./bus";
 export { json, CORS_HEADERS } from "./hub";
 export { loadConfig, secret, has, REPO_ROOT, JABBY_DIR } from "./config";
 export type { CoreConfig } from "./config";
-export type { CoreContext, Module, RouteHandler } from "./context";
+export type { CoreContext, Module, RouteHandler, SocketHandler, SocketPeer } from "./context";
 export type * from "./services";
 
 export interface RunningCore {
