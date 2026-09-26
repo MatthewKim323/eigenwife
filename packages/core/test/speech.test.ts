@@ -347,7 +347,7 @@ describe("tts backends", () => {
       }) as never,
     );
     await b.synth("hi.");
-    expect(url).toContain("/v1/text-to-speech/21m00Tcm4TlvDq8ikWAM");
+    expect(url).toContain("/v1/text-to-speech/21m00Tcm4TlvDq8ikWAM/stream");
     expect(body.model_id).toBe("eleven_flash_v2_5");
   });
 
