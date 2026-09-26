@@ -206,7 +206,7 @@ describe("touch", () => {
     expect(h.enter(TOUCH.hoverGapMs * 2)).toBe("smile");
   });
 
-  test("a pat: happy, blush accent, eyes shut then open; a poke: surprised + bounce", () => {
+  test("a pat: happy, blush accent, eyes shut then open; a poke: blink + bounce", () => {
     const rig = alexiaRig();
     playTouch({ kind: "pat", region: "head", count: 1, emit: false }, rig, 0, () => {});
     let g = frame(rig, 400);
@@ -218,7 +218,7 @@ describe("touch", () => {
     expect(g("ParamEyeLOpen")).toBeGreaterThan(0.9);
     let looked = 0;
     playTouch({ kind: "poke", region: "body", count: 1, emit: false }, rig, 5000, () => looked++);
-    expect(rig.emotion.dominant(5000)).toBe("surprised");
+    expect(rig.emotion.dominant(5000)).toBe("neutral");
     expect(looked).toBe(1);
     expect(Math.abs(bounceAt(90))).toBeGreaterThan(0.3);
     expect(bounceAt(800)).toBe(0);

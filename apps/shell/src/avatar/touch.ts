@@ -5,7 +5,7 @@
  *
  * - where she looks (cursor anywhere, real gaze, idle) is look.ts, not here.
  * - hover on her pixels: a tiny smile or a "hm?" glance, at most every 8s.
- * - click body: surprised blink + a small hop. Click head: a pat (happy,
+ * - click body: a startled blink + a small hop. Click head: a pat (happy,
  *   blush, eyes shut). 3+ clicks inside 4s: annoyed, and the core gets
  *   avatar.poke so the reflex can say one short line (rate limited there too).
  * - drag start: surprised. Drop: she settles.
@@ -31,7 +31,7 @@ export interface HeadShape {
   dy: number;
 }
 
-export const DEFAULT_HEAD: HeadShape = { rx: 0.055, ry: 0.06, dy: -0.02 };
+export const DEFAULT_HEAD: HeadShape = { rx: 0.055, ry: 0.068, dy: -0.03 };
 
 export const TOUCH = {
   hoverGapMs: 8000,
@@ -152,7 +152,9 @@ export function playTouch(ev: TouchEvent, rig: TouchTarget, now: number, look: (
       }
       return;
     case "poke":
-      rig.setMood("surprised", 0.45, now, 650);
+      // A blink and a hop. No partial "surprised" pose: on toggle-style
+      // expressions (Alexia's star eyes) a low weight reads as a ghosted overlay.
+      rig.blink.trigger(now);
       rig.bounce(now);
       look(800);
       return;
@@ -166,7 +168,7 @@ export function playTouch(ev: TouchEvent, rig: TouchTarget, now: number, look: (
       look(900);
       return;
     case "drag-start":
-      rig.setMood("surprised", 0.6, now, 60_000);
+      rig.setMood("surprised", 1, now, 60_000);
       return;
     case "drop":
       rig.setMood("neutral", 0, now, 0);

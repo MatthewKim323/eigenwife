@@ -267,6 +267,7 @@ export function AvatarLayer() {
   // Debug / capture handle: window.__eve.
   useEffect(() => {
     (globalThis as any).__eve = {
+      ...((globalThis as any).__eve ?? {}),
       mood: (m: Mood, i = 1, holdMs = 60_000) => avatarRuntime.rig.setMood(m, i, performance.now(), holdMs),
       state: (st: AvatarState | null) => avatarUi.set({ stateOverride: st }),
       look: (px: number, py: number, ms = 800) => avatarRuntime.attention.look({ x: px, y: py }, ms, performance.now()),
