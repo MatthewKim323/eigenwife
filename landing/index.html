@@ -11,7 +11,7 @@
 <meta property="og:image" content="media/reel.webp">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@500;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@500;700;800&family=JetBrains+Mono:wght@500;700&family=Inter:wght@400;500;600&family=Inter+Tight:wght@600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -81,12 +81,6 @@
 <section class="thesis">
   <p class="kicker mono">the meme is "AI girlfriend." the actual thesis:</p>
   <blockquote>Persistent multimodal agents should <mark>share attention</mark> with humans, maintain <mark>long-term memory</mark>, and <mark>act continuously</mark> in the world instead of waiting for explicit prompts.</blockquote>
-  <div class="stats">
-    <div class="stat sticker-card"><p class="num" data-odo="30">0</p><p class="mono">Hz gaze stream</p></div>
-    <div class="stat sticker-card"><p class="num" data-odo="2.6" data-suffix="°">0</p><p class="mono">gaze accuracy, webcam only</p></div>
-    <div class="stat sticker-card"><p class="num" data-odo="16">0</p><p class="mono">dim latent partner model</p></div>
-    <div class="stat sticker-card"><p class="num" data-odo="12">0</p><p class="mono">profiles to converge</p></div>
-  </div>
 </section>
 
 <section class="acts" id="acts">
@@ -189,65 +183,140 @@
   </div>
 </section>
 
-<section class="stack" id="stack">
-  <h2 class="section-title">how do you build a person?</h2>
-  <p class="section-sub">one faculty per sponsor, one shared event bus, zero separate agent frameworks.</p>
-  <div class="bento">
-    <div class="cell c-wide">
-      <div class="viz viz-gaze"><span class="dish">$21</span><span class="dish">$28</span><span class="dish">$19</span><span class="reticle"></span><span class="att-tag mono">attention target</span></div>
-      <p class="mono cell-k">PERCEPTION · eye tracking + Firecrawl</p><h4>she sees what you see</h4><p>Webcam gaze resolves to the exact element, Firecrawl says what it is.</p>
-    </div>
-    <div class="cell">
-      <div class="viz viz-reflex mono"><span class="on">IGNORE</span><span>GLANCE</span><span>COMMENT</span><span>ACT</span></div>
-      <p class="mono cell-k">REFLEX · Jev</p><h4>knows when to shut up</h4><p>80 to 95% of events: IGNORE.</p>
-    </div>
-    <div class="cell">
-      <div class="viz viz-mem"><svg viewBox="0 0 200 110"><g class="edges"><path d="M100 55L40 25M100 55L165 30M100 55L50 90M100 55L160 88M40 25L165 30"/></g><circle class="n core" cx="100" cy="55" r="11"/><circle class="n" cx="40" cy="25" r="7"/><circle class="n" cx="165" cy="30" r="7"/><circle class="n" cx="50" cy="90" r="7"/><circle class="n" cx="160" cy="88" r="7"/></svg></div>
-      <p class="mono cell-k">MEMORY · Moss</p><h4>remembers your life</h4><p>Episodic + preference memory, recalled in ms.</p>
-    </div>
-    <div class="cell">
-      <div class="viz viz-type"><span class="bubble"><i></i><i></i><i></i></span><span class="line mono">"we are NOT doing this song again."</span></div>
-      <p class="mono cell-k">PERSONALITY · Featherless</p><h4>in character, always</h4><p>Cheap, frequent lines under 12 words.</p>
-    </div>
-    <div class="cell c-wide">
-      <div class="viz viz-term mono" id="term"></div>
-      <p class="mono cell-k">REASONING · Claude + Codex Astra</p><h4>frontier brains, on demand</h4><p>Planning and computer use only when the reflex escalates.</p>
-    </div>
-    <div class="cell">
-      <div class="viz viz-bus mono"><div class="bus-track"><span>GAZE_FIXATION</span><span>VOICE</span><span>APP_OPENED</span><span>TIMER_TICK</span><span>MEMORY_WRITE</span><span>GAZE_FIXATION</span><span>VOICE</span><span>APP_OPENED</span><span>TIMER_TICK</span><span>MEMORY_WRITE</span></div></div>
-      <p class="mono cell-k">ORCHESTRATION · Jabby</p><h4>one event bus</h4><p>Routing, tools, state. Everything is an event.</p>
-    </div>
-    <div class="cell c-wide">
-      <div class="viz viz-swarm"><svg viewBox="0 0 200 110"><path class="wire" d="M100 20V50M100 50L35 88M100 50V88M100 50L165 88"/><circle class="hub" cx="100" cy="20" r="10"/><circle class="leaf l1" cx="35" cy="90" r="8"/><circle class="leaf l2" cx="100" cy="90" r="8"/><circle class="leaf l3" cx="165" cy="90" r="8"/></svg></div>
-      <p class="mono cell-k">WORKSPACE · Open Swarm</p><h4>thinking you can watch</h4><p>Sub-agents fan out, disagree, merge.</p>
-    </div>
-    <div class="cell c-wide">
-      <div class="viz viz-zo mono"><div class="tree">/eve/<br>&nbsp;&nbsp;profile.json<br>&nbsp;&nbsp;relationship.json<br>&nbsp;&nbsp;preferences.json<br>&nbsp;&nbsp;task_state.json</div><div class="up"><span class="ping"></span>EVE ONLINE · UPTIME <span data-uptime>05:31:14</span></div></div>
-      <p class="mono cell-k">PERSISTENCE + ACTION · Zo</p><h4>she has her own computer</h4><p>Close the tab. She keeps running.</p>
-    </div>
-  </div>
-</section>
+<section class="hood" id="stack">
+  <div class="hood-in">
+    <p class="h-eyebrow">Under the hood</p>
+    <h2 class="h-d2"><span class="h-mute">One faculty per sponsor.</span> One event bus. Zero separate agent frameworks.</h2>
 
-<section class="arch">
-  <h2 class="section-title">three systems, one loop</h2>
-  <p class="section-sub">observe, decide, act, observe again. knowing when not to talk is part of the intelligence.</p>
-  <div class="layers">
-    <div class="layer sticker-card" style="--c: var(--pink)">
-      <p class="mono">SYSTEM 0 · sensors</p>
-      <p>gaze, voice, screen, browser, timers → one event stream</p>
-      <code class="mono">GAZE_FIXATION ramen-card-3 · 2841ms</code>
+    <div class="h-stats">
+      <div class="h-stat"><svg class="h-si" viewBox="0 0 80 40"><rect x="8" y="12" width="64" height="16" rx="8"/></svg><p class="h-num" data-odo="30">0</p><p class="h-cap">Hz gaze stream, webcam only</p></div>
+      <div class="h-stat"><svg class="h-si" viewBox="0 0 80 40"><path d="M36 4v32M40 2v36M44 4v32"/></svg><p class="h-num" data-odo="2.6" data-suffix="°">0</p><p class="h-cap">gaze accuracy after calibration</p></div>
+      <div class="h-stat"><svg class="h-si" viewBox="0 0 80 40"><path d="M20 6h40M20 14h40M20 22h40M20 30h40"/></svg><p class="h-num" data-odo="16">0</p><p class="h-cap">dimensions in her model of your type</p></div>
+      <div class="h-stat"><svg class="h-si" viewBox="0 0 80 40"><path d="M14 36a26 26 0 0 1 52 0"/><path class="h-needle" d="M40 36l14-14"/></svg><p class="h-num" data-odo="12">0</p><p class="h-cap">profiles until convergence</p></div>
     </div>
-    <div class="layer sticker-card" style="--c: var(--lilac)">
-      <p class="mono">SYSTEM 1 · reflex</p>
-      <p>every event gets a verdict in milliseconds. 80 to 95% are IGNORE.</p>
-      <div class="verdicts mono">
-        <span class="v on">IGNORE</span><span class="v">GLANCE</span><span class="v">REACT</span><span class="v">COMMENT</span><span class="v">ASK</span><span class="v">HELP</span><span class="v">ACT</span><span class="v">ESCALATE</span>
-      </div>
-    </div>
-    <div class="layer sticker-card" style="--c: var(--mint)">
-      <p class="mono">SYSTEM 2 · frontier</p>
-      <p>memory recall, planning, computer use. never for "should she laugh?"</p>
-      <code class="mono">remembered · 4ms · likes spicy · $28 ramen incident</code>
+
+    <div class="h-rule"><i></i><i></i><i></i></div>
+
+    <div class="h-bento">
+      <article class="h-cell">
+        <div class="h-viz">
+          <div class="res">
+            <span class="h-pill res-found">Signals found</span>
+            <div class="res-src" style="--i:0"><p class="h-src"><i class="t-eye"><svg viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></i>Eye tracker</p><p>x 812 · y 443 · 2.8s</p></div>
+            <div class="res-src" style="--i:1"><p class="h-src"><i class="t-dom"><svg viewBox="0 0 24 24"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5"/></svg></i>DOM</p><p>menu_tantanmen</p></div>
+            <div class="res-src" style="--i:2"><p class="h-src"><i class="t-fire"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18"/></svg></i>Firecrawl</p><p>Hellfire Tantanmen</p></div>
+            <svg class="res-wire" viewBox="0 0 60 300" preserveAspectRatio="none"><path d="M0 50H30V250M0 150H30M0 250H30"/></svg>
+            <span class="h-pill res-synced">Resolved</span>
+            <div class="res-out">
+              <p class="res-name">Hellfire Tantanmen</p>
+              <p class="res-sub">$19 · spicy 5/5 · 4.7 (1024)</p>
+              <p class="h-mono res-from">Resolved from:</p>
+              <div class="res-tiles"><i class="t-eye"><svg viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></i><i class="t-dom"><svg viewBox="0 0 24 24"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5"/></svg></i><i class="t-fire"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18"/></svg></i></div>
+            </div>
+          </div>
+        </div>
+        <p class="h-tag">Perception · eye tracking + Firecrawl</p>
+        <h3>"This," resolved automatically.</h3>
+        <p>Where you look, which element it is, and what that element means, fused into one shared attention target.</p>
+      </article>
+
+      <article class="h-cell">
+        <div class="h-viz">
+          <div class="feed" id="feed"></div>
+        </div>
+        <p class="h-tag">Memory · Moss</p>
+        <h3>The memory updates itself.</h3>
+        <p>Every fixation, complaint and plan lands in memory within seconds. No "remember this" required.</p>
+      </article>
+
+      <article class="h-cell">
+        <div class="h-viz">
+          <div class="chart">
+            <p class="ch-title">Attention · profile 04</p>
+            <p class="ch-sub">Dwell on prompt_1 jumped from 0.9s to 4.2s with two revisits.</p>
+            <svg class="ch-svg" viewBox="0 0 400 130" preserveAspectRatio="none">
+              <path class="ch-band" d="M0 70 L50 64 L100 72 L150 60 L200 68 L250 62 L300 70 L350 64 L400 68 L400 104 L350 98 L300 104 L250 96 L200 102 L150 94 L100 106 L50 98 L0 104 Z"/>
+              <path class="ch-base" d="M0 88 L50 80 L100 90 L150 78 L200 86 L220 84"/>
+              <path class="ch-spike" d="M220 84 L250 60 L275 22 L300 38 L325 14 L350 30 L400 18"/>
+              <circle class="ch-dot" cx="275" cy="22" r="4.5"/>
+            </svg>
+            <span class="ch-label ch-l1">Baseline</span><span class="ch-label ch-l2">Interest</span>
+            <div class="ch-axis"><span>photo_1</span><span>prompt_1</span><span>photo_2</span><span>prompt_1</span></div>
+            <div class="ch-tip">
+              <p><span>region</span><b>prompt_1</b></p>
+              <p><span>dwell</span><b>4,200 ms</b></p>
+              <p><span>expected</span><b>800 to 1,500</b></p>
+              <p><span>reward</span><b class="pos">+0.58</b></p>
+            </div>
+          </div>
+        </div>
+        <p class="h-tag">Preference · Act I</p>
+        <h3>Attention baselines, per region.</h3>
+        <p>Every photo and prompt gets a normal dwell range. What breaks it becomes reward, and reward moves the vector.</p>
+      </article>
+
+      <article class="h-cell">
+        <div class="h-viz">
+          <div class="score">
+            <div class="sc-head"><p class="sc-title">Should she say something?</p><p class="h-mono sc-num"><span class="sc-ring"></span>78 / 100</p></div>
+            <p class="sc-src">Event: <b>same breakup song, 4th repeat</b></p>
+            <p class="sc-k">Verdict breakdown</p>
+            <div class="sc-row"><p>Repetition<span class="h-mono">4x · high</span></p><i style="--w:.78;--c:var(--h-red)"></i></div>
+            <div class="sc-row"><p>Timing context<span class="h-mono">late night</span></p><i style="--w:.6;--c:var(--h-amber)"></i></div>
+            <div class="sc-row"><p>Relationship<span class="h-mono">banter 0.82</span></p><i style="--w:.82;--c:var(--h-acc)"></i></div>
+            <div class="sc-row"><p>Recent chatter<span class="h-mono">quiet 40 min</span></p><i style="--w:.35;--c:var(--h-green)"></i></div>
+            <p class="sc-out h-mono">COMMENT 0.78 → "we are NOT doing this song again."</p>
+          </div>
+        </div>
+        <p class="h-tag">Reflex · Jev</p>
+        <h3>Knows when not to talk.</h3>
+        <p>Every event gets a verdict in milliseconds. 80 to 95% of them are IGNORE, and that restraint is the point.</p>
+      </article>
+
+      <article class="h-cell h-wide">
+        <div class="h-split">
+          <div>
+            <p class="h-tag">Workspace · Open Swarm + Claude</p>
+            <h3>"Figure out tonight," planned in the open.</h3>
+            <p>The reflex escalates, the frontier brain plans, and sub-agents fan out across memory, places and your calendar. You can watch every branch.</p>
+          </div>
+          <div class="h-viz h-viz-plain">
+            <div class="chain" id="chain">
+              <div class="ch-node" style="--k:0"><i><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></i></div>
+              <div class="ch-node" style="--k:1"><i><svg viewBox="0 0 24 24"><path d="M12 3l2 6 6 2-6 2-2 6-2-6-6-2 6-2z"/></svg></i></div>
+              <div class="ch-node ch-wide" style="--k:2"><i><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></i><span>Calendar</span></div>
+              <div class="ch-node" style="--k:3"><i><svg viewBox="0 0 24 24"><path d="M12 21s-7-6-7-11a7 7 0 0 1 14 0c0 5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg></i></div>
+              <div class="ch-node" style="--k:4"><i><svg viewBox="0 0 24 24"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></svg></i></div>
+              <div class="plan">
+                <p class="plan-top"><span class="h-mono">PLAN</span><span class="plan-live"><span class="h-ping"></span>Active</span></p>
+                <p><span>When</span><b>Tonight 7:30 PM</b></p>
+                <p><span>Where</span><b>Menya Kaze</b></p>
+                <p><span>Cost</span><b>$14</b></p>
+                <p><span>Calendar</span><b>Free until 11</b></p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="h-cell h-wide">
+        <div class="h-split">
+          <div>
+            <p class="h-tag">Persistence + action · Zo</p>
+            <h3>She has her own computer.</h3>
+            <p>Close the website and nothing happens. Eve's state, memories and long-running tasks live on her own machine, and she keeps going.</p>
+          </div>
+          <div class="h-viz h-viz-plain">
+            <div class="handoff">
+              <div class="laptop"><div class="lt-screen"></div><div class="lt-base"></div></div>
+              <div class="ho-wire"></div>
+              <div class="ho-chip h-mono"><span class="ho-spin"></span>Handing off to Zo...</div>
+              <div class="ho-wire ho-w2"></div>
+              <div class="racks"><div class="rack"><span class="r-led"></span><span class="r-lines"></span><span class="r-bars"></span><span class="r-sq"></span></div><div class="rack"><span class="r-led"></span><span class="r-lines"></span><span class="r-bars"></span><span class="r-sq"></span></div><div class="rack"><span class="r-led"></span><span class="r-lines"></span><span class="r-bars"></span><span class="r-sq"></span></div></div>
+            </div>
+          </div>
+        </div>
+      </article>
     </div>
   </div>
 </section>

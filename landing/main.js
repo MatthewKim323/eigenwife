@@ -137,14 +137,6 @@ setInterval(() => {
   heroPct.textContent = Math.min(hp, 98);
 }, 900);
 
-// reflex layer: mostly IGNORE, sometimes not
-const verdictRows = [document.querySelectorAll(".v"), document.querySelectorAll(".viz-reflex span")];
-setInterval(() => {
-  for (const row of verdictRows) {
-    const i = Math.random() < 0.85 ? 0 : 1 + Math.floor(Math.random() * (row.length - 1));
-    row.forEach((v, j) => v.classList.toggle("on", j === i));
-  }
-}, 1100);
 
 // uptime keeps counting
 const ups = [document.getElementById("uptime"), ...document.querySelectorAll("[data-uptime]")];
@@ -164,10 +156,6 @@ function whenVisible(el, onChange, threshold = 0.3) {
   new IntersectionObserver(([e]) => { seen = e.isIntersecting; update(); }, { threshold }).observe(el);
   document.addEventListener("visibilitychange", update);
 }
-
-// bento diagrams animate only on screen
-const bento = document.querySelector(".bento");
-whenVisible(bento, (on) => bento.classList.toggle("in", on && !reduced), 0.1);
 
 // odometer: each digit rolls, no tweened counting
 for (const el of document.querySelectorAll("[data-odo]")) {
@@ -203,23 +191,60 @@ else whenVisible(chat, (on) => {
   if (on) nextBeat();
 });
 
-// terminal transcript in the reasoning cell
-const term = document.getElementById("term");
-const TERM = [
-  ['<span class="p">jabby</span> escalate <span class="dim">"figure out tonight"</span>', 700],
-  ['<span class="dim">router</span> COMPLEX_REASONING -> claude', 600],
-  ['<span class="dim">plan</span> calendar.free(tonight) · places.search(cheap, spicy)', 900],
-  ['<span class="dim">memory</span> hit: "$28 ramen was overpriced" (0.89)', 800],
-  ['<span class="dim">gate</span> calendar.create -> ask user · <span class="ok">approved</span>', 900],
-  ['<span class="ok">done</span> 7:30 PM · Menya Kaze · $14', 2600],
-];
-let tl = 0, termTimer = null;
-function termStep() {
-  if (tl === 0) term.innerHTML = "";
-  const [line, ms] = TERM[tl];
-  term.insertAdjacentHTML("beforeend", `<div>${line}</div>`);
-  tl = (tl + 1) % TERM.length;
-  termTimer = setTimeout(termStep, ms);
+// under the hood: loops run only while the section is on screen
+const hood = document.querySelector(".hood");
+whenVisible(hood, (on) => hood.classList.toggle("live", on && !reduced), 0.05);
+for (const el of document.querySelectorAll(".h-cell, .h-rule")) {
+  if (reduced) el.classList.add("in");
+  else whenVisible(el, (on) => on && el.classList.add("in"), 0.35);
 }
-if (reduced) { TERM.forEach(([l]) => term.insertAdjacentHTML("beforeend", `<div>${l}</div>`)); }
-else whenVisible(term, (on) => { clearTimeout(termTimer); if (on) termStep(); });
+
+// memory feed: a new row lands on top, the oldest falls off
+const svg = (d) => `<svg viewBox="0 0 24 24">${d}</svg>`;
+const FI = {
+  pref: svg('<path d="M20 11a8 8 0 0 0-14.5-4.5L4 8M4 4v4h4M4 13a8 8 0 0 0 14.5 4.5L20 16M20 20v-4h-4"/>'),
+  ep: svg('<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M12 12v6M9 15h6"/>'),
+  rel: svg('<path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/>'),
+  gaze: svg('<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>'),
+  link: svg('<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>'),
+};
+const FEED = [
+  ["pref", "Preference updated", "likes spicy · 0.94"],
+  ["ep", "Episode stored", "$28 ramen was overpriced"],
+  ["rel", "Relationship shifted", "banter +0.03"],
+  ["gaze", "Attention target", "Hellfire Tantanmen · 2.8s"],
+  ["link", "Task linked", "calendar · tonight 7:30"],
+  ["ep", "Episode stored", "4th replay of the breakup song"],
+  ["pref", "Preference updated", "saving money · 0.83"],
+];
+const AGO = ["just now", "12s ago", "28s ago", "1m ago", "2m ago"];
+const feed = document.getElementById("feed");
+let fk = 0;
+const feedRows = [];
+function renderFeed() {
+  feed.innerHTML = feedRows
+    .map(([ic, what, src], i) => `<div class="f-row"${i ? ' style="animation:none"' : ""}><i>${FI[ic]}</i><div><p class="f-what">${what}</p><p class="f-src">${src}</p></div><p class="f-when"><span class="h-ping"></span>${AGO[i]}</p></div>`)
+    .join("");
+}
+for (let i = 0; i < 5; i++) feedRows.push(FEED[(FEED.length - 1 - i) % FEED.length]);
+renderFeed();
+let feedTimer = null;
+function pushFeed() {
+  feedRows.unshift(FEED[fk++ % FEED.length]);
+  feedRows.length = 5;
+  renderFeed();
+  feedTimer = setTimeout(pushFeed, 2600);
+}
+if (!reduced) whenVisible(feed, (on) => { clearTimeout(feedTimer); if (on) feedTimer = setTimeout(pushFeed, 1200); });
+
+// plan chain: the swarm visits each branch, rests, repeats
+const nodes = [...document.querySelectorAll("#chain .ch-node")];
+let ck = 0, chainTimer = null;
+function stepChain() {
+  nodes.forEach((n, i) => n.classList.toggle("on", i === ck));
+  const rest = ck === nodes.length - 1 ? 2400 : 700;
+  ck = (ck + 1) % nodes.length;
+  chainTimer = setTimeout(stepChain, rest);
+}
+if (reduced) nodes[2].classList.add("on");
+else whenVisible(document.getElementById("chain"), (on) => { clearTimeout(chainTimer); if (on) stepChain(); });

@@ -55,3 +55,11 @@ original design, no imitation of any public artist or source image, no photoreal
 Mascot poses (keep identity, palette, outline, sticker border): waving; thinking with a
 tiny calendar; side-eye at a dating app ("...seriously?"); holding a ramen bowl; asleep on
 a tiny computer (Zo). Transparent PNG, full body, no text.
+
+## Under the hood (dark section)
+Built from matt's design vault (/Volumes/Vault/vaultdev/design): Strand's dark warm palette and
+hairline bento (40px cells, fixed-height visuals on an 8px dot lattice, house ease
+`[0.12, 0.23, 0.5, 1]`), its entity-resolution graph, live activity feed, anomaly chart with
+baseline band + tooltip, severity-score bars and relationship chain + detail card; Clerk's
+laptop -> "Authenticating..." -> server racks row. Pink #ff5fa2 replaces Strand's green as the
+one accent; green stays only for live dots. Loops rest between beats and pause off screen.
