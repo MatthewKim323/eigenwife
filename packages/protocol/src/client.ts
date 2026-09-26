@@ -56,6 +56,10 @@ export class BusClient {
     }
     this.ws = ws;
     ws.onopen = () => {
+      if (this.ws !== ws) {
+        ws.close();
+        return;
+      }
       this.connected = true;
       this.backoff = 250;
       ws.send(JSON.stringify(envelope("bus.hello", { client: this.opts.client, role: this.opts.role, version: "0.1.0" }, this.opts.client)));
@@ -63,10 +67,14 @@ export class BusClient {
       this.statusHandlers.forEach((h) => h(true));
     };
     ws.onmessage = (ev) => {
+      if (this.ws !== ws) return;
       const e = parseEnvelope(typeof ev.data === "string" ? ev.data : String(ev.data));
       if (e) this.dispatch(e);
     };
     ws.onclose = () => {
+      // A socket we already replaced or closed on purpose (React StrictMode
+      // close+connect) must not schedule a second, duplicate connection.
+      if (this.ws !== ws) return;
       const was = this.connected;
       this.connected = false;
       this.ws = null;
@@ -127,6 +135,12 @@ export class BusClient {
 
   close() {
     this.closed = true;
-    this.ws?.close();
+    const ws = this.ws;
+    this.ws = null;
+    if (this.connected) {
+      this.connected = false;
+      this.statusHandlers.forEach((h) => h(false));
+    }
+    ws?.close();
   }
 }
