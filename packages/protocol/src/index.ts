@@ -54,6 +54,9 @@ export type Urgency = "immediate" | "soon" | "later";
 
 export type PermissionClass = "READ" | "SAFE_ACTION" | "EXTERNAL_SIDE_EFFECT" | "SENSITIVE_ACTION";
 
+export type ExecutionMode = "DO_MYSELF" | "SPAWN_ONE" | "SPAWN_SWARM" | "ASK_USER";
+export type SwarmAgentState = "spawning" | "assigned" | "working" | "waiting" | "done" | "failed" | "merging" | "despawned";
+
 /** Named numeric traits. Candidates, preferences and personas all share this shape. */
 export type TraitVector = Record<string, number>;
 
@@ -183,9 +186,28 @@ export interface EventMap {
   // --- act IV: agency ---------------------------------------------------------------
   "task.start": { taskId: string; goal: string; brain: string };
   "task.done": { taskId: string; ok: boolean; summary: string; ms: number };
-  "swarm.spawn": { taskId: string; agentId: string; role: string; label: string; parentId?: string };
+  "swarm.spawn": {
+    taskId: string;
+    agentId: string;
+    role: string;
+    label: string;
+    parentId?: string;
+    /** Harem wife display name and glyph, e.g. "Miso", "🍜". */
+    name?: string;
+    emoji?: string;
+    goal?: string;
+  };
   "swarm.progress": { taskId: string; agentId: string; text: string };
   "swarm.done": { taskId: string; agentId: string; ok: boolean; result: string };
+  /** Eve's routing call before any wife exists. */
+  "swarm.plan": { taskId: string; mode: ExecutionMode; confidence: number; workers: { role: string; goal: string }[] };
+  /** Card lifecycle: drives the harem room animations. */
+  "swarm.status": { taskId: string; agentId: string; state: SwarmAgentState; tool?: string; confidence?: number };
+  /** Two wives' structured results disagree. lines are one short in-character quip each. */
+  "swarm.conflict": { taskId: string; conflictId: string; topic: string; a: string; b: string; lines: { agentId: string; text: string }[] };
+  "swarm.resolve": { taskId: string; conflictId: string; text: string };
+  /** Wives fold back into Eve. retained is what goes to memory, discarded counts dropped raw scrape/tool chatter. */
+  "swarm.merge": { taskId: string; agentIds: string[]; retained: string[]; discarded: number };
   "action.request": {
     actionId: string;
     taskId?: string;
