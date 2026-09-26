@@ -15,7 +15,7 @@ import { BusClient } from "../packages/protocol/src/client";
 import { CANDIDATES, regionKey, type AnyEnvelope, type EventType } from "../packages/protocol/src/index";
 
 const approve = process.argv.includes("--approve");
-const port = 7788;
+const port = Number(process.env.E2E_PORT) || 20000 + Math.floor(Math.random() * 20000);
 const home = mkdtempSync(join(tmpdir(), "eve-e2e-"));
 process.env.EVE_HOME = home;
 process.env.EIGEN_PORT = String(port);

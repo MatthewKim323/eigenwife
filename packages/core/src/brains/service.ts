@@ -145,12 +145,24 @@ export function createBrains(deps: BrainsDeps): Brains {
     const maxTokens = personaMaxTokens(req.maxWords);
     const errors: string[] = [];
     const t0 = io.now();
-    for (const b of personaBackends) {
-      if (!b.configured()) continue;
-      if (health.cooling(b.name)) {
+    const configured = personaBackends.filter((b) => b.configured());
+    // Never let the breaker silence her: if every backend is parked, the last
+    // configured one (the local CLI) still gets a shot. Its last-resort attempt
+    // also retries once, so one transient CLI hiccup can't cost a whole turn.
+    const allParked = configured.every((b) => health.cooling(b.name));
+    const lastResort = configured.at(-1);
+    const attempts: ChatBackend[] = [];
+    for (const b of configured) {
+      if (health.cooling(b.name) && !(allParked && b === lastResort)) {
         errors.push(`${b.name}: parked`);
         continue;
       }
+      attempts.push(b);
+    }
+    if (lastResort && attempts.at(-1) === lastResort) attempts.push(lastResort);
+    for (const [i, b] of attempts.entries()) {
+      const isRetry = i > 0 && attempts[i - 1] === b;
+      if (isRetry) log(`persona ${b.name}: retrying once`);
       const ac = new AbortController();
       let first = -1;
       let text = "";
@@ -166,7 +178,8 @@ export function createBrains(deps: BrainsDeps): Brains {
         last = { backend: b.name, firstTokenMs: first, ms: io.now() - start, text, errors };
         return;
       } catch (err) {
-        health.fail(b.name, err);
+        // The last resort isn't parked on a single failure: nothing is behind it.
+        if (b !== lastResort || isRetry) health.fail(b.name, err);
         errors.push(`${b.name}: ${err instanceof LeakError ? "error text suppressed" : describe(err).slice(0, 160)}`);
         log(`persona ${b.name} failed:`, errors.at(-1));
         if (text) {

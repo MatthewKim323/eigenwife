@@ -135,6 +135,37 @@ describe("persona routing", () => {
     expect(b.lastPersona()?.backend).toBe("offline");
   });
 
+  test("the last-resort backend retries once and is never parked by a single hiccup", async () => {
+    const calls: string[] = [];
+    let n = 0;
+    const flaky = scriptedBackend(
+      "claude-cli",
+      async function* () {
+        n += 1;
+        if (n === 1) throw new Error("claude-cli exited 1: transient");
+        yield "twenty-one bucks. ";
+      },
+      calls,
+    );
+    const b = brains({ personaBackends: [scriptedBackend("openai", new Error("openai http 429: no credits")), flaky] });
+    expect((await collect(b.persona({ event: "x", behavior: "y" }))).join("")).toBe("twenty-one bucks. ");
+    expect(calls).toEqual(["claude-cli", "claude-cli"]);
+    // next turn goes straight to the cli: it was not parked
+    n = 1;
+    expect((await collect(b.persona({ event: "x", behavior: "y" }))).join("")).toBe("twenty-one bucks. ");
+    expect(b.lastPersona()?.backend).toBe("claude-cli");
+  });
+
+  test("when every backend is parked, the last resort still gets a shot", async () => {
+    const calls: string[] = [];
+    const cli = scriptedBackend("claude-cli", ["mm. "], calls);
+    const b = brains({ personaBackends: [scriptedBackend("openai", new Error("openai http 429")), cli] });
+    b.health.fail("claude-cli", new Error("x"));
+    b.health.fail("openai", new Error("openai http 429"));
+    expect((await collect(b.persona({ event: "x", behavior: "y" }))).join("")).toBe("mm. ");
+    expect(calls).toEqual(["claude-cli"]);
+  });
+
   test("uses the born persona and relationship from deps", async () => {
     let seen = "";
     const backend = scriptedBackend("openai", ["hey."]);
