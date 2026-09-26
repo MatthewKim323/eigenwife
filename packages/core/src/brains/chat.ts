@@ -160,6 +160,55 @@ export function openAiBackend(io: BrainIO): ChatBackend {
 }
 
 // ---------------------------------------------------------------------------
+// Vercel AI Gateway (OpenAI-compatible chat): one key, every fast model
+// ---------------------------------------------------------------------------
+
+export const GATEWAY_CHAT_URL = "https://ai-gateway.vercel.sh/v1/chat/completions";
+/** Fast, in-character first; the rest are fallbacks if a model is unavailable. */
+export const GATEWAY_MODELS = ["anthropic/claude-haiku-4.5", "openai/gpt-6-luna-fast", "google/gemini-3-flash"];
+
+export function gatewayBackend(io: BrainIO): ChatBackend {
+  let idx = 0;
+  const models = () => {
+    const pinned = io.secret("EVE_GATEWAY_MODEL");
+    return pinned ? [pinned, ...GATEWAY_MODELS.filter((m) => m !== pinned)] : GATEWAY_MODELS;
+  };
+  return {
+    name: "gateway",
+    configured: () => !!io.secret("AI_GATEWAY_API_KEY"),
+    model: () => models()[idx] ?? GATEWAY_MODELS[0]!,
+    async *stream(msg, o = {}) {
+      const list = models();
+      for (let i = idx; i < list.length; i++) {
+        const model = list[i]!;
+        const bare = model.split("/").pop()!;
+        const tuning = bare.startsWith("gpt-") ? openAiBody(bare, o.maxTokens ?? 120, o.temperature ?? 0.9) : { max_tokens: o.maxTokens ?? 120, temperature: o.temperature ?? 0.9 };
+        const body: Record<string, unknown> = {
+          model,
+          messages: [
+            { role: "system", content: msg.system },
+            { role: "user", content: msg.user },
+          ],
+          ...tuning,
+          ...(o.json ? { response_format: { type: "json_object" } } : {}),
+        };
+        let yielded = false;
+        try {
+          for await (const c of openAiCompatStream(io, "gateway", GATEWAY_CHAT_URL, io.secret("AI_GATEWAY_API_KEY"), body, o.signal)) {
+            yielded = true;
+            yield c;
+          }
+          idx = i;
+          return;
+        } catch (err) {
+          if (yielded || !modelMissing(err) || i === list.length - 1) throw err;
+        }
+      }
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Anthropic Messages API
 // ---------------------------------------------------------------------------
 

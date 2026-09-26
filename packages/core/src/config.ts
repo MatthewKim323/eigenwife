@@ -69,3 +69,25 @@ export function loadConfig(overrides: Partial<CoreConfig> = {}): CoreConfig {
     ...overrides,
   };
 }
+
+export const AI_GATEWAY_URL = "https://ai-gateway.vercel.sh/v1";
+
+export interface JevEndpoint {
+  url: string;
+  model: string;
+  apiKey: string;
+  via: "gateway" | "typesafe";
+}
+
+/**
+ * Where Jev lives. Vercel AI Gateway first (typesafe-ai/jev on /v1/evaluate,
+ * one key that also serves the fast chat models), TypeSafe's own systemone API
+ * second. Same request and response shape either way. null = local scorer.
+ */
+export function jevEndpoint(get: (name: string) => string = secret): JevEndpoint | null {
+  const gw = get("AI_GATEWAY_API_KEY");
+  if (gw) return { url: `${AI_GATEWAY_URL}/evaluate`, model: get("EVE_JEV_MODEL") || "typesafe-ai/jev", apiKey: gw, via: "gateway" };
+  const ts = get("TYPESAFE_API_KEY");
+  if (ts) return { url: "https://api.typesafe.ai/v1/systemone", model: get("EVE_JEV_MODEL") || "jev-latest", apiKey: ts, via: "typesafe" };
+  return null;
+}

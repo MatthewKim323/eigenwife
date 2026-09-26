@@ -1,7 +1,7 @@
 import { DEFAULT_RELATIONSHIP, type AnyEnvelope, type Mood, type ReflexDecision, type RelationshipState, type Urgency } from "@eigenwife/protocol";
 import type { CoreContext, Module } from "../context";
 import { json } from "../hub";
-import { secret } from "../config";
+import { jevEndpoint, secret } from "../config";
 import { goalFrom, readIntent, type UtteranceIntent } from "./intent";
 import { createJev, type JevDecider, type JevVerdict } from "./jev";
 import { DEFAULT_RULES, PerceptionEngine, type Rule, type Trigger } from "./rules";
@@ -437,9 +437,9 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
     start(c) {
       ctx = c;
       engine = new PerceptionEngine(() => ctx.world(), opts.rules ?? DEFAULT_RULES);
-      const key = secret("TYPESAFE_API_KEY");
-      jev = opts.jev ?? createJev({ apiKey: key || undefined });
-      log(`jev: ${key ? "typesafe systemone (400ms budget, local fallback)" : "local scorer (no TYPESAFE_API_KEY)"}`);
+      const ep = jevEndpoint();
+      jev = opts.jev ?? createJev(ep ? { apiKey: ep.apiKey, url: ep.url, model: ep.model } : {});
+      log(`jev: ${ep ? `${ep.model} via ${ep.via} (400ms budget, local fallback)` : "local scorer (no AI_GATEWAY_API_KEY or TYPESAFE_API_KEY)"}`);
 
       ctx.provide("reflex", {
         trigger: (x) =>

@@ -1,5 +1,5 @@
 import { CANDIDATES, type Candidate, type Persona, type TraitVector } from "@eigenwife/protocol";
-import { secret } from "../config";
+import { jevEndpoint, secret } from "../config";
 import type { CoreContext, Module } from "../context";
 import { json } from "../hub";
 import type { HomeService, PreferenceService } from "../services";
@@ -30,7 +30,7 @@ import { synthesizePersona } from "./persona";
 
 export interface PreferenceModuleOptions {
   candidates?: Candidate[];
-  /** Defaults to TYPESAFE_API_KEY. Empty string forces the local model. */
+  /** Defaults to the resolved Jev endpoint (AI Gateway, then TypeSafe). Empty string forces the local model. */
   jevKey?: string;
   fetch?: FetchLike;
   jevTimeoutMs?: number;
@@ -79,7 +79,8 @@ export function preferenceModule(opts: PreferenceModuleOptions = {}): Module {
       const candidates = opts.candidates ?? CANDIDATES;
       const byId = new Map(candidates.map((c) => [c.id, c]));
       const pop = population(candidates);
-      const jevKey = opts.jevKey ?? secret("TYPESAFE_API_KEY");
+      const ep = opts.jevKey === undefined ? jevEndpoint() : null;
+      const jevKey = opts.jevKey ?? ep?.apiKey ?? "";
       const convergeAt = opts.convergeAt ?? 0.98;
       const minObs = opts.minObservations ?? 6;
       const home: Pick<HomeService, "read" | "write"> | null = ctx.tryUse("home");
@@ -172,7 +173,7 @@ export function preferenceModule(opts: PreferenceModuleOptions = {}): Module {
       const score = async (c: Candidate | undefined, o: LeaveObservation): Promise<RewardResult> => {
         if (jevKey) {
           try {
-            return await jevReward(c, o, { apiKey: jevKey, fetch: opts.fetch, timeoutMs: opts.jevTimeoutMs ?? 400 });
+            return await jevReward(c, o, { apiKey: jevKey, fetch: opts.fetch, timeoutMs: opts.jevTimeoutMs ?? 400, ...(ep ? { url: ep.url, model: ep.model } : {}) });
           } catch (err) {
             log("jev fell back to local:", String(err));
           }

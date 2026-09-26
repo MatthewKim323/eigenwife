@@ -71,10 +71,10 @@ export function parseJevAnswer(body: unknown): { interest: Interest; strength: n
 export async function jevReward(
   c: Candidate | undefined,
   obs: LeaveObservation,
-  opts: { apiKey: string; fetch?: FetchLike; timeoutMs?: number; model?: string },
+  opts: { apiKey: string; fetch?: FetchLike; timeoutMs?: number; model?: string; url?: string },
 ): Promise<RewardResult> {
   const f = opts.fetch ?? ((i: string, init?: RequestInit) => fetch(i, init));
-  const res = await f(JEV_URL, {
+  const res = await f(opts.url ?? JEV_URL, {
     method: "POST",
     headers: { Authorization: `Bearer ${opts.apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({ model: opts.model ?? "jev-latest", state: jevState(c, obs), questions: JEV_QUESTIONS }),

@@ -1,6 +1,6 @@
 import type { Persona, RelationshipState } from "@eigenwife/protocol";
 import type { BrainService, FrontierRequest, FrontierResult, PersonaRequest } from "../services";
-import { anthropicBackend, claudeCliBackend, featherlessBackend, openAiBackend, type ChatBackend } from "./chat";
+import { anthropicBackend, claudeCliBackend, featherlessBackend, gatewayBackend, openAiBackend, type ChatBackend } from "./chat";
 import {
   claudeEngine,
   codexEngine,
@@ -92,10 +92,15 @@ export function createBrains(deps: BrainsDeps): Brains {
   const { io } = deps;
   const log = deps.log ?? (() => {});
   const health = new HealthBook(io.now);
-  const personaBackends = deps.personaBackends ?? [featherlessBackend(io), openAiBackend(io), anthropicBackend(io), claudeCliBackend(io)];
+  const personaBackends = deps.personaBackends ?? [gatewayBackend(io), featherlessBackend(io), openAiBackend(io), anthropicBackend(io), claudeCliBackend(io)];
   // JSON: OpenAI JSON mode first, then the persona backends, CLI haiku last.
   const jsonBackends =
-    deps.jsonBackends ?? [personaBackends.find((b) => b.name === "openai"), ...personaBackends.filter((b) => b.name !== "openai")].filter((b): b is ChatBackend => !!b);
+    deps.jsonBackends ??
+    [
+      personaBackends.find((b) => b.name === "gateway"),
+      personaBackends.find((b) => b.name === "openai"),
+      ...personaBackends.filter((b) => b.name !== "openai" && b.name !== "gateway"),
+    ].filter((b): b is ChatBackend => !!b);
   const engines = deps.frontierEngines ?? [jabbyEngine(io, deps.jabbyUrl, health), claudeEngine(io), codexEngine(io), openAiEngine(io)];
   const byName = (n: string) => engines.find((e) => e.name === n);
   const ordered = (names: readonly string[]) => names.map(byName).filter((e): e is FrontierEngine => !!e);

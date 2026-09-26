@@ -68,12 +68,15 @@ export function memoryModule(opts: MemoryModuleOptions = {}): Module {
       const shortTtl = opts.shortTermTtlMs ?? 4 * 3600_000;
 
       const cacheFile = await home.read<{ model?: string; dims?: number; vectors?: Record<string, Vec> }>("embeddings", {});
-      const openaiKey = opts.openaiKey ?? secret("OPENAI_API_KEY");
+      // AI Gateway serves the same embedding model through one key; OpenAI direct second.
+      const gatewayKey = opts.openaiKey === undefined ? secret("AI_GATEWAY_API_KEY") : "";
+      const openaiKey = opts.openaiKey ?? (gatewayKey || secret("OPENAI_API_KEY"));
       let breakerUntil = 0;
       let cacheDirty = false;
       const embedder = openaiKey
         ? new OpenAIEmbedder({
             apiKey: openaiKey,
+            ...(gatewayKey ? { url: "https://ai-gateway.vercel.sh/v1/embeddings", model: "openai/text-embedding-3-small" } : {}),
             fetch: opts.fetch,
             cache: new Map(Object.entries(cacheFile.vectors ?? {})),
             onCacheChange: () => {

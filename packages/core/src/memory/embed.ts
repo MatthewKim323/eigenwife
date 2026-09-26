@@ -149,6 +149,8 @@ export function localEmbed(text: string, dims = LOCAL_DIMS): Vec {
 
 export interface OpenAIEmbedderOptions {
   apiKey: string;
+  /** OpenAI-compatible embeddings endpoint (OpenAI itself, or Vercel AI Gateway). */
+  url?: string;
   model?: string;
   dims?: number;
   fetch?: FetchLike;
@@ -188,7 +190,7 @@ export class OpenAIEmbedder {
     if (missing.length === 0) return out;
     try {
       this.calls++;
-      const res = await this.fetch("https://api.openai.com/v1/embeddings", {
+      const res = await this.fetch(this.opts.url ?? "https://api.openai.com/v1/embeddings", {
         method: "POST",
         headers: { Authorization: `Bearer ${this.opts.apiKey}`, "Content-Type": "application/json" },
         body: JSON.stringify({ model: this.model, input: missing, dimensions: this.dims, encoding_format: "float" }),
