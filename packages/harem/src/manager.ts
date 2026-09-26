@@ -5,7 +5,7 @@ import { newId, type SwarmAgentState } from "@eigenwife/protocol";
 import { ClaudeCliBrain, sleep } from "./brain";
 import { choose, collect, detectConflicts, eveResolveLine, eveSummary } from "./conflicts";
 import { MAX_DEPTH, MAX_WIVES, planTask } from "./planner";
-import type { Brain, Conflict, HaremAgent, HaremDeps, HaremOutcome, HaremTask, Plan, WifeResult, WorkerSpec } from "./types";
+import type { Brain, Conflict, HaremAgent, HaremDeps, HaremMirror, HaremOutcome, HaremTask, Plan, WifeResult, WorkerSpec } from "./types";
 import { RESULT_TYPE, WIVES } from "./wives";
 
 const SRC = "harem";
@@ -110,6 +110,7 @@ export class HaremManager {
 /** The entry point core's agency module calls. Emits swarm.* and task.done, resolves {ok, summary}. */
 export async function executeWithHarem(task: HaremTask, deps: HaremDeps): Promise<HaremOutcome> {
   const t0 = Date.now();
+  if (!deps.mirror && process.env.HAREM_OPENSWARM === "1") deps = { ...deps, mirror: await openSwarmMirror() };
   const { bus } = deps;
   const brain = deps.brain ?? new ClaudeCliBrain();
   const harem = new HaremManager({ ...deps, brain });
@@ -189,6 +190,22 @@ export async function executeWithHarem(task: HaremTask, deps: HaremDeps): Promis
   const base = eveSummary(pick);
   const summary = approved ? `${base} Done.` : approved === false ? `${base} Not booking it then.` : `${base} Want it on the calendar?`;
   return finish({ ok: true, summary, plan, agents: wives, conflicts, choice: pick, action: { actionId, approved } });
+}
+
+let swarmMirror: Promise<HaremMirror | undefined> | null = null;
+/** HAREM_OPENSWARM=1: mirror wives into Open Swarm cards. Never blocks or fails the task if Open Swarm is down. */
+function openSwarmMirror(): Promise<HaremMirror | undefined> {
+  swarmMirror ??= Promise.race([
+    import("./openswarm").then((m) => m.OpenSwarmMirror.connect(process.env.HAREM_OPENSWARM_DASHBOARD ?? "Eve's Harem") as Promise<HaremMirror>),
+    sleep(2000).then(() => {
+      throw new Error("timed out");
+    }),
+  ]).catch((err) => {
+    console.error("[harem] open swarm mirror off:", (err as Error).message);
+    swarmMirror = null;
+    return undefined;
+  });
+  return swarmMirror;
 }
 
 function distill(pick: ReturnType<typeof choose>, f: ReturnType<typeof collect>, conflicts: Conflict[]): string[] {

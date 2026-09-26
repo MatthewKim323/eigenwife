@@ -50,4 +50,6 @@ bash ~/dev/openswarm/frontend/run.sh                 # :3000, open the "Eve's Ha
 bun run packages/harem/src/cli.ts "figure out tonight" --swarm
 ```
 
+In the real stack, start core with `HAREM_OPENSWARM=1` and every harem task agency runs also shows up as Open Swarm cards (it connects lazily with a 2s cap and stays off if Open Swarm is down). `HAREM_OPENSWARM_DASHBOARD` picks the board.
+
 The token is read from `~/dev/openswarm/backend/data/auth.token`. Override with `OPENSWARM_URL`, `OPENSWARM_TOKEN`, or `OPENSWARM_DIR`.
