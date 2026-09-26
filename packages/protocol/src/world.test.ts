@@ -34,3 +34,15 @@ test("task counters never go negative", () => {
   w = reduceWorld(w, envelope("task.done", { taskId: "t", ok: true, summary: "", ms: 1 }, "core"));
   expect(w.tasks).toEqual({ active: 0, done: 1 });
 });
+
+test("preference reset un-births the companion", () => {
+  let w = emptyWorld();
+  const persona = { name: "Eve" } as any;
+  w = reduceWorld(w, envelope("companion.born", { persona }, "core"));
+  expect(w.companion.born).toBe(true);
+  w = reduceWorld(w, envelope("preference.update", { vector: {}, deltas: {}, progress: 0.4, observations: 3 }, "core"));
+  expect(w.companion.born).toBe(true);
+  w = reduceWorld(w, envelope("preference.update", { vector: {}, deltas: {}, progress: 0, observations: 0 }, "core"));
+  expect(w.companion.born).toBe(false);
+  expect(w.companion.persona).toBeUndefined();
+});

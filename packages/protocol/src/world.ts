@@ -28,8 +28,13 @@ export function reduceWorld(w: WorldSnapshot, e: AnyEnvelope): WorldSnapshot {
       return { ...w, desktop: { ...w.desktop, activeApp: e.data.app } };
     case "page.context":
       return { ...w, desktop: { ...w.desktop, page: { url: e.data.url, title: e.data.title, targets: e.data.targets } } };
-    case "preference.update":
-      return { ...w, preference: { vector: e.data.vector, progress: e.data.progress, observations: e.data.observations } };
+    case "preference.update": {
+      const preference = { vector: e.data.vector, progress: e.data.progress, observations: e.data.observations };
+      // A fresh Act I (reset) starts from zero observations: she isn't born yet.
+      if (e.data.observations === 0 && e.data.progress === 0)
+        return { ...w, preference, companion: { ...w.companion, born: false, persona: undefined, state: "sleeping" } };
+      return { ...w, preference };
+    }
     case "companion.born":
       return { ...w, companion: { ...w.companion, born: true, persona: e.data.persona, state: "idle" } };
     case "avatar.state":
