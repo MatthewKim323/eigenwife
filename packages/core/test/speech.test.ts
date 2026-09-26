@@ -394,6 +394,23 @@ describe("tts backends", () => {
     expect(live.voiceKey()).toBe("elevenlabs:vox:v2");
   });
 
+  test("elevenlabs: steps aside when the account is near its character limit", async () => {
+    let used = 9000;
+    const b = elevenLabsTts(
+      io({
+        secret: (n: string) => (({ ELEVENLABS_API_KEY: "el" }) as Record<string, string>)[n] ?? "",
+        fetch: async (u: string) =>
+          u.endsWith("/v1/user/subscription")
+            ? new Response(JSON.stringify({ character_count: used, character_limit: 10000 }))
+            : new Response(new Uint8Array(200)),
+      }) as never,
+    );
+    expect(b.configured()).toBe(true); // unknown yet: allowed, check kicks off
+    await Bun.sleep(10);
+    expect(b.quota()).toMatchObject({ used: 9000, limit: 10000 });
+    expect(b.configured()).toBe(false); // 1000 left < 1500 reserve
+  });
+
   test("say: say to aiff, ffmpeg to mp3", async () => {
     const argvs: string[][] = [];
     const b = sayTts(

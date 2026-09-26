@@ -101,15 +101,46 @@ export const ELEVEN_DEFAULT_VOICE = "21m00Tcm4TlvDq8ikWAM";
  */
 export const ELEVEN_LIVE_MODEL = "eleven_flash_v2_5";
 
-export function elevenLabsTts(io: TtsIO): TtsBackend {
+/**
+ * Quota guard: the account's remaining characters are checked (at most once a
+ * minute, in the background). When fewer than EVE_ELEVEN_RESERVE (default 1500)
+ * are left, the backend reports itself unconfigured, so live lines fall back to
+ * the next voice and pay-as-you-go never runs past the plan. Cached lines still play.
+ */
+export function elevenLabsTts(io: TtsIO): TtsBackend & { quota(): { used: number; limit: number; checkedAt: number } | null } {
   const voice = () => io.secret("EVE_ELEVEN_VOICE_ID") || io.secret("ELEVENLABS_VOICE_ID") || ELEVEN_DEFAULT_VOICE;
   const model = () => io.secret("EVE_ELEVEN_MODEL") || ELEVEN_LIVE_MODEL;
+  const reserve = () => Number(io.secret("EVE_ELEVEN_RESERVE") || 1500);
+  let quota: { used: number; limit: number; checkedAt: number } | null = null;
+  let checking = false;
+  const refresh = () => {
+    if (checking || (quota && io.now() - quota.checkedAt < 60_000)) return;
+    checking = true;
+    io.fetch("https://api.elevenlabs.io/v1/user/subscription", { headers: { "xi-api-key": io.secret("ELEVENLABS_API_KEY") } })
+      .then(async (r) => {
+        if (!r.ok) return;
+        const d = (await r.json()) as { character_count?: number; character_limit?: number };
+        if (typeof d.character_count === "number" && typeof d.character_limit === "number")
+          quota = { used: d.character_count, limit: d.character_limit, checkedAt: io.now() };
+      })
+      .catch(() => {})
+      .finally(() => {
+        checking = false;
+      });
+  };
+  const underReserve = () => !!quota && quota.limit - quota.used < reserve();
   return {
     name: "elevenlabs",
     voiceKey: () => `elevenlabs:${voice()}:v2`,
-    configured: () => !!io.secret("ELEVENLABS_API_KEY"),
+    quota: () => quota,
+    configured: () => {
+      if (!io.secret("ELEVENLABS_API_KEY")) return false;
+      refresh();
+      return !underReserve();
+    },
     async synth(text, signal) {
       const m = model();
+      if (quota) quota = { ...quota, used: quota.used + text.length };
       const settings = m === "eleven_v3" ? { stability: 0.5 } : { stability: 0.45, similarity_boost: 0.8, style: 0.35, use_speaker_boost: true };
       const res = await io.fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice()}?output_format=mp3_44100_128`, {
         method: "POST",
