@@ -9,6 +9,8 @@ export interface EveStatus {
   activeTasks?: number;
   lastSyncAt?: number;
   zo?: boolean;
+  /** Live ping of Zo from `eve status` (not from the core). */
+  zoLive?: { ok: boolean; ms: number; error?: string } | null;
   persona?: { name: string; tagline?: string } | null;
   bornAt?: number | null;
   home: string;
@@ -38,6 +40,13 @@ export function statusLine(s: Pick<EveStatus, "online" | "uptimeMs" | "memories"
   return `EVE  STATUS ${s.online ? "ONLINE" : "OFFLINE"} | UPTIME ${s.online ? formatUptime(s.uptimeMs) : "--:--:--"} | MEMORIES ${s.memories} | TASKS ${s.tasks}`;
 }
 
+function zoRow(s: EveStatus, now: number | undefined, paint: (code: string, t: string) => string): string {
+  const sync = s.lastSyncAt ? `last sync ${formatAgo(s.lastSyncAt, now)}` : "not synced yet";
+  if (s.zoLive) return s.zoLive.ok ? `${paint("32", "LIVE")} (ping ${s.zoLive.ms}ms), ${sync}` : `${paint("31", "UNREACHABLE")} (${s.zoLive.error ?? "?"}), ${sync}`;
+  if (s.zo) return `mirrored, ${sync}`;
+  return paint("2", "not configured (ZO_API_KEY)");
+}
+
 export function formatStatus(s: EveStatus, opts: { color?: boolean; now?: number } = {}): string {
   const c = opts.color ?? false;
   const paint = (code: string, t: string) => (c ? `\x1b[${code}m${t}\x1b[0m` : t);
@@ -48,7 +57,7 @@ export function formatStatus(s: EveStatus, opts: { color?: boolean; now?: number
     ["MEMORIES", String(s.memories)],
     ["TASKS", s.activeTasks ? `${s.tasks} (${s.activeTasks} running)` : String(s.tasks)],
     ["HOST", s.host],
-    ["ZO", s.zo ? `mirrored, last sync ${formatAgo(s.lastSyncAt, opts.now)}` : dim("not configured (ZO_API_KEY)")],
+    ["ZO", zoRow(s, opts.now, paint)],
     ["PERSONA", s.persona ? `${s.persona.name}${s.persona.tagline ? `, ${s.persona.tagline}` : ""}` : dim("not born yet")],
   ];
   if (s.persona && s.bornAt) rows.push(["BORN", formatAgo(s.bornAt, opts.now)]);

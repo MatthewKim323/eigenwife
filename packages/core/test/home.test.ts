@@ -6,7 +6,7 @@ import { startCore, type RunningCore } from "../src/index";
 import { formatStatus, formatUptime, statusLine } from "../src/home/format";
 import { homeModule, type HomeServiceImpl } from "../src/home/module";
 import { HomeStore } from "../src/home/store";
-import { pickWriteTool, ZoMirror } from "../src/home/zo";
+import { fakeZoServer } from "./zo.fakes";
 
 process.env.EIGEN_QUIET = "1";
 
@@ -68,117 +68,14 @@ test("store: a jsonl file with a torn trailing line still loads", async () => {
   expect(await new HomeStore(dir).read<unknown[]>("memories.jsonl", [])).toEqual([{ id: 1 }, { id: 2 }]);
 });
 
-// --- Zo mirror ---------------------------------------------------------------
-
-interface Call {
-  url: string;
-  body: any;
-  headers: Record<string, string>;
-}
-
-function fakeZo(opts: { mcp?: boolean; sse?: boolean; failAsk?: boolean } = {}) {
-  const calls: Call[] = [];
-  const files = new Map<string, string>();
-  const fetcher = async (url: string, init?: RequestInit): Promise<Response> => {
-    const body = init?.body ? JSON.parse(String(init.body)) : null;
-    calls.push({ url, body, headers: (init?.headers ?? {}) as Record<string, string> });
-    if (url.endsWith("/mcp")) {
-      if (!opts.mcp) return new Response("nope", { status: 404 });
-      if (!body.id) return new Response(null, { status: 202 });
-      let result: unknown = {};
-      if (body.method === "tools/list")
-        result = {
-          tools: [
-            { name: "read_file", inputSchema: { properties: { path: {} } } },
-            { name: "write_file", inputSchema: { properties: { file_path: {}, content: {} } } },
-          ],
-        };
-      if (body.method === "tools/call") {
-        files.set(body.params.arguments.file_path, body.params.arguments.content);
-        result = { content: [{ type: "text", text: "ok" }] };
-      }
-      const msg = JSON.stringify({ jsonrpc: "2.0", id: body.id, result });
-      return opts.sse
-        ? new Response(`event: message\ndata: ${msg}\n\n`, { headers: { "content-type": "text/event-stream", "mcp-session-id": "s1" } })
-        : new Response(msg, { headers: { "content-type": "application/json", "mcp-session-id": "s1" } });
-    }
-    if (url.endsWith("/zo/ask")) {
-      if (opts.failAsk) return Response.json({ error: "down" }, { status: 500 });
-      return Response.json({ output: "OK", conversation_id: null });
-    }
-    return new Response("?", { status: 404 });
-  };
-  return { calls, files, fetcher };
-}
-
-test("zo: bursts are debounced into one sync with the latest bytes", async () => {
-  const z = fakeZo({ mcp: true });
-  const zo = new ZoMirror({ apiKey: "zo_sk_test", debounceMs: 40, fetch: z.fetcher });
-  zo.enqueue("profile.json", "v1");
-  zo.enqueue("profile.json", "v2");
-  zo.enqueue("memories.jsonl", "m1");
-  await Bun.sleep(10);
-  zo.enqueue("profile.json", "v3");
-  expect(z.calls.length).toBe(0);
-  await Bun.sleep(120);
-  const writes = z.calls.filter((c) => c.body?.method === "tools/call");
-  expect(writes.length).toBe(2);
-  expect(z.files.get("/home/workspace/eve/profile.json")).toBe("v3");
-  expect(z.files.get("/home/workspace/eve/memories.jsonl")).toBe("m1");
-  expect(zo.syncs).toBe(1);
-  expect(zo.lastSyncAt).toBeGreaterThan(0);
-  expect(zo.lastResult?.via).toBe("mcp");
-  // bearer auth + session header after initialize
-  expect(z.calls[0]!.headers.Authorization).toBe("Bearer zo_sk_test");
-  expect(writes[0]!.headers["Mcp-Session-Id"]).toBe("s1");
-  zo.stop();
-});
-
-test("zo: SSE-framed MCP responses work", async () => {
-  const z = fakeZo({ mcp: true, sse: true });
-  const zo = new ZoMirror({ apiKey: "k", debounceMs: 5, fetch: z.fetcher });
-  zo.enqueue("status.json", "{}");
-  const r = await zo.flush();
-  expect(r.ok).toBe(true);
-  expect(r.via).toBe("mcp");
-  expect(z.files.get("/home/workspace/eve/status.json")).toBe("{}");
-});
-
-test("zo: falls back to /zo/ask when MCP is unavailable, keeps files dirty on total failure", async () => {
-  const z = fakeZo({ mcp: false });
-  const zo = new ZoMirror({ apiKey: "k", debounceMs: 5, fetch: z.fetcher });
-  zo.enqueue("profile.json", '{"persona":null}');
-  const r = await zo.flush();
-  expect(r.via).toBe("ask");
-  const ask = z.calls.find((c) => c.url.endsWith("/zo/ask"))!;
-  expect(ask.body.input).toContain("/home/workspace/eve/profile.json");
-  expect(ask.body.input).toContain('{"persona":null}');
-
-  const bad = fakeZo({ mcp: false, failAsk: true });
-  const zo2 = new ZoMirror({ apiKey: "k", debounceMs: 5, fetch: bad.fetcher });
-  zo2.enqueue("profile.json", "x");
-  const r2 = await zo2.flush();
-  expect(r2.ok).toBe(false);
-  expect(zo2.lastSyncAt).toBeUndefined();
-  expect(zo2.dirty()).toEqual(["profile.json"]);
-});
-
-test("zo: write tool is picked by schema, not by guesswork", () => {
-  expect(pickWriteTool([{ name: "write_file", inputSchema: { properties: { path: {}, content: {} } } }])).toEqual({
-    name: "write_file",
-    pathKey: "path",
-    contentKey: "content",
-  });
-  expect(pickWriteTool([{ name: "create_file", inputSchema: { properties: { target_file: {}, text: {} } } }])?.pathKey).toBe("target_file");
-  expect(pickWriteTool([{ name: "web_search", inputSchema: { properties: { query: {} } } }])).toBeNull();
-});
+// Zo client, mirror, restore and the zo service are covered in zo.test.ts.
 
 // --- module ------------------------------------------------------------------
 
 test("module: status route, home.status ticks, task_state + relationship persistence, zo host", async () => {
   const home = tmp();
-  const z = fakeZo({ mcp: true });
-  const core = await startCore([homeModule({ zoKey: "k", fetch: z.fetcher, syncDebounceMs: 10, statusIntervalMs: 30 })], {
+  const z = fakeZoServer();
+  const core = await startCore([homeModule({ zoKey: "k", zoBaseUrl: z.url, syncDebounceMs: 10, statusIntervalMs: 30, spotify: false, prefetch: false })], {
     port: 17811,
     eveHome: home,
   });
@@ -210,6 +107,7 @@ test("module: status route, home.status ticks, task_state + relationship persist
 
   const status = await (await fetch("http://127.0.0.1:17811/api/home/status")).json();
   expect(status).toMatchObject({ online: true, tasks: 1, zo: true, host: "zo", home });
+  z.stop();
 });
 
 test("module: without a Zo key the host is this machine and nothing leaves", async () => {

@@ -1,3 +1,4 @@
+import type { ZoService } from "./zo/apps";
 import type { MemoryHit, MemoryRecord, MemoryWritePolicy, Mood, Persona, RelationshipState, TraitVector, Urgency } from "@eigenwife/protocol";
 
 /**
@@ -116,4 +117,6 @@ export interface ServiceMap {
   home: HomeService;
   reflex: ReflexService;
   agency: AgencyService;
+  /** Eve's Zo computer (Google Calendar, Maps, Spotify, files). Provided by home only when ZO_API_KEY is set. */
+  zo: ZoService;
 }

@@ -1,7 +1,30 @@
+import type { ZoService } from "../../zo/apps";
 import { runJxa } from "../osa";
-import type { ActionDef } from "../types";
+import type { ActionDef, ActionEnv } from "../types";
 
 export const EVE_CALENDAR = "Eigenwife";
+
+/**
+ * Real Google Calendar through Zo when ZO_API_KEY is set (EVE_ZO_CALENDAR=0 to
+ * skip), macOS Calendar otherwise or whenever Zo fails. The write stays an
+ * EXTERNAL_SIDE_EFFECT behind the spoken approval gate either way: these run()
+ * bodies only execute after the gate said yes.
+ */
+export const ZO_BOOK_CAP_MS = 8000;
+export const ZO_READ_CAP_MS = 8000;
+
+export function zoFor(env: ActionEnv): ZoService | null {
+  if (env.deps.env("EVE_ZO_CALENDAR") === "0") return null;
+  return env.ctx.tryUse("zo");
+}
+
+/** Google Calendar event ids are base32hex (a-v, 0-9); macOS Calendar uids are uppercase UUIDs. */
+export const looksGoogleId = (id: string) => /^[a-v0-9_]{5,1024}$/.test(id);
+
+function capped<T>(p: Promise<T>, ms: number): Promise<T | null> {
+  let t: ReturnType<typeof setTimeout>;
+  return Promise.race([p, new Promise<null>((r) => (t = setTimeout(() => r(null), ms)))]).finally(() => clearTimeout(t));
+}
 
 /**
  * JXA: create an event. Payload arrives as argv[0] JSON, never spliced into source.
@@ -150,13 +173,50 @@ function createEvent(kind: string): ActionDef {
     async run(args, env) {
       const e = eventArgs(args, env.deps.now());
       if (e.start === null || e.end === null) return { ok: false, observation: `couldn't read a start time from ${JSON.stringify(args.start ?? null)}` };
+      const when = `${new Date(e.start).toDateString()} ${fmtTime(e.start)}-${fmtTime(e.end)}`;
+
+      const zo = zoFor(env);
+      let zoNote = "";
+      let late: Promise<Awaited<ReturnType<ZoService["createEvent"]>>> | null = null;
+      if (zo) {
+        env.progress?.("putting it on your Google Calendar...");
+        const description = /booked by eve/i.test(e.notes) ? e.notes : `${e.notes}\n\nbooked by Eve (eigenwife)`;
+        const call = zo.createEvent({ title: e.title, start: e.start, end: e.end, location: e.location || undefined, description }, { timeoutMs: 30_000 });
+        // Hard cap so the demo never hangs on Zo; Calendar.app takes over past it.
+        const cap = Number(env.deps.env("EVE_ZO_BOOK_CAP_MS")) || ZO_BOOK_CAP_MS;
+        const r = await capped(call, cap);
+        if (r?.ok && r.value) {
+          return {
+            ok: true,
+            observation: `created "${e.title}" ${when} on your Google Calendar (event ${r.value.id})${r.value.htmlLink ? ` ${r.value.htmlLink}` : ""}`,
+            data: { id: r.value.id, uid: r.value.id, htmlLink: r.value.htmlLink, calendar: "google", via: "zo", start: e.start, end: e.end, title: e.title, ms: r.ms },
+          };
+        }
+        if (r === null) {
+          zoNote = ` (Google Calendar took over ${cap / 1000}s)`;
+          late = call;
+        } else zoNote = ` (Google Calendar via Zo failed: ${r.error ?? "?"})`;
+      }
+
       env.progress?.("writing to Calendar...");
       const r = await runJxa<{ uid: string; calendar: string; fellBack: boolean }>(env.deps.osa, CREATE_EVENT_JXA, { ...e }, 60_000);
-      if (!r.ok) return { ok: false, observation: `Calendar said no: ${r.error}` };
+      if (!r.ok) {
+        // Calendar.app failed too: if the slow Zo booking lands after all, that one counts.
+        const z = late ? await late : null;
+        if (z?.ok && z.value)
+          return {
+            ok: true,
+            observation: `created "${e.title}" ${when} on your Google Calendar (event ${z.value.id}, slow)`,
+            data: { id: z.value.id, uid: z.value.id, htmlLink: z.value.htmlLink, calendar: "google", via: "zo", start: e.start, end: e.end, title: e.title },
+          };
+        return { ok: false, observation: `Calendar said no: ${r.error}${zoNote}` };
+      }
+      // Booked locally: a late Google event would be a duplicate, so it gets removed when it lands.
+      if (late && zo) void late.then((z) => (z.ok && z.value ? zo.deleteEvent(z.value.id) : null)).catch(() => {});
       return {
         ok: true,
-        observation: `created "${e.title}" ${new Date(e.start).toDateString()} ${fmtTime(e.start)}-${fmtTime(e.end)} in ${r.value.calendar}${r.value.fellBack ? ` (no "${e.calendar}" calendar, used ${r.value.calendar})` : ""}`,
-        data: { uid: r.value.uid, calendar: r.value.calendar, start: e.start, end: e.end, title: e.title },
+        observation: `created "${e.title}" ${when} in ${r.value.calendar}${r.value.fellBack ? ` (no "${e.calendar}" calendar, used ${r.value.calendar})` : ""}${zoNote}`,
+        data: { uid: r.value.uid, calendar: r.value.calendar, via: "macos", start: e.start, end: e.end, title: e.title },
       };
     },
   };
@@ -171,9 +231,16 @@ export const calendarDeleteEvent: ActionDef = {
   permission: "EXTERNAL_SIDE_EFFECT",
   describe: (a) => `delete a calendar event${a.title ? ` ("${String(a.title)}")` : ""}`,
   async run(args, env) {
-    const uid = String(args.uid ?? "");
-    if (!uid) return { ok: false, observation: "no uid" };
+    const uid = String(args.id ?? args.uid ?? args.eventId ?? "");
+    if (!uid) return { ok: false, observation: "no event id" };
     const calendar = typeof args.calendar === "string" ? args.calendar : undefined;
+    const zo = zoFor(env);
+    const google = args.via === "zo" || calendar === "google" || looksGoogleId(uid);
+    if (zo && google) {
+      const r = await zo.deleteEvent(uid, { timeoutMs: 20_000 });
+      if (r.ok) return { ok: true, observation: `deleted Google Calendar event ${uid}`, data: { deleted: 1, via: "zo" } };
+      if (args.via === "zo" || calendar === "google") return { ok: false, observation: `Google Calendar via Zo said no: ${r.error}` };
+    }
     const r = await runJxa<{ deleted: number }>(env.deps.osa, DELETE_EVENT_JXA, { uid, calendar }, 60_000);
     if (!r.ok) return { ok: false, observation: `Calendar said no: ${r.error}` };
     return { ok: r.value.deleted > 0, observation: `deleted ${r.value.deleted} event(s)`, data: r.value };
@@ -192,6 +259,20 @@ export const calendarFreeBusy: ActionDef = {
     const needMin = Number(args.needMin ?? 90) || 90;
     const start = new Date(day).setHours(0, 0, 0, 0);
 
+    const zo = zoFor(env);
+    let zoNote = "";
+    if (zo) {
+      const r = await capped(zo.listEvents(start, until, { timeoutMs: 20_000 }), ZO_READ_CAP_MS);
+      if (r?.ok && r.value) {
+        const busy: BusyBlock[] = r.value
+          .filter((ev) => !ev.allDay && ev.end > from)
+          .map((ev) => ({ title: ev.title, start: ev.start, end: ev.end, calendar: "google" }))
+          .sort((a, b) => a.start - b.start);
+        return freeBusyOutcome(busy, from, until, needMin, ["google"], []);
+      }
+      zoNote = r === null ? " (Google Calendar was slow, read Calendar.app)" : ` (Google Calendar via Zo failed: ${r.error ?? "?"})`;
+    }
+
     const listed = await runJxa<string[]>(env.deps.osa, LIST_CALENDARS_JXA, {}, 20_000);
     if (!listed.ok) return { ok: false, observation: `couldn't read Calendar: ${listed.error}` };
     const only = env.deps
@@ -209,13 +290,18 @@ export const calendarFreeBusy: ActionDef = {
       .flatMap((x) => (x.r.ok ? x.r.value : []))
       .filter((b) => b.end > from)
       .sort((a, b) => a.start - b.start);
-    const slot = firstFreeSlot(busy, from, until, needMin);
-    const busyText = busy.length ? busy.map((b) => `${b.title} ${fmtTime(b.start)}-${fmtTime(b.end)}`).join(", ") : "nothing";
-    const main = slot ? `busy tonight: ${busyText}. free from ${fmtTime(slot)}` : `busy tonight: ${busyText}. no ${needMin}-minute gap left`;
-    return {
-      ok: true,
-      observation: `${main}${skipped.length ? ` (didn't finish reading ${skipped.join(", ")})` : ""}`,
-      data: { busy, freeFrom: slot, calendars: names, skipped },
-    };
+    const out = freeBusyOutcome(busy, from, until, needMin, names, skipped);
+    return { ...out, observation: out.observation + zoNote };
   },
 };
+
+function freeBusyOutcome(busy: BusyBlock[], from: number, until: number, needMin: number, calendars: string[], skipped: string[]) {
+  const slot = firstFreeSlot(busy, from, until, needMin);
+  const busyText = busy.length ? busy.map((b) => `${b.title} ${fmtTime(b.start)}-${fmtTime(b.end)}`).join(", ") : "nothing";
+  const main = slot ? `busy tonight: ${busyText}. free from ${fmtTime(slot)}` : `busy tonight: ${busyText}. no ${needMin}-minute gap left`;
+  return {
+    ok: true,
+    observation: `${main}${skipped.length ? ` (didn't finish reading ${skipped.join(", ")})` : ""}`,
+    data: { busy, freeFrom: slot, calendars, skipped },
+  };
+}

@@ -10,7 +10,8 @@
  * files in ~/.eve when the core is down, so it always answers.
  */
 import type { MemoryRecord } from "@eigenwife/protocol";
-import { loadConfig } from "../config";
+import { loadConfig, secret } from "../config";
+import { ZoClient } from "../zo/client";
 import { formatAgo, formatStatus, type EveStatus } from "./format";
 import type { ProfileFile, StatusFile, TaskState } from "./module";
 import { HomeStore } from "./store";
@@ -24,7 +25,22 @@ async function getJson<T>(url: string, ms = 800): Promise<T | null> {
   }
 }
 
+/** Actually talk to Zo (initialize + ping), so "LIVE" means live right now. */
+export async function pingZo(timeoutMs = 8000): Promise<EveStatus["zoLive"]> {
+  const key = secret("ZO_API_KEY");
+  if (!key) return null;
+  const client = new ZoClient({ apiKey: key, baseUrl: secret("ZO_BASE_URL") || undefined, keepaliveMs: 0 });
+  const t0 = Date.now();
+  const r = await client.ping(timeoutMs);
+  return { ok: r.ok, ms: Date.now() - t0, ...(r.error ? { error: r.error } : {}) };
+}
+
 export async function collectStatus(): Promise<EveStatus> {
+  const [s, zoLive] = await Promise.all([collectLocal(), pingZo()]);
+  return { ...s, zoLive, zo: s.zo || !!zoLive };
+}
+
+async function collectLocal(): Promise<EveStatus> {
   const config = loadConfig();
   const store = new HomeStore(config.eveHome);
   const statusFile = await store.read<StatusFile | null>("status", null);

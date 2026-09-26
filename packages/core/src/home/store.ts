@@ -71,8 +71,12 @@ export class HomeStore {
 
   /** Atomic write. Resolves with the exact bytes written (the Zo mirror reuses them). */
   write(name: string, data: unknown): Promise<string> {
+    return this.writeRaw(name, HomeStore.serialize(name, data));
+  }
+
+  /** Atomic write of exact bytes (used when restoring files from Zo). */
+  writeRaw(name: string, body: string): Promise<string> {
     const file = this.path(name);
-    const body = HomeStore.serialize(name, data);
     const prev = this.chains.get(file) ?? Promise.resolve();
     const next = prev.then(async () => {
       await mkdir(this.dir, { recursive: true });

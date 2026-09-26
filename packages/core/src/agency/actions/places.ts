@@ -13,7 +13,7 @@ export interface Place {
   url?: string;
   why: string;
   dish?: string;
-  source: "search" | "frontier" | "demo";
+  source: "zo" | "search" | "frontier" | "demo";
 }
 
 export interface PlacePrefs {
@@ -60,6 +60,22 @@ export const DEMO_PLACES: Place[] = [
   },
 ];
 
+/** Short Google Maps query: "cheap spicy ramen". Matches the home module's prefetch queries on purpose. */
+export function mapsQuery(prefs: PlacePrefs): string {
+  return [prefs.budget === "cheap" ? "cheap" : "", ...(prefs.likes ?? []).slice(0, 2), prefs.cuisine ?? "food"].filter(Boolean).join(" ");
+}
+
+const SAVING = /\b(sav(e|ing) (money|up)|broke|on a budget|tight on (money|cash)|spent too much|cheap(er)?)\b/i;
+
+/** Memories say he is saving money: ask Maps for inexpensive places even if prefs did not. */
+export function memoriesSaySaving(env: ActionEnv): boolean {
+  try {
+    return (env.ctx.tryUse("memory")?.all() ?? []).some((m) => SAVING.test(m.content));
+  } catch {
+    return false;
+  }
+}
+
 export function placesQuery(prefs: PlacePrefs, location: string): string {
   const bits = [prefs.budget === "cheap" ? "cheap" : "", ...(prefs.likes ?? []).slice(0, 2), prefs.cuisine ?? "dinner"].filter(Boolean);
   return `best ${bits.join(" ")} restaurants near ${location}`;
@@ -101,7 +117,25 @@ export function scorePlace(p: Place, prefs: PlacePrefs): number {
   return s;
 }
 
-export async function searchPlaces(env: ActionEnv, prefs: PlacePrefs, location: string, onProgress?: (t: string) => void): Promise<{ places: Place[]; via: string }> {
+export async function searchPlaces(
+  env: ActionEnv,
+  prefs: PlacePrefs,
+  location: string,
+  onProgress?: (t: string) => void,
+  opts: { openNow?: boolean } = {},
+): Promise<{ places: Place[]; via: string }> {
+  // Google Maps through Zo first: real places, ~4-7s live, instant when prefetched.
+  const zo = env.deps.env("EVE_ZO_MAPS") === "0" ? null : env.ctx.tryUse("zo");
+  if (zo) {
+    const q = { query: mapsQuery(prefs), location, openNow: opts.openNow ?? true, cheap: prefs.budget === "cheap" || memoriesSaySaving(env) };
+    onProgress?.(`checking Google Maps for "${q.query}" near ${location}`);
+    const r = await zo.maps(q, { timeoutMs: 12_000 });
+    if (r.ok && r.places.length) {
+      onProgress?.(`${r.places.length} places from Google Maps${r.cached ? " (already had them)" : ""}`);
+      return { places: r.places.map((p) => ({ ...p, source: "zo" as const })), via: r.cached ? "zo:maps:cache" : "zo:maps" };
+    }
+    onProgress?.(`Google Maps came back empty (${r.error ?? "no places"}), trying the web`);
+  }
   const brains = env.ctx.tryUse("brains");
   const query = placesQuery(prefs, location);
   onProgress?.(`searching "${query}"`);
@@ -139,7 +173,7 @@ export const placesSearchAction: ActionDef = {
   async run(args, env) {
     const prefs = (args.prefs as PlacePrefs | undefined) ?? { cuisine: typeof args.cuisine === "string" ? args.cuisine : undefined, budget: "cheap" };
     const location = String(args.location ?? "").trim() || env.deps.env("EIGEN_LOCATION") || "Irvine, CA";
-    const { places, via } = await searchPlaces(env, prefs, location, env.progress);
+    const { places, via } = await searchPlaces(env, prefs, location, env.progress, { openNow: typeof args.openNow === "boolean" ? args.openNow : undefined });
     const ranked = [...places].sort((a, b) => scorePlace(b, prefs) - scorePlace(a, prefs));
     if (!ranked.length) return { ok: false, observation: "found nothing that fits" };
     return {
