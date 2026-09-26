@@ -138,20 +138,88 @@ setInterval(() => {
 }, 900);
 
 // reflex layer: mostly IGNORE, sometimes not
-const verdicts = [...document.querySelectorAll(".v")];
+const verdictRows = [document.querySelectorAll(".v"), document.querySelectorAll(".viz-reflex span")];
 setInterval(() => {
-  const r = Math.random();
-  const i = r < 0.85 ? 0 : 1 + Math.floor(Math.random() * (verdicts.length - 1));
-  verdicts.forEach((v, j) => v.classList.toggle("on", j === i));
+  for (const row of verdictRows) {
+    const i = Math.random() < 0.85 ? 0 : 1 + Math.floor(Math.random() * (row.length - 1));
+    row.forEach((v, j) => v.classList.toggle("on", j === i));
+  }
 }, 1100);
 
 // uptime keeps counting
-const up = document.getElementById("uptime");
+const ups = [document.getElementById("uptime"), ...document.querySelectorAll("[data-uptime]")];
 let secs = 5 * 3600 + 31 * 60 + 14;
 setInterval(() => {
   secs++;
   const h = String(Math.floor(secs / 3600)).padStart(2, "0");
   const m = String(Math.floor((secs % 3600) / 60)).padStart(2, "0");
   const s = String(secs % 60).padStart(2, "0");
-  up.textContent = `${h}:${m}:${s}`;
+  for (const up of ups) up.textContent = `${h}:${m}:${s}`;
 }, 1000);
+
+// Run a callback only while an element is on screen and the tab is visible.
+function whenVisible(el, onChange, threshold = 0.3) {
+  let seen = false;
+  const update = () => onChange(seen && !document.hidden);
+  new IntersectionObserver(([e]) => { seen = e.isIntersecting; update(); }, { threshold }).observe(el);
+  document.addEventListener("visibilitychange", update);
+}
+
+// bento diagrams animate only on screen
+const bento = document.querySelector(".bento");
+whenVisible(bento, (on) => bento.classList.toggle("in", on && !reduced), 0.1);
+
+// odometer: each digit rolls, no tweened counting
+for (const el of document.querySelectorAll("[data-odo]")) {
+  const text = el.dataset.odo;
+  el.innerHTML =
+    [...text].map((ch) => (/\d/.test(ch) ? `<span class="odo"><span>${[...Array(10).keys()].join("<br>")}</span></span>` : ch)).join("") +
+    (el.dataset.suffix || "");
+  const reels = [...el.querySelectorAll(".odo > span")];
+  const digits = [...text].filter((c) => /\d/.test(c)).map(Number);
+  const roll = () => reels.forEach((r, i) => {
+    r.style.transitionDelay = `${i * 90}ms`;
+    r.style.transform = `translateY(${-digits[i]}em)`;
+  });
+  if (reduced) roll();
+  else whenVisible(el, (on) => on && roll(), 0.6);
+}
+
+// self-driving chat: fixed beats, pauses off screen, resumes on the same beat
+const chat = document.getElementById("chat");
+const BEATS = [900, 2400, 3200, 3000, 3800];
+let beat = 0, beatTimer = null, chatOn = false;
+function nextBeat() {
+  beatTimer = setTimeout(() => {
+    beat = (beat + 1) % BEATS.length;
+    chat.dataset.phase = String(beat);
+    if (chatOn) nextBeat();
+  }, BEATS[beat]);
+}
+if (reduced) chat.dataset.phase = "4";
+else whenVisible(chat, (on) => {
+  chatOn = on;
+  clearTimeout(beatTimer);
+  if (on) nextBeat();
+});
+
+// terminal transcript in the reasoning cell
+const term = document.getElementById("term");
+const TERM = [
+  ['<span class="p">jabby</span> escalate <span class="dim">"figure out tonight"</span>', 700],
+  ['<span class="dim">router</span> COMPLEX_REASONING -> claude', 600],
+  ['<span class="dim">plan</span> calendar.free(tonight) · places.search(cheap, spicy)', 900],
+  ['<span class="dim">memory</span> hit: "$28 ramen was overpriced" (0.89)', 800],
+  ['<span class="dim">gate</span> calendar.create -> ask user · <span class="ok">approved</span>', 900],
+  ['<span class="ok">done</span> 7:30 PM · Menya Kaze · $14', 2600],
+];
+let tl = 0, termTimer = null;
+function termStep() {
+  if (tl === 0) term.innerHTML = "";
+  const [line, ms] = TERM[tl];
+  term.insertAdjacentHTML("beforeend", `<div>${line}</div>`);
+  tl = (tl + 1) % TERM.length;
+  termTimer = setTimeout(termStep, ms);
+}
+if (reduced) { TERM.forEach(([l]) => term.insertAdjacentHTML("beforeend", `<div>${l}</div>`)); }
+else whenVisible(term, (on) => { clearTimeout(termTimer); if (on) termStep(); });

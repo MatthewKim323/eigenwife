@@ -3,14 +3,15 @@
 Kawaii sticker system. Eve is the mascot and the ground truth: every asset reuses her.
 
 ## Eve (real model only)
-The page uses the real Eve from the shell: Haru, the Live2D sample model (Live2D Free Material
-License, fine for the hackathon, check before commercial use). Never Alexia on this page:
-she's third-party art and the repo rule is her renders are never committed (see docs/WARDROBE.md).
+Eve on this page is Alexia, the shell's current model (matt's call, 2026-09-26). Heads up: the
+repo's rule elsewhere (docs/WARDROBE.md) keeps Alexia renders out of git as third-party art;
+these landing media are the deliberate exception.
 
 ## Media (`media/`)
-Real captures of the shell (`apps/shell`, `?model=haru&mic=0&gaze=mouse`), recorded headless with
-editskill's browser capture; a mouse hover stands in for the eye tracker. Raw captures live in
-`media-raw/` (gitignored). Stills come from `docs/screens/` (committed Haru/shell screens only).
+Real captures of the shell (`apps/shell`, `?model=alexia&mic=0&gaze=mouse`), recorded with
+editskill's browser capture patched to new-headless Chromium on the real GPU
+(`channel: 'chromium'`, `--use-angle=metal`); without it there's no WebGL and the shell shows a static fallback; a mouse hover stands in for the eye tracker. Raw captures live in
+`media-raw/` (gitignored). Moods are rendered from the live rig via `window.__eve.mood()`; wardrobe from docs/screens/local.
 Re-shoot: scenes `dating`, `convergence`, `emergence`, `desktop`; encode 1280w h264 crf 27 faststart.
 
 ## Palette

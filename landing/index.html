@@ -34,6 +34,7 @@
   <div class="nav-links">
     <a href="#acts">how</a>
     <a href="#real">her</a>
+    <a href="#talk">talk</a>
     <a href="#compile">try it</a>
     <a href="#stack">stack</a>
     <a href="#demo">demo</a>
@@ -59,16 +60,33 @@
       <video class="clip" src="media/emergence.mp4" poster="media/emergence.webp" muted loop playsinline autoplay preload="metadata"></video>
     </figure>
     <img class="hero-face sticker" src="media/eve-face.webp" alt="Eve">
-    <div class="float f1 sticker"><svg><use href="#i-eye"/></svg></div>
-    <div class="float f2 sticker"><svg><use href="#i-heart"/></svg></div>
+    <div class="ui-chip chip-att mono"><span class="ping"></span>attention · Hellfire Tantanmen <b>2.8s</b></div>
+    <div class="ui-card card-mem">
+      <p class="mono ui-k">MEMORY · 4ms</p>
+      <p>likes spicy · the $28 ramen incident · saving money</p>
+    </div>
+    <div class="ui-card card-cal">
+      <svg class="ui-ic"><use href="#i-cal"/></svg>
+      <div><p class="mono ui-k">EVENT CREATED</p><p><b>7:30 PM</b> · cheap ramen</p></div>
+    </div>
     <div class="float f3 sticker"><svg><use href="#i-spark"/></svg></div>
-    <p class="speech sticker">apparently I'm your type.</p>
   </div>
 </header>
+
+<div class="ticker" aria-label="built with: Jev, Featherless, Moss, Firecrawl, Open Swarm, Zo, Claude, Codex Astra, Live2D, MediaPipe, Jabby">
+  <p class="mono ticker-k">BUILT ON</p>
+  <div class="ticker-mask"><div class="ticker-track"><span class="tick">Jev</span><span class="tick">Featherless</span><span class="tick">Moss</span><span class="tick">Firecrawl</span><span class="tick">Open Swarm</span><span class="tick">Zo</span><span class="tick">Claude</span><span class="tick">Codex Astra</span><span class="tick">Live2D</span><span class="tick">MediaPipe</span><span class="tick">Jabby</span><span class="tick">Jev</span><span class="tick">Featherless</span><span class="tick">Moss</span><span class="tick">Firecrawl</span><span class="tick">Open Swarm</span><span class="tick">Zo</span><span class="tick">Claude</span><span class="tick">Codex Astra</span><span class="tick">Live2D</span><span class="tick">MediaPipe</span><span class="tick">Jabby</span></div></div>
+</div>
 
 <section class="thesis">
   <p class="kicker mono">the meme is "AI girlfriend." the actual thesis:</p>
   <blockquote>Persistent multimodal agents should <mark>share attention</mark> with humans, maintain <mark>long-term memory</mark>, and <mark>act continuously</mark> in the world instead of waiting for explicit prompts.</blockquote>
+  <div class="stats">
+    <div class="stat sticker-card"><p class="num" data-odo="30">0</p><p class="mono">Hz gaze stream</p></div>
+    <div class="stat sticker-card"><p class="num" data-odo="2.6" data-suffix="°">0</p><p class="mono">gaze accuracy, webcam only</p></div>
+    <div class="stat sticker-card"><p class="num" data-odo="16">0</p><p class="mono">dim latent partner model</p></div>
+    <div class="stat sticker-card"><p class="num" data-odo="12">0</p><p class="mono">profiles to converge</p></div>
+  </div>
 </section>
 
 <section class="acts" id="acts">
@@ -136,6 +154,8 @@
   <h2 class="section-title">this is her. for real.</h2>
   <p class="section-sub">Live2D rig, seven moods, blinks, breathing, and she glances at whatever you're looking at.</p>
   <img class="moods sticker-card" src="media/eve-moods.webp" alt="Eve's moods: idle, happy, thinking, annoyed and more" loading="lazy">
+  <div class="mood-labels mono"><span>neutral</span><span>happy</span><span>annoyed</span><span>thinking</span><span>surprised</span><span>smug</span><span>sad</span></div>
+  <figure class="closet sticker-card"><img src="media/eve-wardrobe.webp" alt="Eve's wardrobe: hoodie, sunglasses, lollipop, odd eye" loading="lazy"><figcaption class="mono">"put the hoodie on" · she changes, then says one line about it</figcaption></figure>
   <div class="swarm-strip">
     <figure class="shot sticker-card"><img src="media/swarm-fanout.webp" alt="" loading="lazy"><figcaption class="mono">"figure out tonight" · fan out</figcaption></figure>
     <figure class="shot sticker-card"><img src="media/swarm-conflict.webp" alt="" loading="lazy"><figcaption class="mono">the wives disagree</figcaption></figure>
@@ -143,18 +163,68 @@
   </div>
 </section>
 
+<section class="talk" id="talk">
+  <div class="talk-grid">
+    <div>
+      <h2 class="section-title">say "this." she knows.</h2>
+      <p class="section-sub">Your eyes say what you mean. She resolves the referent, pulls the memory, and acts, with a permission check before anything leaves the house.</p>
+      <ul class="talk-points">
+        <li><svg><use href="#i-eye"/></svg>gaze-grounded "this / that / that one"</li>
+        <li><svg><use href="#i-heart"/></svg>remembers what you said last Tuesday</li>
+        <li><svg><use href="#i-cal"/></svg>asks before side effects, then does it</li>
+      </ul>
+    </div>
+    <div class="chat sticker-card" id="chat" data-phase="0">
+      <div class="chat-top mono"><img src="media/eve-face.webp" alt=""><span>Eve</span><span class="chat-status"><span class="ping"></span>online</span></div>
+      <div class="chat-body">
+        <div class="att mono" data-s="1">looking at · <b>A5 Wagyu Shoyu $28</b></div>
+        <div class="msg me" data-s="1">thoughts?</div>
+        <div class="msg her" data-s="2">twenty-eight dollars for ramen? we talked about this.</div>
+        <div class="mem mono" data-s="2">remembered · likes spicy · saving money · 4ms</div>
+        <div class="msg me" data-s="3">ok just figure out tonight</div>
+        <div class="swarm mono" data-s="3"><span>MEMORY</span><span>PLACES</span><span>CALENDAR</span></div>
+        <div class="msg her" data-s="4">7:30. cheap ramen. you're free. done.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
 <section class="stack" id="stack">
   <h2 class="section-title">how do you build a person?</h2>
-  <p class="section-sub">one faculty per sponsor, one shared event bus.</p>
-  <div class="faculty-grid">
-    <div class="faculty sticker-card"><svg><use href="#i-eye"/></svg><p class="mono">perception</p><h4>eye tracking + Firecrawl</h4><p>where you look, and what it is</p></div>
-    <div class="faculty sticker-card"><svg><use href="#i-spark"/></svg><p class="mono">reflex</p><h4>Jev</h4><p>fast bounded judgments: speak or shut up</p></div>
-    <div class="faculty sticker-card"><svg><use href="#i-heart"/></svg><p class="mono">memory</p><h4>Moss</h4><p>episodic + preference memory</p></div>
-    <div class="faculty sticker-card"><svg><use href="#i-bubble"/></svg><p class="mono">personality</p><h4>Featherless</h4><p>cheap, frequent, in-character lines</p></div>
-    <div class="faculty sticker-card"><svg><use href="#i-vec"/></svg><p class="mono">reasoning</p><h4>Claude + Codex Astra</h4><p>planning and computer use, only when needed</p></div>
-    <div class="faculty sticker-card"><svg><use href="#i-cursor"/></svg><p class="mono">orchestration</p><h4>Jabby</h4><p>event bus, routing, tools, state</p></div>
-    <div class="faculty sticker-card"><svg><use href="#i-ramen"/></svg><p class="mono">workspace</p><h4>Open Swarm</h4><p>her desk: visible multi-agent thinking</p></div>
-    <div class="faculty sticker-card"><svg><use href="#i-cal"/></svg><p class="mono">persistence + action</p><h4>Zo</h4><p>her own computer. she lives there.</p></div>
+  <p class="section-sub">one faculty per sponsor, one shared event bus, zero separate agent frameworks.</p>
+  <div class="bento">
+    <div class="cell c-wide">
+      <div class="viz viz-gaze"><span class="dish">$21</span><span class="dish">$28</span><span class="dish">$19</span><span class="reticle"></span><span class="att-tag mono">attention target</span></div>
+      <p class="mono cell-k">PERCEPTION · eye tracking + Firecrawl</p><h4>she sees what you see</h4><p>Webcam gaze resolves to the exact element, Firecrawl says what it is.</p>
+    </div>
+    <div class="cell">
+      <div class="viz viz-reflex mono"><span class="on">IGNORE</span><span>GLANCE</span><span>COMMENT</span><span>ACT</span></div>
+      <p class="mono cell-k">REFLEX · Jev</p><h4>knows when to shut up</h4><p>80 to 95% of events: IGNORE.</p>
+    </div>
+    <div class="cell">
+      <div class="viz viz-mem"><svg viewBox="0 0 200 110"><g class="edges"><path d="M100 55L40 25M100 55L165 30M100 55L50 90M100 55L160 88M40 25L165 30"/></g><circle class="n core" cx="100" cy="55" r="11"/><circle class="n" cx="40" cy="25" r="7"/><circle class="n" cx="165" cy="30" r="7"/><circle class="n" cx="50" cy="90" r="7"/><circle class="n" cx="160" cy="88" r="7"/></svg></div>
+      <p class="mono cell-k">MEMORY · Moss</p><h4>remembers your life</h4><p>Episodic + preference memory, recalled in ms.</p>
+    </div>
+    <div class="cell">
+      <div class="viz viz-type"><span class="bubble"><i></i><i></i><i></i></span><span class="line mono">"we are NOT doing this song again."</span></div>
+      <p class="mono cell-k">PERSONALITY · Featherless</p><h4>in character, always</h4><p>Cheap, frequent lines under 12 words.</p>
+    </div>
+    <div class="cell c-wide">
+      <div class="viz viz-term mono" id="term"></div>
+      <p class="mono cell-k">REASONING · Claude + Codex Astra</p><h4>frontier brains, on demand</h4><p>Planning and computer use only when the reflex escalates.</p>
+    </div>
+    <div class="cell">
+      <div class="viz viz-bus mono"><div class="bus-track"><span>GAZE_FIXATION</span><span>VOICE</span><span>APP_OPENED</span><span>TIMER_TICK</span><span>MEMORY_WRITE</span><span>GAZE_FIXATION</span><span>VOICE</span><span>APP_OPENED</span><span>TIMER_TICK</span><span>MEMORY_WRITE</span></div></div>
+      <p class="mono cell-k">ORCHESTRATION · Jabby</p><h4>one event bus</h4><p>Routing, tools, state. Everything is an event.</p>
+    </div>
+    <div class="cell c-wide">
+      <div class="viz viz-swarm"><svg viewBox="0 0 200 110"><path class="wire" d="M100 20V50M100 50L35 88M100 50V88M100 50L165 88"/><circle class="hub" cx="100" cy="20" r="10"/><circle class="leaf l1" cx="35" cy="90" r="8"/><circle class="leaf l2" cx="100" cy="90" r="8"/><circle class="leaf l3" cx="165" cy="90" r="8"/></svg></div>
+      <p class="mono cell-k">WORKSPACE · Open Swarm</p><h4>thinking you can watch</h4><p>Sub-agents fan out, disagree, merge.</p>
+    </div>
+    <div class="cell c-wide">
+      <div class="viz viz-zo mono"><div class="tree">/eve/<br>&nbsp;&nbsp;profile.json<br>&nbsp;&nbsp;relationship.json<br>&nbsp;&nbsp;preferences.json<br>&nbsp;&nbsp;task_state.json</div><div class="up"><span class="ping"></span>EVE ONLINE · UPTIME <span data-uptime>05:31:14</span></div></div>
+      <p class="mono cell-k">PERSISTENCE + ACTION · Zo</p><h4>she has her own computer</h4><p>Close the tab. She keeps running.</p>
+    </div>
   </div>
 </section>
 
