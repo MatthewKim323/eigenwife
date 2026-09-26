@@ -1,5 +1,6 @@
 import type { AvatarState, Mood } from "@eigenwife/protocol";
 import { applyPoses, EmotionBlender, poseMouth } from "./emotion";
+import { HARU, type ModelDef, type ParamMap, type PoseTable } from "./models";
 import { BlinkScheduler, breathAt, clamp, frameLerp, idleSway, SaccadeScheduler, Spring, springParams, type Rand } from "./motion-math";
 
 /** A point in "focus space": x right, y up, both roughly -1..1 relative to her face. */
@@ -34,9 +35,9 @@ const STATE_MOOD: Partial<Record<AvatarState, Mood>> = { thinking: "thinking" };
 
 /**
  * Eve's per-frame parameter pipeline, in the order the playbook requires:
- * motion (already in the model) -> emotion pose -> blink -> look-at -> mouth -> breath.
+ * motion -> face rest -> emotion pose -> blink -> look-at -> mouth -> breath.
  * All SDK built-ins (expressions, eye blink, breath, focus) are disabled by the
- * Live2D adapter, so nothing fights us.
+ * Live2D adapter, so nothing fights us. Parameter ids come from the model def.
  */
 export class EveRig {
   readonly emotion = new EmotionBlender();
@@ -48,6 +49,9 @@ export class EveRig {
   private eyeY = 0;
   private lastState: AvatarState = "idle";
   private stateAt = 0;
+  private model: ModelDef = HARU;
+  private P: ParamMap = HARU.params;
+  private poses: PoseTable = HARU.poses;
   /** Visible hooks for overlays / tests. */
   last = { blink: null as number | null, eyeOpen: 1, headX: 0, headY: 0 };
 
@@ -59,12 +63,28 @@ export class EveRig {
     this.headY = new Spring(0, p.k, p.c);
   }
 
+  /** Switch model: ids, face rest and poses (built from the model's expressions, see buildPoses). */
+  setModel(def: ModelDef, poses: PoseTable = def.poses) {
+    this.model = def;
+    this.P = def.params;
+    this.poses = poses;
+  }
+
+  get modelDef() {
+    return this.model;
+  }
+
+  get poseTable() {
+    return this.poses;
+  }
+
   setMood(mood: Mood, intensity: number, now: number, holdMs?: number) {
     this.emotion.set(mood, intensity, now, holdMs);
     if (mood === "surprised") this.blink.trigger(now + 1); // a startled blink reads well
   }
 
   frame(io: ParamIO, input: RigInput, dtMs: number, now: number) {
+    const P = this.P;
     const { state } = input;
     if (state !== this.lastState) {
       // Waking up: a blink right as the eyes open sells it.
@@ -76,33 +96,36 @@ export class EveRig {
     this.emotion.sustain(STATE_MOOD[state] ?? null, 1);
     this.saccade.paused = state === "thinking" || sleeping || !!input.still;
 
-    // 1. motion: already written into the model by the motion manager.
+    // 1. motion: already written into the model by the motion manager. Its
+    //    face curves (blinks, smiles, brow twitches) are pinned back to rest:
+    //    the face only moves on our events, never on the idle loop's schedule.
+    for (const [id, v] of Object.entries(this.model.faceRest)) io.set(id, v);
 
     // 2. emotion pose.
     const weights = this.emotion.weights(now);
-    applyPoses(weights, io.get, io.set);
+    applyPoses(this.poses, weights, io.get, io.set);
     if (sleeping) {
-      io.set("ParamEyeLOpen", 0);
-      io.set("ParamEyeROpen", 0);
-      io.set("ParamEyeLSmile", 0.4);
-      io.set("ParamEyeRSmile", 0.4);
-      io.set("ParamMouthForm", 0.2);
+      io.set(P.eyeLOpen, 0);
+      io.set(P.eyeROpen, 0);
+      io.set(P.eyeLSmile, 0.4);
+      io.set(P.eyeRSmile, 0.4);
+      io.set(P.mouthForm, 0.2);
     }
     // Happy onset: a small spring bob of the head.
     const sinceHappy = now - this.emotion.onsetAt;
     if ((weights.happy ?? 0) > 0.05 && sinceHappy < 1400) {
       const bob = 5 * Math.exp(-sinceHappy / 380) * Math.sin((2 * Math.PI * sinceHappy) / 420);
-      io.set("ParamAngleY", io.get("ParamAngleY") + bob);
-      io.set("ParamBodyAngleY", io.get("ParamBodyAngleY") + bob * 0.4);
+      io.set(P.angleY, io.get(P.angleY) + bob);
+      io.set(P.bodyY, io.get(P.bodyY) + bob * 0.4);
     }
 
     // 3. blink: multiplier on the pose's eye value, only written during a blink.
-    const eyeL = io.get("ParamEyeLOpen");
-    const eyeR = io.get("ParamEyeROpen");
+    const eyeL = io.get(P.eyeLOpen);
+    const eyeR = io.get(P.eyeROpen);
     const b = input.eyesClosed ? 0 : sleeping || input.still ? null : this.blink.update(now);
     if (b !== null) {
-      io.set("ParamEyeLOpen", eyeL * b);
-      io.set("ParamEyeROpen", eyeR * b);
+      io.set(P.eyeLOpen, eyeL * b);
+      io.set(P.eyeROpen, eyeR * b);
     }
     this.last.blink = b;
     this.last.eyeOpen = b === null ? eyeL : eyeL * b;
@@ -119,25 +142,25 @@ export class EveRig {
     this.eyeY += (clamp(fy + this.saccade.y, -1, 1) - this.eyeY) * a;
     const sway = input.still ? { x: 0, y: 0, z: 0 } : idleSway(now);
     const listen = state === "listening" ? 1 : 0;
-    io.set("ParamAngleX", io.get("ParamAngleX") + hx * LOOK.headDeg + sway.x);
-    io.set("ParamAngleY", io.get("ParamAngleY") + hy * LOOK.headDeg + sway.y + listen * 4);
-    io.set("ParamAngleZ", io.get("ParamAngleZ") - hx * hy * 20 + sway.z + listen * 5);
-    io.set("ParamBodyAngleX", io.get("ParamBodyAngleX") + hx * LOOK.bodyDeg + sway.x * 0.4);
-    io.set("ParamBodyAngleY", io.get("ParamBodyAngleY") + listen * 3);
-    io.set("ParamEyeBallX", io.get("ParamEyeBallX") + this.eyeX);
-    io.set("ParamEyeBallY", io.get("ParamEyeBallY") + this.eyeY);
+    io.set(P.angleX, io.get(P.angleX) + hx * LOOK.headDeg + sway.x);
+    io.set(P.angleY, io.get(P.angleY) + hy * LOOK.headDeg + sway.y + listen * 4);
+    io.set(P.angleZ, io.get(P.angleZ) - hx * hy * 20 + sway.z + listen * 5);
+    io.set(P.bodyX, io.get(P.bodyX) + hx * LOOK.bodyDeg + sway.x * 0.4);
+    io.set(P.bodyY, io.get(P.bodyY) + listen * 3);
+    io.set(P.eyeBallX, io.get(P.eyeBallX) + this.eyeX);
+    io.set(P.eyeBallY, io.get(P.eyeBallY) + this.eyeY);
     this.last.headX = hx;
     this.last.headY = hy;
 
     // 5. mouth.
-    if (input.mouthHold || sleeping) io.set("ParamMouthOpenY", 0);
+    if (input.mouthHold || sleeping) io.set(P.mouthOpen, 0);
     else {
-      io.set("ParamMouthOpenY", Math.max(poseMouth(weights), input.mouth));
-      if (input.mouth > 0.05) io.set("ParamAngleY", io.get("ParamAngleY") + input.mouth * 3);
+      io.set(P.mouthOpen, Math.max(poseMouth(this.poses, weights, P.mouthOpen), input.mouth));
+      if (input.mouth > 0.05) io.set(P.angleY, io.get(P.angleY) + input.mouth * 3);
     }
 
     // 6. breath (slower while asleep).
-    io.set("ParamBreath", breathAt(now, sleeping ? 1.8 : 1));
+    io.set(P.breath, breathAt(now, sleeping ? 1.8 : 1));
   }
 
   get stateSince() {

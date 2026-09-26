@@ -1,7 +1,20 @@
 import { useSyncExternalStore } from "react";
 import type { AvatarState } from "@eigenwife/protocol";
 import { AttentionController } from "./attention";
+import { resolveModel, type FramingSlot } from "./models";
 import { EveRig } from "./rig";
+
+/** The avatar model for this page: ?model= beats the build-time EVE_MODEL beats the default (Haru). */
+export const activeModel = resolveModel(
+  typeof location !== "undefined" ? location.search : "",
+  (import.meta as any).env?.EVE_MODEL as string | undefined,
+);
+
+function makeRig() {
+  const rig = new EveRig(Math.random, typeof performance !== "undefined" ? performance.now() : 0);
+  rig.setModel(activeModel);
+  return rig;
+}
 
 /** Minimal external store: plain object, shallow set, React subscription via selector. */
 export function createStore<T extends object>(initial: T) {
@@ -27,7 +40,7 @@ export function useStore<T extends object, U>(store: ReturnType<typeof createSto
   return useSyncExternalStore(store.subscribe, () => sel(store.get()));
 }
 
-export type Dock = "hidden" | "card" | "stage" | "column";
+export type Dock = "hidden" | "card" | "stage" | "column" | "overlay";
 
 export interface AvatarUi {
   dock: Dock;
@@ -58,7 +71,9 @@ export const avatarUi = createStore<AvatarUi>({
  * mouth at 60fps and the renderer reads it without re-rendering anything.
  */
 export const avatarRuntime = {
-  rig: new EveRig(Math.random, typeof performance !== "undefined" ? performance.now() : 0),
+  rig: makeRig(),
+  /** Which framing she's in right now (the head position in the box depends on it). */
+  slot: "column" as FramingSlot,
   attention: new AttentionController(),
   mouth: 0,
   mouthHold: false,

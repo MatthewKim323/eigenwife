@@ -6,7 +6,7 @@ export const TACHIE_MOODS: readonly Mood[] = ["neutral", "happy", "annoyed", "th
 const src = (name: string) => `/avatar/tachie/${name}.webp`;
 
 /**
- * Safety net if Live2D won't load: pre-rendered stills of the same Hiyori
+ * Safety net if Live2D won't load: pre-rendered stills of the same
  * rig per mood (see scripts in docs/AVATAR.md), with a CSS bob, a blink
  * overlay driven by the same blink scheduler, and a talking overlay.
  */

@@ -77,8 +77,10 @@ export function EmergenceScene() {
     let raf = 0;
     let birthLine: string | null = null;
     let left = false;
+    // ?stay=1: hold center stage (capturing tachie stills / screenshots).
+    const stay = new URLSearchParams(location.search).get("stay") === "1";
     const leave = () => {
-      if (left) return;
+      if (left || stay) return;
       left = true;
       if (!live.current.born) client.dispatch(envelope("companion.born", { persona: live.current.persona }, "shell"));
       go("desktop");

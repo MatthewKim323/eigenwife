@@ -6,9 +6,11 @@ import { useScene } from "../lib/scene";
 import { MicIndicator } from "../voice/MicIndicator";
 import { Subtitles } from "../voice/Subtitles";
 import { screenToFocus, userFocus } from "./attention";
-import { HEAD_IN_BOX, loadEve, type EveLive2D } from "./live2d";
+import { OVERLAY } from "../overlay/mode";
+import { loadEve, type EveLive2D } from "./live2d";
+import type { FramingSlot } from "./models";
 import type { RigInput } from "./rig";
-import { avatarRuntime, avatarUi, useStore, type Dock } from "./store";
+import { activeModel, avatarRuntime, avatarUi, useStore, type Dock } from "./store";
 import { Tachie } from "./Tachie";
 import "./avatar.css";
 
@@ -32,6 +34,12 @@ export interface Rect {
 export function dockRect(dock: Dock, vw: number, vh: number, card: Rect | null): Rect {
   const aspect = BOX_W / BOX_H;
   if (dock === "card" && card) return card;
+  if (dock === "overlay") {
+    // The companion window: as tall as the window, bottom-anchored, centered.
+    const h = vh;
+    const w = h * aspect;
+    return { x: (vw - w) / 2, y: 0, w, h };
+  }
   if (dock === "stage") {
     const h = Math.min(vh * 0.9, 980);
     const w = h * aspect;
@@ -115,13 +123,25 @@ export function AvatarLayer() {
   const { client } = useBus();
   const ui = useStore(avatarUi, (s) => s);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const eveRef = useRef<EveLive2D | null>(null);
   const [renderer, setRenderer] = useState<"loading" | "live2d" | "tachie">("loading");
 
   const born = world.companion.born;
   // Dock: emergence owns it while mounted; otherwise she sits in the column once born.
-  const dock: Dock = scene === "emergence" ? (ui.dock === "hidden" ? "stage" : ui.dock) : born && COLUMN_SCENES.has(scene) ? "column" : "hidden";
+  // Overlay mode (the desktop companion window): she fills the window.
+  const dock: Dock = OVERLAY
+    ? "overlay"
+    : scene === "emergence"
+      ? ui.dock === "hidden"
+        ? "stage"
+        : ui.dock
+      : born && COLUMN_SCENES.has(scene)
+        ? "column"
+        : "hidden";
   const visible = dock !== "hidden";
-  const placement: "stage" | "column" | "hidden" = !visible ? "hidden" : dock === "column" ? "column" : "stage";
+  const placement: "stage" | "column" | "hidden" = !visible ? "hidden" : dock === "column" || dock === "overlay" ? "column" : "stage";
+  // How the model is framed inside the box. Card + stage share one so the emergence spring never reframes.
+  const slot: FramingSlot = dock === "overlay" ? "overlay" : dock === "card" || dock === "stage" ? "stage" : "column";
   const { x, y, s } = useDockMotion(dock, ui.cardRect, dock === "stage" ? 0.22 : 0);
 
   // Effective visual state: choreography override > speaking > world state.
@@ -135,14 +155,17 @@ export function AvatarLayer() {
 
   // Head position on screen, for look-at mapping.
   useEffect(() => {
+    avatarRuntime.slot = slot;
+    eveRef.current?.setFraming(slot);
+    const head = activeModel.framing[slot].head;
     const upd = () => {
       const sc = s.get();
-      avatarRuntime.head = { x: x.get() + BOX_W * sc * HEAD_IN_BOX.x, y: y.get() + BOX_H * sc * HEAD_IN_BOX.y };
+      avatarRuntime.head = { x: x.get() + BOX_W * sc * head.x, y: y.get() + BOX_H * sc * head.y };
     };
     upd();
     const offs = [x.on("change", upd), y.on("change", upd), s.on("change", upd)];
     return () => offs.forEach((o) => o());
-  }, [x, y, s]);
+  }, [x, y, s, slot]);
 
   // Acting: eyes on the swarm.
   useEffect(() => {
@@ -190,11 +213,13 @@ export function AvatarLayer() {
         eyesClosed: r.eyesClosed,
       };
     };
-    loadEve(canvasRef.current!, { width: BOX_W, height: BOX_H }, getInput, fallback)
+    loadEve(activeModel, canvasRef.current!, { width: BOX_W, height: BOX_H }, getInput, fallback, avatarRuntime.slot)
       .then((e) => {
         if (dead) return e.destroy();
         clearTimeout(timer);
         eve = e;
+        eveRef.current = e;
+        e.setFraming(avatarRuntime.slot, true);
         // Even if the tachie already covered a slow load, upgrade to the real thing.
         setRenderer("live2d");
       })
@@ -203,6 +228,7 @@ export function AvatarLayer() {
       dead = true;
       clearTimeout(timer);
       eve?.destroy();
+      eveRef.current = null;
     };
   }, []);
   useEffect(() => avatarUi.set({ renderer }), [renderer]);
@@ -230,6 +256,7 @@ export function AvatarLayer() {
         avatarRuntime.mouthOverride = mouth;
       },
       runtime: avatarRuntime,
+      model: activeModel.id,
     };
   }, [client]);
 

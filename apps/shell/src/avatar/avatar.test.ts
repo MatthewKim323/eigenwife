@@ -183,9 +183,12 @@ describe("emotion blend", () => {
 
   test("applyPoses lerps absolutes and adds offsets", () => {
     const p = new Map<string, number>([["ParamMouthForm", 0], ["ParamAngleX", 10]]);
-    applyPoses({ annoyed: 0.5 }, (id) => p.get(id) ?? 0, (id, v) => void p.set(id, v));
+    const table: any = { annoyed: { ParamMouthForm: { v: -0.6 }, ParamAngleX: { v: 15, op: "add" }, ParamEyeLOpen: { v: 0.5, op: "mul" } } };
+    p.set("ParamEyeLOpen", 1);
+    applyPoses(table, { annoyed: 0.5 }, (id) => p.get(id) ?? 0, (id, v) => void p.set(id, v));
     expect(p.get("ParamMouthForm")).toBeCloseTo(-0.3);
     expect(p.get("ParamAngleX")).toBeCloseTo(17.5);
+    expect(p.get("ParamEyeLOpen")).toBeCloseTo(0.75);
   });
 });
 
