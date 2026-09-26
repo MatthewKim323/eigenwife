@@ -327,12 +327,25 @@ function useApproval(): string | null {
   return last ?? null;
 }
 
+/** The coding task she's running (work.task), for the "working on" chip. */
+function useWorking(): string | null {
+  const [task, setTask] = useState<{ id: string; label: string } | null>(null);
+  useEvent("work.task", (e) => {
+    const d = e.data;
+    if (d.state === "done" || d.state === "failed" || d.state === "kept") setTask((t) => (t?.id === d.taskId ? null : t));
+    else setTask({ id: d.taskId, label: `${d.title}${d.repo ? ` (${d.repo})` : ""}` });
+  });
+  return task?.label ?? null;
+}
+
 function StatusChip({ connected, born, thinking, attentionPaused }: { connected: boolean; born: boolean; thinking: boolean; attentionPaused: boolean }) {
   const mic = useStore(voiceUi, (s) => s.mic);
   const heard = useStore(voiceUi, (s) => s.heard);
   const speaking = useStore(voiceUi, (s) => s.speaking);
   const approval = useApproval();
+  const working = useWorking();
   const chip = chipFor({
+    working,
     connected,
     born,
     approval,

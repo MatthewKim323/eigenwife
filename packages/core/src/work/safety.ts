@@ -75,12 +75,15 @@ export function deniedPath(raw: string, home = homedir()): string | null {
   if (!raw || typeof raw !== "string") return "no path";
   const expanded = expandHome(raw, home);
   const abs = isAbsolute(expanded) ? normalize(expanded) : resolve(home, expanded);
+  const homes = [...new Set([home, real(home)])];
   for (const candidate of new Set([abs, real(abs)])) {
     const name = basename(candidate);
     if (DENY_NAME.test(name) && !ENV_TEMPLATE.test(name)) return `${name} holds secrets`;
     for (const d of DENY_DIRS) {
-      const dir = join(home, d);
-      if (candidate === dir || candidate.startsWith(dir + "/")) return `~/${d} is private`;
+      for (const h of homes) {
+        const dir = join(h, d);
+        if (candidate === dir || candidate.startsWith(dir + "/")) return `~/${d} is private`;
+      }
     }
     for (const d of DENY_ABS) if (candidate === d || candidate.startsWith(d + "/")) return `${d} is private`;
     if (/\/(?:[^/]*keychain[^/]*|\.password-store)(?:\/|$)/i.test(candidate)) return "keychains are private";

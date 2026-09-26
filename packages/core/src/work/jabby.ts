@@ -113,7 +113,7 @@ export function speakable(text: string, maxChars = 400): string {
     .replace(/https?:\/\/\S+/g, "a link")
     .replace(/[*_`#>]+/g, "")
     .replace(/^\s*[-•]\s+/gm, "")
-    .replace(/[—–]/g, ", ")
+    .replace(/[\u2014\u2013]/g, ", ")
     .replace(/\s+/g, " ")
     .trim();
   if (t.length <= maxChars) return t;

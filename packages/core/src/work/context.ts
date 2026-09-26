@@ -65,12 +65,12 @@ export const TERMINAL_TTY_SCRIPT = `on run argv
   end if
 end run`;
 
-const DASHES = /\s+[—–-]\s+/;
+const DASHES = /\s+[\u2014\u2013-]\s+/;
 
 /**
  * Workspace name from an editor window title. VS Code / Cursor / Windsurf:
- * "file.ts — eigenwife" (or " - "), sometimes with a "[SSH: host]" or
- * "(Workspace)" suffix. Zed: "eigenwife — file.ts". Xcode: "Project — file.swift".
+ * "file.ts \u2014 eigenwife" (or " - "), sometimes with a "[SSH: host]" or
+ * "(Workspace)" suffix. Zed: "eigenwife \u2014 file.ts". Xcode: "Project \u2014 file.swift".
  */
 export function workspaceFromTitle(app: string, title: string): string | null {
   const t = title.replace(/\s*\[(?:SSH|WSL|Dev Container|Codespaces)[^\]]*\]\s*/gi, " ").replace(/\s*\((?:Workspace|Untracked)\)\s*/gi, " ").trim();

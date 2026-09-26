@@ -12,9 +12,11 @@ export interface ChipInput {
   micError: string | undefined;
   speaking: boolean;
   attentionPaused: boolean;
+  /** A coding task she's running in the background (work.task), e.g. "add dark mode (eigenwife)". */
+  working?: string | null;
 }
 
-export type ChipKind = "offline" | "asleep" | "approval" | "muted" | "thinking" | "heard" | "listening" | "speaking" | "mic-error" | "idle";
+export type ChipKind = "offline" | "asleep" | "approval" | "muted" | "thinking" | "heard" | "listening" | "speaking" | "mic-error" | "working" | "idle";
 
 export interface Chip {
   kind: ChipKind;
@@ -33,6 +35,7 @@ export function chipFor(s: ChipInput): Chip {
   if (s.thinking) return { kind: "thinking", text: "thinking" };
   if (s.heard) return { kind: "heard", text: `“${clip(s.heard, 60)}”` };
   if (s.speaking) return { kind: "speaking", text: "" };
+  if (s.working) return { kind: "working", text: "working on", sub: clip(s.working, 42) };
   if (s.listening) return { kind: "listening", text: "listening", sub: s.attentionPaused ? "attention paused" : undefined };
   if (s.micError) return { kind: "mic-error", text: s.micError };
   return { kind: "idle", text: "waking the mic" };

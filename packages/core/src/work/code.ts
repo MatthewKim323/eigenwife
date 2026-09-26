@@ -248,7 +248,7 @@ export function commitMessage(task: string): string {
   const msg = task
     .toLowerCase()
     .replace(/^(?:hey|yo|eve|please|can you|could you)[, ]+/g, "")
-    .replace(/[—–]/g, "-")
+    .replace(/[\u2014\u2013]/g, "-")
     .replace(/\s+/g, " ")
     .trim()
     .replace(/[.!?]+$/, "")
