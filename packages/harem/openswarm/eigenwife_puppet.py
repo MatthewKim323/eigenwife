@@ -18,6 +18,7 @@ from backend.apps.agents.agent_manager import agent_manager
 from backend.apps.agents.agents import agents
 from backend.apps.agents.core.models import Message
 from backend.apps.agents.core.ws_manager import ws_manager
+from backend.apps.agents.manager.session.session_store import save_session
 
 
 class PuppetMessage(BaseModel):
@@ -68,5 +69,8 @@ async def puppet(session_id: str, body: PuppetBody):
             "session_id": session_id, "x": body.place.x, "y": body.place.y,
         })
 
-    await agent_manager.persist_all_sessions()
+    # Save just this session. persist_all_sessions is the shutdown flush: it stops and evicts everything.
+    doc = session.model_dump(mode="json")
+    doc["search_text"] = agent_manager.build_search_text(session)
+    save_session(session_id, doc)
     return {"ok": True}
