@@ -23,6 +23,17 @@ const TITLE_SCRIPT = `(() => {
   setInterval(fix, 800);
 })();`;
 
+/** Evaluate once more if a navigation swapped the page out from under us. */
+async function settled<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    if (!/context was destroyed|navigat/i.test(String(err))) throw err;
+    await new Promise((r) => setTimeout(r, 600));
+    return fn();
+  }
+}
+
 export function playwrightBackend(opts: { dir?: string; executablePath?: string } = {}): BrowserBackend {
   const dir = opts.dir ?? EVE_BROWSER_DIR;
   let ctx: BrowserContext | null = null;
@@ -38,15 +49,36 @@ export function playwrightBackend(opts: { dir?: string; executablePath?: string 
     return page;
   };
 
-  const locator = (t: Target): Locator => {
+  const locator = async (t: Target): Promise<Locator> => {
     const p = current();
-    const base = t.selector ? p.locator(t.selector) : p.getByText(t.text ?? "", { exact: false });
-    return base.filter({ visible: true }).first();
+    if (t.selector) return p.locator(t.selector).filter({ visible: true }).first();
+    // A person clicking "Menu" means the link or button called Menu, not any text containing it.
+    const name = t.text ?? "";
+    const exactish = new RegExp(`^\\s*${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
+    const width = await p.evaluate(() => window.innerWidth).catch(() => 10_000);
+    // Skip off-canvas matches (carousel slides, closed drawers): horizontally reachable only.
+    const reachable = async (l: Locator): Promise<Locator | null> => {
+      const n = Math.min(12, await l.count().catch(() => 0));
+      for (let i = 0; i < n; i++) {
+        const b = await l.nth(i).boundingBox().catch(() => null);
+        if (b && b.x + b.width > 0 && b.x < width) return l.nth(i);
+      }
+      return null;
+    };
+    for (const role of ["link", "button", "tab"] as const) {
+      const hit = await reachable(p.getByRole(role, { name: exactish }).filter({ visible: true }));
+      if (hit) return hit;
+    }
+    const text = p.getByText(name, { exact: false }).filter({ visible: true });
+    return (await reachable(text)) ?? text.first();
   };
 
   const wrap: BrowserPage = {
     async goto(url, timeoutMs) {
-      await current().goto(url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
+      // Committed is enough to start looking; slow sites finish loading while she scrolls.
+      const p = current();
+      await p.goto(url, { waitUntil: "commit", timeout: timeoutMs });
+      await p.waitForLoadState("domcontentloaded", { timeout: Math.min(8000, timeoutMs) }).catch(() => {});
     },
     url: () => {
       try {
@@ -56,18 +88,20 @@ export function playwrightBackend(opts: { dir?: string; executablePath?: string 
       }
     },
     async metrics(): Promise<PageMetrics> {
-      return current().evaluate(() => ({
-        screenX: window.screenX,
-        screenY: window.screenY,
-        outerWidth: window.outerWidth,
-        outerHeight: window.outerHeight,
-        innerWidth: window.innerWidth,
-        innerHeight: window.innerHeight,
-        devicePixelRatio: window.devicePixelRatio,
-      }));
+      return settled(() =>
+        current().evaluate(() => ({
+          screenX: window.screenX,
+          screenY: window.screenY,
+          outerWidth: window.outerWidth,
+          outerHeight: window.outerHeight,
+          innerWidth: window.innerWidth,
+          innerHeight: window.innerHeight,
+          devicePixelRatio: window.devicePixelRatio,
+        })),
+      );
     },
     async locate(t, timeoutMs): Promise<Located | null> {
-      const loc = locator(t);
+      const loc = await locator(t);
       try {
         await loc.waitFor({ state: "visible", timeout: timeoutMs });
         await loc.scrollIntoViewIfNeeded({ timeout: timeoutMs });
@@ -92,13 +126,13 @@ export function playwrightBackend(opts: { dir?: string; executablePath?: string 
       return { box, submits, label: info.label };
     },
     async click(t, timeoutMs) {
-      const loc = locator(t);
+      const loc = await locator(t);
       // Stay in this tab: new-tab links would leave her cursor pointing at nothing.
       await loc.evaluate((el) => el.closest("a")?.removeAttribute("target")).catch(() => {});
       await loc.click({ timeout: timeoutMs });
     },
     async type(t, text, o) {
-      const loc = locator(t);
+      const loc = await locator(t);
       await loc.click({ timeout: o.timeoutMs });
       await loc.fill("");
       await loc.pressSequentially(text, { delay: o.delayMs });
@@ -122,7 +156,7 @@ export function playwrightBackend(opts: { dir?: string; executablePath?: string 
       return new Uint8Array(await current().screenshot({ type: "png" }));
     },
     async enterSubmits(t) {
-      return locator(t)
+      return (await locator(t))
         .evaluate((el) => {
           const f = (el as HTMLInputElement).form ?? el.closest("form");
           return !!f && (f.getAttribute("method") || "get").toLowerCase() === "post";

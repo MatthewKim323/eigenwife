@@ -444,6 +444,12 @@ function registerHotkeys() {
 // boot
 // ---------------------------------------------------------------------------
 
+// Dev: a second overlay beside the one in use gets its own profile (and single-instance lock).
+const INSTANCE = (process.env.EVE_OVERLAY_INSTANCE ?? "").replace(/[^\w-]/g, "");
+if (INSTANCE) app.setPath("userData", join(app.getPath("userData"), `instance-${INSTANCE}`));
+// Only Eve's cursor layer: no avatar window, tray, hotkeys or mic (demos, a second core).
+const CURSOR_ONLY = process.env.EVE_OVERLAY_CURSOR_ONLY === "1";
+
 if (!app.requestSingleInstanceLock()) {
   console.log("[overlay] already running: toggling the existing Eve");
   app.quit();
@@ -453,6 +459,11 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(async () => {
     // A companion, not an app: no dock icon, no app switcher entry.
     if (process.platform === "darwin") app.dock?.hide();
+    if (CURSOR_ONLY) {
+      cursorLayer = startCursorLayer({ coreHost: CORE_HOST, capturable: () => state.capturable || capturableEnv, log });
+      log(`cursor layer only (core ${CORE_HOST}${capturableEnv ? ", capturable for recording" : ""})`);
+      return;
+    }
 
     // Mic: allow media for our page only; everything else is denied.
     const origin = new globalThis.URL(URL).origin;
