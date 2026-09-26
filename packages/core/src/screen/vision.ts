@@ -189,8 +189,7 @@ export function cleanDescription(raw: string): { text: string; private: boolean 
     .replace(/\s+/g, " ")
     .trim();
   if (/^PRIVATE\b/i.test(t)) return { text: "", private: true };
-  const sentences = t.match(/[^.!?]+[.!?]+/g) ?? [t];
-  const two = sentences.slice(0, 2).join(" ").trim() || t;
+  const two = t.split(/(?<=[.!?])\s+/).slice(0, 2).join(" ").trim() || t;
   return { text: redactScreenText(two.slice(0, 320)).text, private: false };
 }
 

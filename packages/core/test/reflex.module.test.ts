@@ -308,6 +308,22 @@ async function simulateHour(seed: number) {
   let breakup = 0;
   let nextBreakup = 6 * 60_000;
   let nextTask = 33 * 60_000;
+  // Screen awareness (docs/SCREEN.md): the focused window changes every 1-5 min;
+  // one long debugging stretch (20-29 min) where the same error sits there.
+  type Obs = EventMap["screen.observation"];
+  const screens: Omit<Obs, "by">[] = [
+    { app: "Cursor", title: "hub.ts - eigenwife", summary: "Cursor: hub.ts - eigenwife", scores: { mode: "coding", stuck: false, interesting: 0.12, sensitive: false }, focus: true },
+    { app: "Cursor", title: "rules.ts - eigenwife", summary: "Cursor: rules.ts - eigenwife", scores: { mode: "coding", stuck: false, interesting: 0.15, sensitive: false } },
+    { app: "Google Chrome", title: "Wool Jacket | SSENSE", summary: "Chrome: Wool Jacket | SSENSE · $1,250", scores: { mode: "shopping", stuck: false, interesting: 0.78, sensitive: false } },
+    { app: "Google Chrome", title: "Home / X", summary: "Chrome: Home / X · a feed", scores: { mode: "social", stuck: false, interesting: 0.72, sensitive: false } },
+    { app: "Google Chrome", title: "lofi beats - YouTube", summary: "Chrome: lofi beats - YouTube", scores: { mode: "video", stuck: false, interesting: 0.5, sensitive: false } },
+    { app: "Preview", title: "attention.pdf", summary: "Preview: attention.pdf · Attention Is All You Need", scores: { mode: "reading", stuck: false, interesting: 0.45, sensitive: false } },
+    { app: "private app", summary: "", scores: { mode: "idle", stuck: false, interesting: 0, sensitive: true }, private: true },
+  ];
+  const bug: Omit<Obs, "by"> = { app: "Terminal", title: "bun test", summary: "Terminal: bun test · error: TypeError: x is undefined (hub.ts line 42)", error: "TypeError: x is undefined (hub.ts line 42)", scores: { mode: "debugging", stuck: false, interesting: 0.3, sensitive: false } };
+  let scr = screens[0]!;
+  let scrSince = 0;
+  let nextScreen = 90_000;
   for (let t = 0; t < HOUR; t += 2000) {
     r.clock.t = start + t;
     // speech in the fake is instant; she is "speaking" for 3s after any line
@@ -349,6 +365,23 @@ async function simulateHour(seed: number) {
         nextTalk = t + (4 + rand() * 6) * 60_000;
       }
     }
+    if (!away) {
+      const debugging = t >= 20 * 60_000 && t < 29 * 60_000;
+      if (debugging && scr !== bug) {
+        scr = bug;
+        scrSince = t;
+      } else if (!debugging && t >= nextScreen) {
+        const next = pickOne(screens);
+        scr = next.title ? { ...next, title: `${next.title} ${Math.floor(t / 60_000)}` } : next;
+        scrSince = t;
+        nextScreen = t + (1 + rand() * 4) * 60_000;
+      }
+      // a new window, then the once-a-minute re-judge while an error is up
+      if (t === scrSince || (scr.error && (t - scrSince) % 60_000 === 0)) {
+        const stuckMs = scr.error ? t - scrSince : undefined;
+        r.emit("screen.observation", { ...scr, by: "local", ...(stuckMs !== undefined ? { stuckMs } : {}), scores: { ...scr.scores, stuck: !!scr.error && (stuckMs ?? 0) >= 5 * 60_000 } });
+      }
+    }
     if (t >= nextTask) {
       r.emit("task.done", { taskId: "bg", ok: true, summary: "exported the slides", ms: 1000 });
       nextTask = Infinity;
@@ -381,5 +414,10 @@ test("simulated hour: ambient triggers are IGNORE 80-95% of the time", async () 
     // the moments that matter still land
     expect(s.byRule.repeat_media?.COMMENT ?? 0).toBeGreaterThanOrEqual(1);
     expect(s.byRule.app_opened?.IGNORE ?? 0).toBeGreaterThan(10);
+    // screen awareness is part of the hour: the stuck error raises exactly one offer, interesting screens raise a few
+    const count = (rule: string) => Object.values(s.byRule[rule] ?? {}).reduce((a, b) => a + b, 0);
+    expect(count("screen_stuck")).toBe(1);
+    expect(count("screen_interesting")).toBeGreaterThanOrEqual(1);
+    expect(count("screen_interesting")).toBeLessThanOrEqual(8);
   }
 }, 30_000);

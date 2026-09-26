@@ -224,9 +224,9 @@ function ambientSalience(t: Trigger, input: JevInput, l: Scores, why: string[]) 
     }
     case "screen_interesting": {
       const i = Number(t.data.interesting ?? 0.7);
-      l.IGNORE = 2.6;
-      l.GLANCE = 1.1;
-      l.COMMENT = 0.5 + 1.5 * (i - 0.7) + (r.banter - 0.5);
+      l.IGNORE = 2.0;
+      l.GLANCE = 1.2;
+      l.COMMENT = 1.3 + 2.5 * (i - 0.7) + (r.banter - 0.5);
       why.push(`screen ${String(t.data.mode ?? "")} ${i.toFixed(2)}`);
       return;
     }
