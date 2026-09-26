@@ -477,9 +477,12 @@ describe("actions", () => {
     expect(safeUrl("https://a.com/x?y=1")).toBe("https://a.com/x?y=1");
   });
 
-  test("shell.close_app sends the shell back to the desktop", async () => {
+  test("shell.close_app closes the Eigen window and sends the shell back to the desktop", async () => {
     const h = harness();
+    const keys: string[] = [];
+    h.ctx.bus.on("shell.key", (e) => keys.push(e.data.key));
     await h.agency.gate.request("shell.close_app", { app: "Eigen" });
+    expect(keys).toContain("eigen.close");
     expect(h.ctx.world().scene).toBe("desktop");
   });
 

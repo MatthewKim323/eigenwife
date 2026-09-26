@@ -58,6 +58,8 @@ export const shellCloseApp: ActionDef = {
   describe: (a) => `close ${String(a.app ?? "the dating app")}`,
   targets: (a) => [String(a.app ?? "")],
   async run(args, env) {
+    // The dating app can be a scene (Act I) or a window on her desktop: close both.
+    env.ctx.bus.emit("shell.key", { key: "eigen.close" }, "agency");
     env.ctx.bus.emit("shell.scene", { scene: "desktop" }, "agency");
     return { ok: true, observation: `closed ${String(args.app ?? "the dating app")}` };
   },
