@@ -1,6 +1,6 @@
 import { buildPoses, type Exp3, type Framing, type FramingSlot, type ModelDef } from "./models";
 import type { RigInput } from "./rig";
-import { avatarRuntime } from "./store";
+import { activeModel, avatarRuntime } from "./store";
 
 export const CORE_URL = "/avatar/live2dcubismcore.min.js";
 
@@ -54,11 +54,30 @@ async function loadExpressions(def: ModelDef): Promise<Record<string, Exp3>> {
 }
 
 /**
+ * Where her head sits inside the canvas box in the overlay window (fractions),
+ * for look-at mapping. From the active model's overlay framing.
+ */
+export const HEAD_IN_BOX = activeModel.framing.overlay.head;
+
+/**
+ * The overlay's entry point: the active model (?model= / EVE_MODEL / Haru)
+ * with the overlay framing from the registry.
+ */
+export function loadEve(
+  canvas: HTMLCanvasElement,
+  box: { width: number; height: number },
+  getInput: () => RigInput,
+  onError: (err: unknown) => void,
+): Promise<EveLive2D> {
+  return loadModel(activeModel, canvas, box, getInput, onError, "overlay");
+}
+
+/**
  * Boot the model into a transparent canvas and take over her face. The SDK's
  * expression manager, eye blink, breath and focus are all disabled; our rig
  * writes every parameter each frame (see rig.ts for the order).
  */
-export async function loadEve(
+export async function loadModel(
   def: ModelDef,
   canvas: HTMLCanvasElement,
   box: { width: number; height: number },

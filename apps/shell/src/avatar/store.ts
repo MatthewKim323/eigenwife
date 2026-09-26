@@ -40,7 +40,7 @@ export function useStore<T extends object, U>(store: ReturnType<typeof createSto
   return useSyncExternalStore(store.subscribe, () => sel(store.get()));
 }
 
-export type Dock = "hidden" | "card" | "stage" | "column" | "overlay";
+export type Dock = "hidden" | "card" | "stage" | "column";
 
 export interface AvatarUi {
   dock: Dock;

@@ -6,8 +6,7 @@ import { useScene } from "../lib/scene";
 import { MicIndicator } from "../voice/MicIndicator";
 import { Subtitles } from "../voice/Subtitles";
 import { screenToFocus, userFocus } from "./attention";
-import { OVERLAY } from "../overlay/mode";
-import { loadEve, type EveLive2D } from "./live2d";
+import { loadModel, type EveLive2D } from "./live2d";
 import type { FramingSlot } from "./models";
 import type { RigInput } from "./rig";
 import { activeModel, avatarRuntime, avatarUi, useStore, type Dock } from "./store";
@@ -34,12 +33,6 @@ export interface Rect {
 export function dockRect(dock: Dock, vw: number, vh: number, card: Rect | null): Rect {
   const aspect = BOX_W / BOX_H;
   if (dock === "card" && card) return card;
-  if (dock === "overlay") {
-    // The companion window: as tall as the window, bottom-anchored, centered.
-    const h = vh;
-    const w = h * aspect;
-    return { x: (vw - w) / 2, y: 0, w, h };
-  }
   if (dock === "stage") {
     const h = Math.min(vh * 0.9, 980);
     const w = h * aspect;
@@ -128,20 +121,12 @@ export function AvatarLayer() {
 
   const born = world.companion.born;
   // Dock: emergence owns it while mounted; otherwise she sits in the column once born.
-  // Overlay mode (the desktop companion window): she fills the window.
-  const dock: Dock = OVERLAY
-    ? "overlay"
-    : scene === "emergence"
-      ? ui.dock === "hidden"
-        ? "stage"
-        : ui.dock
-      : born && COLUMN_SCENES.has(scene)
-        ? "column"
-        : "hidden";
+  const dock: Dock = scene === "emergence" ? (ui.dock === "hidden" ? "stage" : ui.dock) : born && COLUMN_SCENES.has(scene) ? "column" : "hidden";
   const visible = dock !== "hidden";
-  const placement: "stage" | "column" | "hidden" = !visible ? "hidden" : dock === "column" || dock === "overlay" ? "column" : "stage";
-  // How the model is framed inside the box. Card + stage share one so the emergence spring never reframes.
-  const slot: FramingSlot = dock === "overlay" ? "overlay" : dock === "card" || dock === "stage" ? "stage" : "column";
+  const placement: "stage" | "column" | "hidden" = !visible ? "hidden" : dock === "column" ? "column" : "stage";
+  // How the model is framed inside the box (the overlay window uses the "overlay" slot via OverlayApp).
+  // Card + stage share one so the emergence spring never reframes.
+  const slot: FramingSlot = dock === "card" || dock === "stage" ? "stage" : "column";
   const { x, y, s } = useDockMotion(dock, ui.cardRect, dock === "stage" ? 0.22 : 0);
 
   // Effective visual state: choreography override > speaking > world state.
@@ -213,7 +198,7 @@ export function AvatarLayer() {
         eyesClosed: r.eyesClosed,
       };
     };
-    loadEve(activeModel, canvasRef.current!, { width: BOX_W, height: BOX_H }, getInput, fallback, avatarRuntime.slot)
+    loadModel(activeModel, canvasRef.current!, { width: BOX_W, height: BOX_H }, getInput, fallback, avatarRuntime.slot)
       .then((e) => {
         if (dead) return e.destroy();
         clearTimeout(timer);
