@@ -174,7 +174,7 @@ export function playwrightBackend(opts: { dir?: string; executablePath?: string 
           headless: false,
           viewport: null,
           executablePath: opts.executablePath || process.env.EVE_BROWSER_EXECUTABLE || undefined,
-          args: ["--no-first-run", "--no-default-browser-check", "--window-position=0,40", "--window-size=720,860", "--disable-features=Translate"],
+          args: ["--no-first-run", "--no-default-browser-check", "--window-position=0,40", "--window-size=720,860", "--disable-features=Translate", "--deny-permission-prompts"],
         });
         await ctx.addInitScript(TITLE_SCRIPT);
         ctx.on("close", () => {

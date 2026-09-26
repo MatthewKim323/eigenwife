@@ -32,6 +32,7 @@ agency.runTask("just figure out tonight")
 | `actions/web.ts` | `web.search`, `web.scrape` (Firecrawl v2, DuckDuckGo, frontier, plain fetch) |
 | `actions/places.ts` | `places.search`: search, extract, rank |
 | `actions/apps.ts` | `browser.open`, `app.quit`, `shell.close_app`, `shell.open` |
+| `actions/browser.ts`, `browser/`, `cursor.ts`, `pointer.ts` | her visible browser (`browser.task`, `browser.submit`, `browser.close`), her own cursor, pointing while she talks. See [AGENT_CURSOR](AGENT_CURSOR.md) |
 
 ## Permissions
 

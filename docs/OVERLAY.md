@@ -47,7 +47,7 @@ She has to be born first (the Eigen flow in the shell: `open http://127.0.0.1:51
 
 ### Menu bar
 
-The heart in the menu bar: show/hide, mute mic, **pause attention** (emits `attention.pause { paused }` on the bus: ambient remarks stop, talking to her still works), **pause screen** (`screen.pause`, also `⌘⇧P`: she stops reading your windows; a 👀 chip shows on her whenever she does), move to a corner, size (small / medium / large, anchored at her feet), hide from screen capture, open at login, reload, quit.
+The heart in the menu bar: show/hide, mute mic, **pause attention** (emits `attention.pause { paused }` on the bus: ambient remarks stop, talking to her still works), **pause screen** (`screen.pause`, also `⌘⇧P`: she stops reading your windows; a 👀 chip shows on her whenever she does), move to a corner, size (small / medium / large, anchored at her feet), **show Eve's cursor** (her own co-op pointer, docs/AGENT_CURSOR.md; it hides with her on ⌘⇧E), hide from screen capture, open at login, reload, quit.
 
 Position, size and toggles persist in `~/.eve/overlay.json`. If the monitor she was on is gone, she comes back to the primary display's bottom-right.
 
