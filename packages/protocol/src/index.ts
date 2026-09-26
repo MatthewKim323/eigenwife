@@ -160,7 +160,8 @@ export interface EventMap {
   "preference.converged": { vector: TraitVector; persona: Persona };
 
   // --- act II/III: companion ----------------------------------------------------
-  "companion.born": { persona: Persona };
+  /** restored: she was already born before a core restart; skip the emergence animation. */
+  "companion.born": { persona: Persona; restored?: boolean };
   "reflex.decision": {
     trigger: string;
     decision: ReflexDecision;
