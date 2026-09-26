@@ -3,7 +3,6 @@
 //   import { EyeClient } from "http://127.0.0.1:8765/eye-client.js";
 //   const eye = new EyeClient();                 // tracks every [data-gaze] element
 //   eye.on("fixation", ({ el, ms }) => ...);     // a fixation landed on an element
-//   eye.on("confirm", ({ el }) => ...);          // held blink = click
 //   eye.stats();                                 // { photo_1: { dwellMs, visits, ... }, ... }
 //   await eye.calibrate();                       // 5 "look here" dots, fixes drift
 //
@@ -39,7 +38,7 @@ export class EyeClient {
     this.connect();
   }
 
-  // events: status, gaze, fixation, fixation_end, enter, leave, confirm, gesture, calib_result, message
+  // events: status, gaze, fixation, fixation_end, enter, leave, calib_result, message
   on(type, fn) {
     (this.handlers[type] ||= []).push(fn);
     return () => (this.handlers[type] = this.handlers[type].filter((f) => f !== fn));
@@ -194,14 +193,6 @@ export class EyeClient {
         if (s) s.longestMs = Math.max(s.longestMs, m.ms);
         const p = this.toPage(m.x, m.y);
         this._fire("fixation_end", { id: m.id, el, key: el && this.key(el), ms: m.ms, x: p.x, y: p.y, t: m.t });
-        break;
-      }
-      case "gesture": {
-        const p = m.x !== undefined ? this.toPage(m.x, m.y) : null;
-        const el = p ? this.hit(p.x, p.y) : null;
-        const detail = { kind: m.kind, el, key: el && this.key(el), x: p?.x, y: p?.y, t: m.t };
-        this._fire("gesture", detail);
-        if (m.kind === "confirm") this._fire("confirm", detail);
         break;
       }
       case "calib_result":

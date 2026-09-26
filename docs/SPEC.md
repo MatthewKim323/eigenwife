@@ -33,7 +33,7 @@ interface Candidate {
 }
 ```
 
-**Eye tracking.** Webcam + MediaPipe / gaze estimation. Quick calibration (LOOK LEFT / RIGHT / CENTER, then CALIBRATED). Track: fixation target, fixation duration, revisits, skip latency, prompt vs photo attention, double blink, gaze transitions.
+**Eye tracking.** Webcam + MediaPipe / gaze estimation. Quick calibration (LOOK LEFT / RIGHT / CENTER, then CALIBRATED). Track: fixation target, fixation duration, revisits, skip latency, prompt vs photo attention, gaze transitions.
 
 ```
 PROFILE 04
@@ -227,7 +227,7 @@ if (decision === "COMPLEX_REASONING") return claude.reason(...)
 if (decision === "COMPUTER_TASK") return astra.reason(...)
 ```
 
-**Gaze primitives** (gaze provides context, not full mouse control): FIXATE = select context, DOUBLE BLINK = confirm, LOOK AWAY QUICKLY = dismiss, REVISIT = interest, LONG FIXATION = inspect.
+**Gaze primitives** (gaze is context only, no clicking and no blink gestures; decided 2026-09-26): FIXATE = attention target, REVISIT = interest, LONG FIXATION = inspect, LOOK AWAY = lost interest. The agent uses it to know what "this" is.
 
 **Voice:** browser speech recognition or Whisper-ish STT, browser TTS out. Don't burn 4 hours here.
 
@@ -274,7 +274,7 @@ Visual language: soft, alive, slightly uncanny, beautiful, minimal, anime/futuri
 | t | Beat |
 |---|---|
 | 0:00 | "Dating apps ask what your type is. We don't think you know." Profiles. |
-| 0:10 | "So we watch what actually gets your attention." Eye tracking, latent model rises. No mouse, double blink to confirm. |
+| 0:10 | "So we watch what actually gets your attention." Eye tracking, latent model rises. No mouse. |
 | 0:23 | EIGENWOMAN CONVERGED, glitch |
 | 0:28 | She emerges. "Apparently I'm your type." |
 | 0:38 | Browser, look at food. "Thoughts?" She knows the exact item ("Twenty-one dollars for ramen?"). |
@@ -312,7 +312,7 @@ Arc: knows what you like, exists, knows what you're looking at, remembers who yo
 
 **Team split (3 to 4 people), integrated through one shared event schema:**
 - A, frontend/theater: dating flow, avatar, transitions, Open Swarm viz
-- B, perception: eye tracking, blink detection, semantic gaze, Firecrawl
+- B, perception: eye tracking, semantic gaze, Firecrawl
 - C, Jabby/brains: Jev, Featherless, Moss, Claude/Codex subprocesses
 - D, agency/infra: Zo, Open Swarm, browser actions, demo workflow
 
@@ -333,11 +333,11 @@ Goal: first 30s absurd, next 60s impressive, and by the end everyone realizes th
 The tracker lives in `eye/` (Python, MediaPipe 1.0.0, 47 tests passing). Findings that change the plan:
 
 - **Accuracy is 2-4° (100-200pt) with a still head, 7-31° once the head moves.** Calibration must include head-motion targets. Design every gaze target big: profile regions (photo vs prompt) are fine, restaurant cards need to be large and well spaced.
-- **Swap "double blink to confirm" for a held blink.** Spontaneous blinks are fully shut for ~50ms, so quick blinks can't carry intent. Held closure past a personalized threshold (250-500ms) is the click, with tones as feedback. Winks are unreliable, keep them off.
+- **No blink input.** Gaze is only context for the agent; nothing is clicked with the eyes.
 - **Freeze the gaze point at blink onset.** Eyes roll down 1-5° during a blink, so post-onset gaze is garbage.
 - **Saccade-gated averaging, not low-pass.** Fixation = mean of samples within ~2.5°. That is exactly the fixation/revisit signal Act I needs.
 - **Calibration is ~90s full, ~45s `--quick`.** Demo should use quick mode or calibrate before walking on stage.
 - **Snap to targets.** Gaze resolves to the nearest semantic element, not a raw pixel. Same idea as the DOM-region resolver in the attention pipeline.
 - Pins: `mediapipe==1.0.0` (1.0.1 aborts on macOS), `opencv-contrib-python==4.13` (5.0 arm64 segfaults). Don't bump.
-- **Integration point: `eye serve`.** Localhost websocket (`ws://127.0.0.1:8765/ws`) streaming gaze, fixations and held-blink `confirm`, plus `eye-client.js` which maps gaze onto `[data-gaze]` elements and keeps dwell / revisit stats per element (the Act I signal). In-app quick calibration (5 dots) is built in. Schema in `eye/README.md`.
+- **Integration point: `eye serve`.** Localhost websocket (`ws://127.0.0.1:8765/ws`) streaming gaze and fixations, plus `eye-client.js` which maps gaze onto `[data-gaze]` elements and keeps dwell / revisit stats per element (the Act I signal). In-app quick calibration (5 dots) is built in. Schema in `eye/README.md`.
 - **Model is linear now** (2026-09-26): quadratic terms blew up with head motion. Real-session validation 3.87° -> 2.62°, head-motion error ~3x lower.

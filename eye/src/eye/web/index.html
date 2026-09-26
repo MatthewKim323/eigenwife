@@ -23,8 +23,6 @@
   .region p { font-size: 22px; margin: 0; max-width: 20ch; }
   .region.looking { border-color: #ffffff40; }
   .region.fixed { border-color: var(--hot); box-shadow: 0 0 40px #ff5c9333; }
-  .region.confirmed { animation: pop .5s ease-out; }
-  @keyframes pop { 0% { box-shadow: 0 0 0 0 #ff5c93cc; } 100% { box-shadow: 0 0 0 40px #ff5c9300; } }
   aside { border-left: 1px solid var(--line); padding: 20px; overflow: auto; }
   aside h2 { font-size: 11px; letter-spacing: .2em; color: var(--dim); font-weight: 600; margin: 0 0 10px; }
   table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
@@ -87,8 +85,6 @@
   eye.on("leave", ({ el }) => el.classList.remove("looking", "fixed"));
   eye.on("fixation", ({ el, key }) => { if (el) el.classList.add("fixed"); });
   eye.on("fixation_end", ({ el, key, ms }) => { if (key) log(`${key.padEnd(10)} ${(ms / 1000).toFixed(1)}s`); });
-  eye.on("gesture", ({ kind, key }) => { if (!kind.startsWith("tier")) log(`GESTURE ${kind}${key ? " @ " + key : ""}`); });
-  eye.on("confirm", ({ el }) => { if (!el) return; el.classList.remove("confirmed"); void el.offsetWidth; el.classList.add("confirmed"); });
 
   const render = () => {
     const rows = Object.entries(eye.stats()).sort((a, b) => b[1].dwellMs - a[1].dwellMs);

@@ -118,7 +118,8 @@ def cmd_serve(args) -> int:
     display = screen.pick(args.display if args.display is not None else settings.display)
     calib = calibration.load()
     if calib is None:
-        print("no calibration yet: gestures only, no gaze. run `eye calibrate`")
+        print("no calibration yet: run `eye calibrate` first")
+        return 1
     elif calib.meta["display"]["name"] != display.name:
         print(f"warning: calibrated on {calib.meta['display']['name']}, serving for {display.name}")
     server.run(
@@ -129,7 +130,6 @@ def cmd_serve(args) -> int:
         host=args.host,
         port=args.port,
         fresh=args.fresh,
-        sounds=settings.sounds and not args.quiet,
     )
     return 0
 
@@ -194,7 +194,6 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8765)
     p.add_argument("--fresh", action="store_true", help="ignore the saved drift correction")
-    p.add_argument("--quiet", action="store_true", help="no gesture sounds")
     p.set_defaults(fn=cmd_serve)
 
     p = sub.add_parser("fit", help="refit the gaze model from a saved calibration session")

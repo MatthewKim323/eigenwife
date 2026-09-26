@@ -90,12 +90,14 @@ Useful flags: `--camera "FaceTime"`, `--display 1`, `--mode gaze|head|hybrid`,
 
 ## eye serve (gaze for apps)
 
-`eye serve` tracks without touching the mouse and streams events to apps:
+`eye serve` is what Eigenwife uses. Gaze is context only (what you're looking at, for the
+agent), no clicking, no blink gestures. It tracks without touching the mouse and streams:
 
 ```bash
 uv run eye serve          # http://127.0.0.1:8765/ demo page, ws://127.0.0.1:8765/ws events
 ```
 
+For serve, `eye calibrate --no-expressions` skips the blink/wink/brow steps (not used).
 Open the demo page, hit **quick calibrate** (5 dots, ~10 s), look around. The full
 `eye calibrate` should happen beforehand; the quick one fits a small drift correction on
 top of it (saved to `~/.eye/correction.json`, `--fresh` ignores it) and is only applied
@@ -108,7 +110,6 @@ import { EyeClient } from "http://127.0.0.1:8765/eye-client.js";
 const eye = new EyeClient();                  // watches every [data-gaze="key"] element
 eye.on("fixation", ({ key, el }) => {});      // a fixation landed on an element (snaps within 2 deg)
 eye.on("fixation_end", ({ key, ms }) => {});
-eye.on("confirm", ({ key, el }) => {});       // held blink = click
 eye.stats();   // { prompt_1: { dwellMs, visits, revisits, fixations, longestMs, firstAt, lastAt } }
 await eye.calibrate();                        // the LOOK HERE dots
 ```
@@ -125,7 +126,6 @@ screen points (`x`, `y`) and normalized display coords (`nx`, `ny`), times in ep
 | `face` | `present` |
 | `gaze` (~30 Hz) | `x y nx ny`, `blink` (true = frozen at blink onset), `raw`, `fix {id, ms}` |
 | `fixation_start` / `fixation_end` | `id x y nx ny t`, end has `ms` |
-| `gesture` | `kind`: `confirm` (held blink), `back` (longer hold), `long_close`, `brow`, `mouth`, `tier_confirm`/`tier_back` (still holding) |
 | `calib_result` | `beforeDeg afterDeg looDeg applied points perPoint` |
 
 | in | fields |

@@ -1,0 +1,308 @@
+/**
+ * The one shared event schema. Every process (the Bun core, the web shell, the
+ * Python eye tracker, sponsor adapters) speaks these envelopes over the bus at
+ * ws://127.0.0.1:7777/bus. Plain JSON, no codec, so any language can join.
+ */
+
+export const BUS_PORT = 7777;
+export const BUS_PATH = "/bus";
+
+export interface Envelope<K extends EventType = EventType> {
+  type: K;
+  /** Epoch ms when the event was created. */
+  ts: number;
+  /** Which process emitted it: "core", "shell", "eye", "watcher", ... */
+  source: string;
+  id: string;
+  /** Causal parent: a reaction points at the event that caused it. */
+  parent?: string;
+  data: EventMap[K];
+}
+
+export type AnyEnvelope = { [K in EventType]: Envelope<K> }[EventType];
+
+// ---------------------------------------------------------------------------
+// Shared value types
+// ---------------------------------------------------------------------------
+
+export type Scene = "boot" | "calibration" | "dating" | "convergence" | "emergence" | "desktop" | "swarm" | "architecture";
+
+/** Something on screen a person can look at, tagged with data-gaze in the shell. */
+export interface GazeTarget {
+  key: string;
+  /** Human label, e.g. "Garlic Knockout Ramen, $21, 4.6 stars". */
+  label: string;
+  kind: "profile-photo" | "profile-prompt" | "profile-meta" | "menu-item" | "restaurant" | "avatar" | "app" | "ui" | "other";
+  /** Structured facts the brain can reason over. */
+  meta?: Record<string, unknown>;
+}
+
+export interface RegionStats {
+  dwellMs: number;
+  visits: number;
+  revisits: number;
+  longestMs: number;
+}
+
+export type Mood = "neutral" | "happy" | "annoyed" | "thinking" | "surprised" | "smug" | "sad";
+export type AvatarState = "idle" | "listening" | "thinking" | "speaking" | "reacting" | "acting" | "sleeping";
+
+export type ReflexDecision = "IGNORE" | "GLANCE" | "REACT" | "COMMENT" | "ASK" | "HELP" | "ACT" | "ESCALATE";
+export const REFLEX_DECISIONS: readonly ReflexDecision[] = ["IGNORE", "GLANCE", "REACT", "COMMENT", "ASK", "HELP", "ACT", "ESCALATE"];
+
+export type Urgency = "immediate" | "soon" | "later";
+
+export type PermissionClass = "READ" | "SAFE_ACTION" | "EXTERNAL_SIDE_EFFECT" | "SENSITIVE_ACTION";
+
+/** Named numeric traits. Candidates, preferences and personas all share this shape. */
+export type TraitVector = Record<string, number>;
+
+export interface Persona {
+  name: string;
+  tagline: string;
+  description: string;
+  personality: string;
+  scenario: string;
+  /** Behavioral dials in 0..1 derived from the preference vector. */
+  dials: {
+    humor: number;
+    sarcasm: number;
+    warmth: number;
+    initiative: number;
+    verbosity: number;
+    chaos: number;
+  };
+  voice: { provider: string; voiceId: string; style: string };
+  palette: { hue: number };
+  vector: TraitVector;
+}
+
+export interface RelationshipState {
+  banter: number;
+  warmth: number;
+  initiative: number;
+  verbosity: number;
+  confidence: number;
+}
+
+export interface MemoryRecord {
+  id: string;
+  kind: "episodic" | "preference" | "fact";
+  content: string;
+  importance: number;
+  confidence: number;
+  source: string;
+  createdAt: number;
+  lastRecalledAt?: number;
+  tags?: string[];
+}
+
+export interface MemoryHit {
+  record: MemoryRecord;
+  score: number;
+}
+
+export interface SpeechMark {
+  /** Character offset in the segment text where the mark fires. */
+  at: number;
+  mood?: Mood;
+  intensity?: number;
+  pauseS?: number;
+}
+
+// ---------------------------------------------------------------------------
+// Event map: type string -> payload
+// ---------------------------------------------------------------------------
+
+export interface EventMap {
+  // --- system -------------------------------------------------------------
+  "bus.hello": { client: string; role: "core" | "shell" | "sensor" | "adapter" | "observer"; version: string };
+  "bus.welcome": { clientId: string; peers: string[]; world: WorldSnapshot };
+  "timer.tick": { n: number };
+  diag: { label: string; value: string; ttlMs?: number };
+  "error": { where: string; message: string };
+
+  // --- perception: eyes (attention only, never clicks) -----------------------
+  "eye.status": { connected: boolean; calibrated: boolean; accuracyDeg?: number; facePresent?: boolean };
+  /** Raw-ish gaze point in viewport css px, ~30Hz, only forwarded when someone subscribes. */
+  "gaze.point": { x: number; y: number; nx: number; ny: number };
+  "gaze.fixation": { target: GazeTarget | null; x: number; y: number };
+  "gaze.fixation_end": { target: GazeTarget | null; ms: number };
+  /** Stable attention target: same element on consecutive fixations. The "this" in "what about this". */
+  "gaze.target": { target: GazeTarget; dwellMs: number; confidence: number };
+  "gaze.lost": { reason: "away" | "no_face" | "offscreen" };
+
+  // --- perception: ears, desktop, pages --------------------------------------
+  "voice.partial": { text: string };
+  "voice.final": { text: string; confidence?: number };
+  "app.opened": { app: string; bundleId?: string };
+  "app.focused": { app: string; bundleId?: string; title?: string };
+  "page.context": { url: string; title: string; targets: GazeTarget[]; markdown?: string };
+  "media.play": { track: string; artist?: string };
+  "shell.scene": { scene: Scene };
+  "shell.ready": { width: number; height: number; audioUnlocked: boolean };
+  "shell.key": { key: string };
+
+  // --- act I: eigenvector -------------------------------------------------------
+  "dating.view": { candidateId: string; index: number; total: number };
+  "dating.leave": { candidateId: string; regions: Record<string, RegionStats>; totalMs: number; skipLatencyMs: number };
+  "dating.signal": {
+    candidateId: string;
+    interest: { skip: number; neutral: number; inspect: number; positive: number };
+    strength: number;
+    reward: number;
+    by: string;
+  };
+  "preference.update": { vector: TraitVector; deltas: TraitVector; progress: number; observations: number };
+  "preference.converged": { vector: TraitVector; persona: Persona };
+
+  // --- act II/III: companion ----------------------------------------------------
+  "companion.born": { persona: Persona };
+  "reflex.decision": {
+    trigger: string;
+    decision: ReflexDecision;
+    scores: Partial<Record<ReflexDecision, number>>;
+    urgency: Urgency;
+    by: string;
+    latencyMs: number;
+    reason?: string;
+  };
+  "speech.begin": { utteranceId: string; text: string; brain: string };
+  /** One speakable chunk. audioUrl is fetched from core over http, marks fire as it plays. */
+  "speech.segment": { utteranceId: string; seq: number; text: string; marks: SpeechMark[]; audioUrl?: string };
+  "speech.end": { utteranceId: string; interrupted: boolean };
+  "speech.stop": { reason: string };
+  "speech.played": { utteranceId: string; seq: number };
+  "avatar.mood": { mood: Mood; intensity: number; holdMs?: number };
+  "avatar.state": { state: AvatarState };
+  "avatar.look": { targetKey: string | null; ms: number };
+  "memory.recall": { query: string; hits: MemoryHit[]; ms: number; by: string };
+  "memory.write": { record: MemoryRecord; policy: MemoryWritePolicy };
+  "relationship.update": { state: RelationshipState; delta: Partial<RelationshipState>; reason: string };
+
+  // --- act IV: agency ---------------------------------------------------------------
+  "task.start": { taskId: string; goal: string; brain: string };
+  "task.done": { taskId: string; ok: boolean; summary: string; ms: number };
+  "swarm.spawn": { taskId: string; agentId: string; role: string; label: string; parentId?: string };
+  "swarm.progress": { taskId: string; agentId: string; text: string };
+  "swarm.done": { taskId: string; agentId: string; ok: boolean; result: string };
+  "action.request": {
+    actionId: string;
+    taskId?: string;
+    kind: string;
+    permission: PermissionClass;
+    description: string;
+    args: Record<string, unknown>;
+    needsApproval: boolean;
+  };
+  "action.approval": { actionId: string; approved: boolean; by: "voice" | "key" | "policy" };
+  "action.result": { actionId: string; ok: boolean; observation: string };
+  "home.status": { online: boolean; host: string; uptimeMs: number; memories: number; tasks: number; lastSyncAt?: number };
+}
+
+export type EventType = keyof EventMap;
+
+export type MemoryWritePolicy = "IGNORE_EVENT" | "STORE_SHORT_TERM" | "STORE_LONG_TERM" | "UPDATE_PREFERENCE" | "UPDATE_RELATIONSHIP";
+
+// ---------------------------------------------------------------------------
+// World state: the single object every brain reads from.
+// ---------------------------------------------------------------------------
+
+export interface WorldSnapshot {
+  scene: Scene;
+  user: {
+    speaking: boolean;
+    lastUtterance?: string;
+    lastUtteranceAt?: number;
+    gazeTarget: GazeTarget | null;
+    gazeTargetAt?: number;
+    attentionConfidence: number;
+    facePresent: boolean;
+  };
+  desktop: {
+    activeApp?: string;
+    page?: { url: string; title: string; targets: GazeTarget[] };
+  };
+  companion: {
+    born: boolean;
+    persona?: Persona;
+    state: AvatarState;
+    mood: Mood;
+    lastSpokeAt?: number;
+    relationship: RelationshipState;
+  };
+  preference: { vector: TraitVector; progress: number; observations: number };
+  tasks: { active: number; done: number };
+  /** Free-form named context slots, rendered as bullets into prompts. */
+  slots: Record<string, Record<string, string>>;
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+let counter = 0;
+export function newId(prefix = "e"): string {
+  counter = (counter + 1) % 1_000_000;
+  return `${prefix}_${Date.now().toString(36)}${counter.toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+}
+
+export function envelope<K extends EventType>(type: K, data: EventMap[K], source: string, parent?: string): Envelope<K> {
+  return { type, ts: Date.now(), source, id: newId(), ...(parent ? { parent } : {}), data };
+}
+
+/** Structural check for anything arriving off the wire. Payload shape is trusted per type. */
+export function isEnvelope(x: unknown): x is AnyEnvelope {
+  if (!x || typeof x !== "object") return false;
+  const e = x as Record<string, unknown>;
+  return (
+    typeof e.type === "string" &&
+    typeof e.ts === "number" &&
+    typeof e.source === "string" &&
+    typeof e.id === "string" &&
+    typeof e.data === "object" &&
+    e.data !== null
+  );
+}
+
+export function parseEnvelope(raw: string): AnyEnvelope | null {
+  try {
+    const x = JSON.parse(raw);
+    return isEnvelope(x) ? x : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Glob-ish type match: "gaze.*" matches "gaze.target", "*" matches everything. */
+export function matchesType(pattern: string, type: string): boolean {
+  if (pattern === "*" || pattern === type) return true;
+  if (pattern.endsWith(".*")) return type.startsWith(pattern.slice(0, -1));
+  return false;
+}
+
+export const MOODS: readonly Mood[] = ["neutral", "happy", "annoyed", "thinking", "surprised", "smug", "sad"];
+
+export function clamp01(n: number): number {
+  return n < 0 ? 0 : n > 1 ? 1 : n;
+}
+
+export const DEFAULT_RELATIONSHIP: RelationshipState = {
+  banter: 0.6,
+  warmth: 0.55,
+  initiative: 0.6,
+  verbosity: 0.3,
+  confidence: 0.5,
+};
+
+export function emptyWorld(): WorldSnapshot {
+  return {
+    scene: "boot",
+    user: { speaking: false, gazeTarget: null, attentionConfidence: 0, facePresent: false },
+    desktop: {},
+    companion: { born: false, state: "sleeping", mood: "neutral", relationship: { ...DEFAULT_RELATIONSHIP } },
+    preference: { vector: {}, progress: 0, observations: 0 },
+    tasks: { active: 0, done: 0 },
+    slots: {},
+  };
+}

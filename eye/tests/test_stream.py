@@ -69,31 +69,24 @@ def test_fixations_follow_the_dots_and_report_durations(tmp_path):
     assert max(e["ms"] for e in ends) > 800  # the dwell on a dot is one long fixation
     gaze = np.array([(e["nx"], e["ny"]) for e in events if e["type"] == "gaze"])
     assert np.ptp(gaze[:, 0]) > 0.6 and np.ptp(gaze[:, 1]) > 0.6
-    assert not [e for e in events if e["type"] == "gesture"]
 
 
-def test_a_held_blink_confirms_where_you_were_looking(tmp_path):
+def test_a_blink_freezes_gaze_and_is_not_an_event(tmp_path):
     stream, events = _stream(tmp_path)
     rec = synthetic_recording(cal.build_script(quick=True, expressions=False), seed=1)
     base = [f for f in rec.features if f is not None][40]
     t = 0.0
     frames = []
-    for i in range(30):
-        t += 1 / 30
-        frames.append(_shifted(base, t))
-    for i in range(int((stream.profile.click_s + 0.2) * 30)):
-        t += 1 / 30
-        frames.append(_shifted(base, t, shut=True))
-    for i in range(10):
-        t += 1 / 30
-        frames.append(_shifted(base, t))
+    for n, shut in ((30, False), (15, True), (10, False)):
+        for _ in range(n):
+            t += 1 / 30
+            frames.append(_shifted(base, t, shut=shut))
     _feed(stream, frames)
-    looked = [e for e in events if e["type"] == "gaze" and not e["blink"]][-1]
-    confirms = [e for e in events if e["type"] == "gesture" and e["kind"] == "confirm"]
-    assert len(confirms) == 1
-    assert abs(confirms[0]["x"] - looked["x"]) < 20 and abs(confirms[0]["y"] - looked["y"]) < 20
-    assert any(e["type"] == "gesture" and e["kind"] == "tier_confirm" for e in events)
-    assert any(e["type"] == "gaze" and e["blink"] for e in events)  # frozen during the hold
+    looked = [e for e in events if e["type"] == "gaze" and not e["blink"]][0]
+    frozen = [e for e in events if e["type"] == "gaze" and e["blink"]]
+    assert frozen  # held where you were looking while the lids were down
+    assert all(abs(e["x"] - looked["x"]) < 20 and abs(e["y"] - looked["y"]) < 20 for e in frozen)
+    assert {e["type"] for e in events} <= {"face", "gaze", "fixation_start", "fixation_end"}
 
 
 def test_quick_recalibration_fixes_drift(tmp_path):

@@ -4,7 +4,7 @@
   http://127.0.0.1:8765/     the demo page and eye-client.js
 
 Every message is one JSON object with a "type". Frames never leave the machine;
-only gaze coordinates and gestures go out, and only to localhost.
+only gaze coordinates go out, and only to localhost.
 """
 
 from __future__ import annotations
@@ -12,7 +12,6 @@ from __future__ import annotations
 import asyncio
 import json
 import mimetypes
-import subprocess
 from pathlib import Path
 
 from websockets.asyncio.server import ServerConnection, broadcast, serve
@@ -27,19 +26,6 @@ from .stream import Correction, GazeStream
 from .tracker import Tracker
 
 WEB_DIR = Path(__file__).parent / "web"
-
-# gesture -> system sound, played here so feedback works with your eyes shut
-SOUNDS = {"tier_confirm": ("Tink", 0.35), "tier_back": ("Pop", 0.4), "confirm": ("Tink", 0.3), "back": ("Pop", 0.35)}
-
-
-def _afplay(name: str, volume: float) -> None:
-    # No AppKit run loop in serve mode, so NSSound is out; afplay is fine at this rate.
-    subprocess.Popen(
-        ["afplay", "-v", str(volume), f"/System/Library/Sounds/{name}.aiff"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-
 
 def load_correction() -> Correction | None:
     path = paths.correction_file()
@@ -123,24 +109,16 @@ def run(
     host: str = "127.0.0.1",
     port: int = 8765,
     fresh: bool = False,
-    sounds: bool = True,
 ) -> None:
     correction = None if fresh else load_correction()
-
-    def on_gesture(name: str) -> None:
-        if sounds and name in SOUNDS:
-            _afplay(*SOUNDS[name])
 
     stream = GazeStream(
         display,
         calib,
         emit=lambda msg: None,
-        gestures=settings.gestures,
         correction=correction,
         distance_cm=settings.pointer.distance_cm,
         fixation_radius_deg=settings.pointer.fixation_radius_deg,
-        max_head_speed=settings.max_head_speed,
-        on_gesture=on_gesture,
     )
     tracker = Tracker(camera if camera is not None else settings.camera, on_frame=stream.on_frame)
     try:

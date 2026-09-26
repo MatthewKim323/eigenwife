@@ -1,9 +1,9 @@
 """Gaze as a stream of events, for apps instead of the OS cursor.
 
 `eye run` turns gaze into mouse moves and clicks. `eye serve` runs this
-instead: the same tracking, blink gestures and fixation filter, but the output
-is events (gaze samples, fixations, held blinks) that a web app or an agent can
-consume. Nothing here moves the mouse.
+instead: the same tracking and fixation filter, but the output is events (gaze
+samples and fixations) that a web app or an agent can consume, so it knows what
+you're looking at. Gaze is context only: nothing here moves the mouse or clicks.
 
 On top of the saved calibration sits a `Correction`: a small affine fix fit from
 a few "look here" dots shown by the app itself. The full calibration takes a
@@ -25,25 +25,10 @@ import numpy as np
 from .calibration import Calibration
 from .features import gaze_vector
 from .filters import FixationFilter, OneEuro
-from .gestures import GestureConfig, GestureDetector
 from .profile import FaceProfile
 from .screen import Display
 
 Emit = Callable[[dict], None]
-
-# gesture kind -> the name apps see. A held blink is the "confirm" click.
-GESTURE_NAMES = {
-    "long_blink": "confirm",
-    "longer_blink": "back",
-    "long_close": "long_close",
-    "wink_left": "wink_left",
-    "wink_right": "wink_right",
-    "brow_hold": "brow",
-    "mouth_hold": "mouth",
-    "tier_click": "tier_confirm",  # still holding: opening now would confirm
-    "tier_right": "tier_back",
-}
-
 
 class Correction:
     """Affine drift fix in normalized display coords, shrunk toward identity.
@@ -107,25 +92,22 @@ class GazeStream:
         display: Display,
         calib: Calibration | None,
         emit: Emit,
-        gestures: GestureConfig | None = None,
         correction: Correction | None = None,
         distance_cm: float = 55.0,
         fixation_radius_deg: float = 2.5,
         min_fixation_s: float = 0.1,
         freeze_lookback_s: float = 0.15,
         settle_s: float = 0.15,
-        max_head_speed: float = 60.0,
-        on_gesture: Callable[[str], None] | None = None,
+        blink_on: float = 0.35,  # normalized closure where a blink starts...
+        blink_off: float = 0.25,  # ...and where it's over
     ):
         self.display = display
         self.calib = calib
         self.model = calib.model if calib else None
         self.profile = calib.profile if calib else FaceProfile()
         self.emit = emit
-        self.on_gesture = on_gesture
-        cfg = gestures or GestureConfig()
-        cfg.click_s = self.profile.click_s
-        self.gestures = GestureDetector(cfg, winks=(self.profile.wink_l, self.profile.wink_r))
+        self.blink_on, self.blink_off = blink_on, blink_off
+        self.blinking = False
         self.correction = correction or Correction()
         self.distance_cm = distance_cm
         self.pt_per_deg = display.points_per_mm * 10.0 * distance_cm * math.tan(math.radians(1.0))
@@ -134,7 +116,6 @@ class GazeStream:
         self.min_fixation_s = min_fixation_s
         self.freeze_lookback_s = freeze_lookback_s
         self.settle_s = settle_s
-        self.max_head_speed = max_head_speed
         # monotonic -> epoch ms, so apps get wall clock times
         self._epoch = time.time() - time.monotonic()
 
@@ -198,7 +179,7 @@ class GazeStream:
                 self.emit({"type": "face", "present": False, "t": self.ms(t)})
             self.face = False
             self._stable_since = None
-            self.gestures.reset()
+            self.blinking = False
             self.fix.reset()
             self._frozen = None
             return
@@ -216,14 +197,10 @@ class GazeStream:
         gaze_y = self.display.to_norm(*self._history[-1][1])[1] if self._history else 0.5
         closure = self.profile.closure(feats, gaze_y)
 
-        events = []
-        if t - self._stable_since >= 0.3:  # a fresh face lock spikes closure
-            if self.head.speed > self.max_head_speed:
-                self.gestures.cancel()
-            events += self.gestures.update(t, *closure, smile=feats.smile, winks_ok=abs(feats.yaw) <= 20.0)
-            events += self.gestures.update_expressions(t, self.profile.brow_level(feats), self.profile.jaw_level(feats))
-
-        closing = self.gestures.closing
+        # Blinks only matter as bad data: the eyes roll down as the lids close.
+        shut = max(closure)
+        self.blinking = shut > (self.blink_off if self.blinking else self.blink_on)
+        closing = self.blinking and t - self._stable_since >= 0.3  # a fresh face lock spikes closure
         if closing and self._frozen is None:
             # Eyes roll down as the lids close: use where you were looking just before.
             self._frozen = self._at(t - self.freeze_lookback_s)
@@ -231,8 +208,6 @@ class GazeStream:
             self._frozen = None
             self._resume_t = t + self.settle_s
 
-        for e in events:
-            self._gesture(e, t)
         if raw_n is None:
             return
 
@@ -283,18 +258,6 @@ class GazeStream:
         if best is None and self._history:
             best = self._history[-1][1]
         return None if best is None else best.copy()
-
-    def _gesture(self, e, t: float) -> None:
-        name = GESTURE_NAMES.get(e.kind)
-        if name is None:
-            return
-        g = self._frozen if self._frozen is not None else self._at(t)
-        msg = {"type": "gesture", "kind": name, "t": self.ms(e.t), "startedAt": self.ms(e.t_start)}
-        if g is not None:
-            msg.update(self._point(g))
-        self.emit(msg)
-        if self.on_gesture:
-            self.on_gesture(name)
 
     # app commands (any thread; the GIL keeps these list swaps atomic enough)
     def command(self, msg: dict) -> dict | None:
