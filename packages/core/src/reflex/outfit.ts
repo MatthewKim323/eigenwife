@@ -38,7 +38,7 @@ const MISSING =
   /\b(dress|skirt|bikini|swimsuit|kimono|tuxedo|tux|suit|uniform|maid outfit|costume|hat|cap|beanie|crown|tiara|jacket|coat|scarf|necklace|earrings|heels|boots|sneakers|shoes|pajama pants|onesie|jersey|apron)\b/i;
 
 const WEAR_VERB =
-  /\b(?:put (?:on|your|the|some|a|an)|wear(?:ing)?|throw on|try on|rock|change into|switch (?:to|into)|slip (?:on|into)|go with|get comfy|get cozy|dress up|have (?:a|an|some|your)|eat (?:a|an|your))\b|\bon\s*[.!?]*$/i;
+  /\b(?:put (?:on|your|the|some|a|an)|wear(?:ing)?|throw on|try (?:on|the|your|some)|rock|change into|switch (?:to|into)|slip (?:on|into)|go with|get comfy|get cozy|dress up|have (?:a|an|some|your)|eat (?:a|an|your))\b|\bon\s*[.!?]*$/i;
 const REMOVE_VERB = /\b(?:take (?:off|out)|lose|ditch|remove|no more|get rid of|drop|without|stop wearing|put away)\b|\boff\s*[.!?]*$/i;
 
 /** Parse an utterance. null = not about her outfit. */
@@ -62,7 +62,7 @@ export function readOutfit(text: string): OutfitIntent | null {
   const remove = REMOVE_VERB.test(t);
   const wear = WEAR_VERB.test(t);
   // "hood up/down", "shades up", "get comfy" carry their own verb.
-  const selfVerb = /\bhood (?:up|down|on)\b|\b(?:glasses|shades|sunnies) up\b|\bget (?:comfy|cozy)\b|\bcozy clothes\b|\bcomfy clothes\b/.test(t);
+  const selfVerb = /\bhood (?:up|down|on)\b|\b(?:(?:sun)?glasses|shades|sunnies) up\b|\bget (?:comfy|cozy)\b|\bcozy clothes\b|\bcomfy clothes\b/.test(t);
   if (items.length) {
     if (remove && !/\bhood down\b/.test(t)) {
       // "take the hoodie off": both hoodie variants come off.
