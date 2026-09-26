@@ -84,7 +84,7 @@ export class Gate {
       decision = { approved: false, by: "policy", reason: verdict.reason };
       bus.emit("action.approval", { actionId, approved: false, by: "policy" }, SRC);
     } else if (ask) {
-      decision = await this.approve(actionId, description, opts.parent);
+      decision = await this.approve(actionId, description, opts.parent, def.confirmLine?.(args));
     } else {
       decision = { approved: true, by: "policy", reason: `${permission} runs on its own` };
       bus.emit("action.approval", { actionId, approved: true, by: "policy" }, SRC);
@@ -119,16 +119,16 @@ export class Gate {
   }
 
   /** Approvals are serialized: she asks one thing at a time. */
-  private approve(actionId: string, description: string, parent?: string): Promise<Decision> {
+  private approve(actionId: string, description: string, parent?: string, line?: string): Promise<Decision> {
     this.pendingCount++;
-    const run = this.approvals.then(() => this.waitForApproval(actionId, description, parent));
+    const run = this.approvals.then(() => this.waitForApproval(actionId, description, parent, line));
     this.approvals = run.catch(() => {});
     return run.finally(() => {
       this.pendingCount--;
     });
   }
 
-  private waitForApproval(actionId: string, description: string, parent?: string): Promise<Decision> {
+  private waitForApproval(actionId: string, description: string, parent?: string, line?: string): Promise<Decision> {
     const { bus } = this.ctx;
     const brains = this.ctx.tryUse("brains");
     this.ctx.setSlot("agency", "pending_approval", `${description} (waiting for a yes or no)`);
@@ -170,14 +170,19 @@ export class Gate {
       );
       const timer = setTimeout(() => finish({ approved: false, by: "policy", reason: `no answer in ${Math.round(this.approvalTimeoutMs / 1000)}s` }, true), this.approvalTimeoutMs);
 
-      void this.askOutLoud(description, parent);
+      void this.askOutLoud(description, parent, line);
     });
   }
 
   /** The approval is a conversational beat: she says what she's about to do and waits. */
-  private async askOutLoud(description: string, parent?: string): Promise<void> {
+  private async askOutLoud(description: string, parent?: string, line?: string): Promise<void> {
     const speech = this.ctx.tryUse("speech");
     if (!speech) return;
+    // Exact lines (a shell command, a message body) are never paraphrased.
+    if (line) {
+      await speech.say(line, { priority: "high", parent, brain: "agency" }).catch(() => {});
+      return;
+    }
     const brains = this.ctx.tryUse("brains");
     const fallback = `${description}, yeah?`;
     try {

@@ -113,6 +113,10 @@ function scoreUtterance(input: JevInput, text: string): LocalResult {
   } else if (it.outfit) {
     l.ACT = 4;
     why.push(`outfit request ${it.outfit.kind}`);
+  } else if (it.work) {
+    l.ESCALATE = 4.2;
+    l.HELP = 1.5;
+    why.push("work ask");
   } else if (it.task) {
     l.ESCALATE = 4;
     l.HELP = 1.5;

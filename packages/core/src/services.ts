@@ -105,7 +105,34 @@ export interface AgencyService {
   /** Run a multi-step real-world task (planning, swarm, actions). */
   runTask(goal: string, opts?: { parent?: string }): Promise<{ ok: boolean; summary: string }>;
   /** Ask permission (voice) when needed, then execute a registered action. */
-  act(kind: string, args: Record<string, unknown>, opts?: { taskId?: string; description?: string }): Promise<{ ok: boolean; observation: string }>;
+  act(kind: string, args: Record<string, unknown>, opts?: { taskId?: string; description?: string; parent?: string }): Promise<{ ok: boolean; observation: string; data?: unknown }>;
+}
+
+/** Eve as a coworker (packages/core/src/work, docs/WORK.md). */
+export interface WorkService {
+  /** Latest coarse work context (frontmost app, repo, branch), or null before the first probe. */
+  context(): WorkContextSnapshot | null;
+  /** Is this utterance a work ask (or the answer to her clarifying question)? */
+  claims(text: string): boolean;
+  /** She asked a clarifying question and is waiting for the answer. */
+  awaiting(): boolean;
+  /** Carry out a work ask end to end (approvals included). Resolves with what to report. */
+  handle(text: string, opts?: { parent?: string; goal?: string }): Promise<{ ok: boolean; summary: string }>;
+  /** Resolve a repo from words ("eigenwife"), a path, or the current context. */
+  resolveRepo(hint?: string): { name: string; path: string } | null;
+}
+
+export interface WorkContextSnapshot {
+  app: string;
+  bundleId?: string;
+  title?: string;
+  repo?: string;
+  repoPath?: string;
+  branch?: string;
+  dirty?: number;
+  lastCommit?: string;
+  private?: boolean;
+  at: number;
 }
 
 export interface WardrobeState {
@@ -135,6 +162,7 @@ export interface ServiceMap {
   agency: AgencyService;
   /** What she has on (packages/core/src/wardrobe). */
   wardrobe: WardrobeService;
+  work: WorkService;
   /** Eve's Zo computer (Google Calendar, Maps, Spotify, files). Provided by home only when ZO_API_KEY is set. */
   zo: ZoService;
 }

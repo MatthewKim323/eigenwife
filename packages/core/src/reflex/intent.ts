@@ -1,3 +1,5 @@
+import { readWorkIntent } from "../work/intent";
+
 /**
  * Cheap, transparent read of what an utterance is asking for. Used by the
  * local Jev scorer (features) and the router (behavior, goal extraction).
@@ -28,6 +30,8 @@ export interface UtteranceIntent {
   filler: boolean;
   /** "put your hoodie on", "lose the shades", "what are you wearing" (outfit.ts). */
   outfit: OutfitIntent | null;
+  /** "fix the flaky test in eigenwife", "find my resume", "what's due": a work ask (docs/WORK.md). */
+  work: boolean;
   words: number;
 }
 
@@ -93,6 +97,7 @@ export function readIntent(text: string): UtteranceIntent {
     approval: APPROVAL.test(t),
     filler: FILLER.test(t),
     outfit: stop || music ? null : readOutfit(t),
+    work: !stop && !command && !music && readWorkIntent(t) !== null,
     words,
   };
 }

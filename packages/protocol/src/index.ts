@@ -229,6 +229,35 @@ export interface EventMap {
   "action.approval": { actionId: string; approved: boolean; by: "voice" | "key" | "policy" };
   "action.result": { actionId: string; ok: boolean; observation: string };
   "home.status": { online: boolean; host: string; uptimeMs: number; memories: number; tasks: number; lastSyncAt?: number };
+
+  // --- work: Eve as a coworker (docs/WORK.md) ------------------------------------
+  /**
+   * What matt is working on, coarse and app-level: the frontmost app, its window
+   * title, and the git repo behind it. Never screen contents. private: a
+   * denylisted app (password manager, Messages, banking): title and repo are omitted.
+   */
+  "work.context": {
+    app: string;
+    bundleId?: string;
+    title?: string;
+    repo?: string;
+    repoPath?: string;
+    branch?: string;
+    dirty?: number;
+    lastCommit?: string;
+    private?: boolean;
+  };
+  /** A Claude Code session (watcher/claude-hook.ts) did something. cwd is where it runs. */
+  "work.claude": { event: "prompt" | "tool" | "test" | "stop"; cwd?: string; sessionId?: string; tool?: string; ok?: boolean };
+  /** Eve's own coding task lifecycle: drives the "working on" chip. */
+  "work.task": {
+    taskId: string;
+    title: string;
+    state: "starting" | "working" | "testing" | "review" | "merging" | "done" | "failed" | "kept";
+    repo?: string;
+    branch?: string;
+    detail?: string;
+  };
 }
 
 export type EventType = keyof EventMap;

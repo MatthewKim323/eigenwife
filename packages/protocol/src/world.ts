@@ -26,6 +26,8 @@ export function reduceWorld(w: WorldSnapshot, e: AnyEnvelope): WorldSnapshot {
     case "app.focused":
     case "app.opened":
       return { ...w, desktop: { ...w.desktop, activeApp: e.data.app } };
+    case "work.context":
+      return w.desktop.activeApp === e.data.app ? w : { ...w, desktop: { ...w.desktop, activeApp: e.data.app } };
     case "page.context":
       return { ...w, desktop: { ...w.desktop, page: { url: e.data.url, title: e.data.title, targets: e.data.targets } } };
     case "preference.update": {

@@ -50,6 +50,8 @@ export class Policy {
       const hit = this.denied(t);
       if (hit) return { allowed: false, reason: `${t} is on the deny list (${hit})` };
     }
+    const refused = def.refuse?.(args);
+    if (refused) return { allowed: false, reason: refused };
     if (effectivePermission(def) !== "READ" && this.spent >= this.budget)
       return { allowed: false, reason: `session action budget spent (${this.spent}/${this.budget})` };
     return { allowed: true };

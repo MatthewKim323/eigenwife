@@ -1,0 +1,133 @@
+/**
+ * What kind of work ask an utterance is. Keyword based and transparent like
+ * reflex/intent.ts: it runs on every utterance, well under a millisecond.
+ * null means "not a work ask" (the normal reflex path handles it).
+ */
+
+export type WorkAsk =
+  | { kind: "code.task"; task: string }
+  | { kind: "code.status"; tests: boolean }
+  | { kind: "context" }
+  | { kind: "files.search"; query: string; content: boolean }
+  | { kind: "files.read"; target: string }
+  | { kind: "files.open"; target: string }
+  | { kind: "jabby"; mode: "read" | "act" | "send"; request: string }
+  | { kind: "shell.run"; command: string; dir?: string }
+  | { kind: "clarify"; question: string; partial: string };
+
+const strip = (t: string) =>
+  t
+    .trim()
+    .replace(/[?!.]+$/, "")
+    .replace(/^(?:hey |yo |ok |okay |so |um |uh |aight |alright )+/i, "")
+    .replace(/^(?:eve[, ]+)?(?:can you|could you|would you|will you|please|pls|i need you to|i want you to|go ahead and|lemme get you to)\s+/i, "")
+    .trim();
+
+const CODE_VERB = /^(?:ship|fix|implement|refactor|debug|patch|build|add|write|make|create|update|rename|migrate|port|clean up|remove|delete|wire up|hook up|bump|upgrade|optimize|speed up|test)\b/i;
+/** Verbs that are code work on their own: "fix the flaky test", "ship dark mode". */
+const STRONG_VERB = /^(?:ship|fix|implement|refactor|debug|patch)\b/i;
+const CODE_NOUN =
+  /\b(?:function|method|class|test|tests|spec|endpoint|route|api|component|feature|bug|crash|error|module|script|cli|flag|type|types|lint|build|ci|readme|docs?|page|button|hook|handler|schema|migration|query|repo|codebase|branch|pr|commit|typescript|react|css|ui|server|backend|frontend|config|dependency|dependencies|package)\b/i;
+/** Things a code verb can hit that are not code: calendars, dinner, alarms. */
+const NOT_CODE = /\b(?:calendar|dinner|lunch|breakfast|reservation|table|playlist|alarm|reminder|appointment|meeting|flight|uber|grocer(?:y|ies)|shopping list)\b/i;
+
+const FILE_NOUN = "file|doc|document|pdf|deck|slides|spreadsheet|sheet|notes|note|resume|cv|essay|paper|screenshot|photo|picture|image|folder|draft|syllabus|transcript|invoice|receipt|contract|report|presentation";
+
+const TESTS = /^(?:run|rerun|re-run|kick off)\s+(?:the\s+|my\s+)?tests?\b|\b(?:are|do)\s+(?:the\s+)?tests\s+(?:pass|passing|green|still pass)|\bdid\s+(?:the\s+)?tests\s+pass\b/i;
+const STATUS = /\b(?:git|repo|branch)\s+status\b|\bwhat(?:'s| is)\s+(?:the\s+)?(?:status|state)\s+of\s+(?:the\s+|my\s+)?(?:repo|branch|code|build)\b|\bwhat\s+changed\b.*\b(?:repo|branch|code)\b|\bhow\s+many\s+(?:dirty|changed|uncommitted)\s+files\b/i;
+const CONTEXT = /\bwhat\s+am\s+i\s+(?:working\s+on|doing)\b|\bwhat\s+(?:repo|project|branch)\s+am\s+i\s+(?:in|on)\b/i;
+
+const FIND = new RegExp(`^(?:find|locate|search\\s+for|look\\s+for|pull\\s+up|dig\\s+up|where(?:'s|\\s+is|\\s+are|\\s+did\\s+i\\s+(?:put|save))|get\\s+me)\\s+(.+)$`, "i");
+const FIND_MINE = new RegExp(`\\b(?:my|the|that)\\b.*\\b(?:${FILE_NOUN})s?\\b|\\.[a-z0-9]{1,5}\\b|\\bmy\\s+\\w+`, "i");
+const CONTENT = /\b(?:about|mentions?|mentioning|that says|containing|with the words?|talks? about)\b\s+(.+)$/i;
+const READ = new RegExp(`^(?:what(?:'s| is)\\s+in|read(?:\\s+me)?|summari[sz]e|tl;?dr|skim)\\s+(?:my\\s+|the\\s+|that\\s+)?(.+?)(?:\\s+(?:${FILE_NOUN}))?$`, "i");
+const OPEN = /^(?:open(?:\s+up)?|launch|bring\s+up|show\s+me)\s+(?:my\s+|the\s+)?(.+)$/i;
+
+const DUE = /\bwhat(?:'s| is)\s+due\b|\b(?:assignments?|homework|deadlines?|syllabus|my\s+classes|problem\s+sets?|psets?|midterms?|finals?)\b/i;
+const EMAIL_READ = /\b(?:check|read|triage|go\s+through|scan|clear)\s+(?:my\s+)?(?:e-?mails?|inbox|gmail|mail)\b|\bany\s+(?:new\s+|important\s+)?(?:e-?mails?|mail)\b|\bwho\s+(?:e-?mailed|emailed)\s+me\b|\bwhat(?:'s| is)\s+in\s+my\s+inbox\b/i;
+const SEND =
+  /^(?:e-?mail|text|message|dm|reply\s+to|respond\s+to|write\s+back\s+to|send(?:\s+an?\s+(?:e-?mail|text|message|dm))?(?:\s+to)?|tell)\s+(?!me\b|us\b|you\b)(\w[\w .'-]*?)\b.*\b(?:saying|that|to\s+say|about|telling|asking|and\s+say|with)\b/i;
+const REMIND = /\bremind\s+me\b|\bset\s+(?:a|an|up\s+a)\s+(?:reminder|alarm|timer|cron|job)\b|\bevery\s+(?:morning|day|night|week|monday|tuesday|wednesday|thursday|friday)\b.*\b(?:text|ping|dm|tell)\s+me\b/i;
+const JABBY_OTHER = /\b(?:internships?|job\s+postings?|discord|dms?|gbrain|what\s+did\s+\w+\s+say)\b/i;
+const ASK_JABBY = /^(?:ask|tell|have)\s+jabby\s+(?:to\s+)?(.+)$/i;
+
+const SHELL = /^(?:run|execute)\s+(?:the\s+)?(?:command\s+|shell\s+command\s+)?[`"']?(.+?)[`"']?(?:\s+in\s+(?:the\s+)?([\w./~-]+?)(?:\s+(?:repo|folder|directory|project))?)?$/i;
+const SHELL_LOOKS = /^(?:git|ls|cat|echo|pwd|bun|npm|pnpm|yarn|node|python3?|uv|pytest|cargo|go|make|wc|head|tail|grep|rg|find|du|df|whoami|date|brew|gh|tsc|bunx|npx|open|which|curl)\b/i;
+
+/** Pronoun-only objects: "ship it", "fix that". Code work needs a real object. */
+const VAGUE = /^(?:it|that|this|them|the thing|something|stuff|everything|the bug|the issue|the problem|it up|this one|that one)$/i;
+
+export function readWorkIntent(raw: string): WorkAsk | null {
+  const text = strip(raw);
+  if (!text) return null;
+  const t = text.toLowerCase();
+
+  // jabby first: "remind me", "what's due", "email leo saying ..." are never code.
+  const askJ = ASK_JABBY.exec(text);
+  if (askJ) {
+    const req = askJ[1]!;
+    return { kind: "jabby", mode: SEND.test(req) ? "send" : REMIND.test(req) ? "act" : "read", request: req };
+  }
+  if (SEND.test(text) && !CODE_NOUN.test(t.replace(/\b(?:about|saying).*$/, ""))) return { kind: "jabby", mode: "send", request: text };
+  if (REMIND.test(text)) return { kind: "jabby", mode: "act", request: text };
+  if (EMAIL_READ.test(text) || DUE.test(text) || JABBY_OTHER.test(text)) return { kind: "jabby", mode: "read", request: text };
+
+  if (CONTEXT.test(text)) return { kind: "context" };
+  if (TESTS.test(text)) return { kind: "code.status", tests: true };
+  if (STATUS.test(text)) return { kind: "code.status", tests: false };
+
+  // Explicit shell: "run git log --oneline in eigenwife".
+  const sh = SHELL.exec(text);
+  if (sh && SHELL_LOOKS.test(sh[1]!.trim())) return { kind: "shell.run", command: sh[1]!.trim(), ...(sh[2] ? { dir: sh[2] } : {}) };
+
+  const read = READ.exec(text);
+  if (read && /^(?:what(?:'s| is)\s+in|read|summari|tl|skim)/i.test(text)) {
+    const target = read[1]!.trim();
+    if (target && !/^(?:my\s+)?(?:inbox|e-?mail|mail)$/i.test(target)) return { kind: "files.read", target };
+  }
+
+  const find = FIND.exec(text);
+  if (find && FIND_MINE.test(text) && !/\b(?:restaurant|place|spot|food|dinner|flight|hotel)\b/i.test(text)) {
+    const phrase = find[1]!.trim();
+    const content = CONTENT.exec(phrase);
+    const query = (content ? content[1]! : phrase)
+      .replace(/\b(?:my|the|that|a|an|file|files|doc|docs|document|documents|folder)\b/gi, " ")
+      .replace(/\b(?:i\s+(?:was\s+)?(?:working\s+on|wrote|made|saved)|from\s+(?:last|this)\s+\w+|on\s+my\s+(?:computer|mac|laptop))\b/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!query) return { kind: "clarify", question: "which file? give me a word from the name.", partial: text };
+    return { kind: "files.search", query, content: !!content };
+  }
+
+  const open = OPEN.exec(text);
+  if (open && !/\b(?:dating|eigen)\b/i.test(text)) {
+    const target = open[1]!.trim();
+    if (VAGUE.test(target)) return { kind: "clarify", question: "open what?", partial: text };
+    return { kind: "files.open", target };
+  }
+
+  if (CODE_VERB.test(text) && !NOT_CODE.test(text)) {
+    const object = text.replace(CODE_VERB, "").trim();
+    const strong = STRONG_VERB.test(text);
+    if (!object || VAGUE.test(object.replace(/\s+(?:in|on|for)\s+.*$/, ""))) {
+      if (strong) return { kind: "clarify", question: `${text.split(/\s+/)[0]!.toLowerCase()} what, exactly? one sentence and i'll hand it to claude.`, partial: text };
+      return null;
+    }
+    if (strong || CODE_NOUN.test(object)) return { kind: "code.task", task: text };
+  }
+  return null;
+}
+
+/** Fold a clarification answer into the ask that needed it. */
+export function answerClarify(partial: string, answer: string): string {
+  const a = answer.trim().replace(/[.!]+$/, "");
+  const p = partial.trim();
+  // "fix the login bug in" + "eigenwife", "email leo saying hi (send it to" + "leo@x.com"
+  if (/\((?:send it to)$/.test(p)) return `${p} ${a})`;
+  if (/\s(?:in|to|on)$/.test(p)) return `${p} ${a}`;
+  // "ship it" + "the dark mode toggle in eigenwife" -> "ship the dark mode toggle in eigenwife"
+  const replaced = p.replace(/\b(?:it|that|this|the bug|the issue|the problem|something|stuff)\b\s*$/i, a);
+  if (replaced !== p) return replaced;
+  if (/^(?:find|locate|search|look|pull|where|open)/i.test(p)) return `${p.replace(/\s+(?:file|it|that)$/i, "")} ${a}`.replace(/\s+/g, " ");
+  return `${p}: ${a}`;
+}

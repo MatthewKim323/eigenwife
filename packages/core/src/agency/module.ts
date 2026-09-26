@@ -16,6 +16,8 @@ import { effectivePermission } from "./policy";
 import { Policy } from "./policy";
 import { cannedOutcome, runBuiltinTask } from "./planner";
 import { realOsa } from "./osa";
+import { realExec } from "../work/exec";
+import { WORK_ACTIONS } from "./actions/work";
 import type { AgencyDeps, HaremBrain, HaremModule } from "./types";
 
 export interface AgencyOptions {
@@ -62,6 +64,7 @@ export const defaultDeps = (): AgencyDeps => ({
   },
   now: () => Date.now(),
   env: (name) => secret(name),
+  exec: realExec,
 });
 
 /** Adapt the core brains' frontier call to harem's structured Brain interface. */
@@ -89,6 +92,7 @@ export function createAgency(ctx: CoreContext, opts: AgencyOptions = {}) {
   const gate = new Gate(ctx, deps, new Policy(budget), opts.approvalTimeoutMs ?? 30_000);
   gate.register(calendarCreateEvent, calendarCreateAlias, calendarDeleteEvent, calendarFreeBusy, browserOpen, webSearchAction, webScrapeAction, placesSearchAction, shellCloseApp, shellOpen, appQuit, musicPlay, musicControl);
   gate.register(avatarWear);
+  gate.register(...WORK_ACTIONS);
 
   // Someone else (harem, shell, an operator script) asked for an action on the bus:
   // same gate, their actionId, never their permission claim if it's lower than ours.
@@ -179,8 +183,8 @@ export function createAgency(ctx: CoreContext, opts: AgencyOptions = {}) {
   const service: AgencyService = {
     runTask,
     act: async (kind, args, o = {}) => {
-      const r = await gate.request(kind, args, { taskId: o.taskId, description: o.description });
-      return { ok: r.ok, observation: r.observation };
+      const r = await gate.request(kind, args, { taskId: o.taskId, description: o.description, parent: o.parent });
+      return { ok: r.ok, observation: r.observation, ...(r.data !== undefined ? { data: r.data } : {}) };
     },
   };
 

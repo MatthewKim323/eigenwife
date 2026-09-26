@@ -9,6 +9,7 @@ import { preferenceModule } from "../preference/module";
 import { reflexModule } from "../reflex/module";
 import { speechModule } from "../speech/module";
 import { wardrobeModule } from "../wardrobe/module";
+import { workModule } from "../work/module";
 import { clock } from "./clock";
 
 /**
@@ -28,5 +29,6 @@ export function allModules(): Module[] {
     earsModule(),
     reflexModule(),
     agencyModule(),
+    workModule(),
   ];
 }

@@ -206,7 +206,7 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
   async function judge(t: Trigger): Promise<JevVerdict> {
     const text = String(t.data.text ?? "");
     const ownTask = t.rule === "task_done" && (ownTasks.has(String(t.data.taskId)) || escalations > 0);
-    const v = await jev.decide({
+    let v = await jev.decide({
       trigger: t,
       world: ctx.world(),
       relationship: relationship(),
@@ -215,6 +215,9 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
       pendingApproval: pendingApprovals.size > 0,
       ownTask,
     });
+    // She asked a work question ("which repo?"): the next thing he says is the answer.
+    if (t.rule === "utterance" && !v.stopSpeech && pendingApprovals.size === 0 && v.decision !== "ESCALATE" && ctx.tryUse("work")?.awaiting())
+      v = { ...v, decision: "ESCALATE", reason: `${v.reason}; answering her work question` };
     stats.total += 1;
     stats.byDecision[v.decision] = (stats.byDecision[v.decision] ?? 0) + 1;
     if (v.by === "jev") stats.byJev += 1;
@@ -464,6 +467,8 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
   async function escalate(t: Trigger) {
     const text = String(t.data.text ?? t.description);
     const goal = t.rule === "utterance" ? goalFrom(text) : t.description;
+    const work = ctx.tryUse("work");
+    if (t.rule === "utterance" && work?.claims(text)) return escalateWork(t, text, goal, work.awaiting());
     const agency = ctx.tryUse("agency");
     if (!agency) {
       log("no agency service: can't run tasks");
@@ -478,6 +483,27 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
       let res: { ok: boolean; summary: string };
       try {
         res = await agency.runTask(goal, { parent: t.parent });
+      } catch (err) {
+        res = { ok: false, summary: `it broke: ${err instanceof Error ? err.message : String(err)}` };
+      } finally {
+        escalations -= 1;
+        ownGoals.delete(goal);
+      }
+      await report(t, goal, text, res);
+    })();
+  }
+
+  /** Work asks (docs/WORK.md): files, code, jabby, shell. Same ack + background run + report as a task. */
+  async function escalateWork(t: Trigger, text: string, goal: string, answering: boolean) {
+    const work = ctx.use("work");
+    // Answers to her own question and quick reads don't need an "on it".
+    if (!answering) await say(pick(ACK_LINES, t.id), t, t.parent, "thinking");
+    escalations += 1;
+    ownGoals.add(goal);
+    void (async () => {
+      let res: { ok: boolean; summary: string };
+      try {
+        res = await work.handle(text, { parent: t.parent, goal });
       } catch (err) {
         res = { ok: false, summary: `it broke: ${err instanceof Error ? err.message : String(err)}` };
       } finally {

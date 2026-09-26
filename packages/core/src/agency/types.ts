@@ -4,6 +4,28 @@ import type { OsaRunner } from "./osa";
 
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
+export interface ExecResult {
+  code: number;
+  stdout: string;
+  stderr: string;
+  timedOut: boolean;
+}
+
+export interface ExecOpts {
+  cwd?: string;
+  timeoutMs?: number;
+  env?: Record<string, string>;
+  stdin?: string;
+  /** Called with each stdout line as it arrives (streaming CLIs like claude -p). */
+  onLine?: (line: string) => void;
+  /** Keep at most this many bytes of stdout/stderr (default 1MB). */
+  maxBytes?: number;
+  signal?: AbortSignal;
+}
+
+/** Run one argv (never through a shell unless argv says so). */
+export type Exec = (argv: string[], opts?: ExecOpts) => Promise<ExecResult>;
+
 /** Side-effect seams. Tests swap every one of these for fakes. */
 export interface AgencyDeps {
   osa: OsaRunner;
@@ -16,6 +38,8 @@ export interface AgencyDeps {
   loadHarem(): Promise<HaremModule | null>;
   now(): number;
   env(name: string): string;
+  /** Spawn a process (git, mdfind, claude, textutil...). Tests swap it for a fake. */
+  exec: Exec;
 }
 
 export interface HaremTask {
@@ -69,6 +93,16 @@ export interface ActionDef {
   describe(args: Record<string, unknown>): string;
   /** Apps or hosts this action touches, checked against the deny list. */
   targets?(args: Record<string, unknown>): string[];
+  /**
+   * Hard refusal checked with the deny list, before any approval is asked:
+   * a reason string refuses (destructive command, denylisted path), null allows.
+   */
+  refuse?(args: Record<string, unknown>): string | null;
+  /**
+   * When set, the gate asks exactly this line out loud instead of letting the
+   * persona paraphrase (exact shell command, the email body being sent).
+   */
+  confirmLine?(args: Record<string, unknown>): string;
   run(args: Record<string, unknown>, env: ActionEnv): Promise<ActionOutcome>;
 }
 
