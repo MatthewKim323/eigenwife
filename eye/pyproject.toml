@@ -1,0 +1,30 @@
+[project]
+name = "eye"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "MatthewKim323", email = "matthewykim23@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "mediapipe==1.0.0",
+    "numpy>=2.5.3",
+    "opencv-contrib-python==4.13.0.92",
+    "pyobjc-framework-applicationservices>=12.2.2",
+    "pyobjc-framework-avfoundation>=12.2.2",
+    "pyobjc-framework-cocoa>=12.2.2",
+    "pyobjc-framework-quartz>=12.2.2",
+]
+
+[project.scripts]
+eye = "eye:main"
+
+[build-system]
+requires = ["uv_build>=0.12.5,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]

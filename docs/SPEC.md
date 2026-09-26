@@ -325,3 +325,17 @@ Arc: knows what you like, exists, knows what you're looking at, remembers who yo
 5. Companion has one hilarious autonomous reaction.
 
 Goal: first 30s absurd, next 60s impressive, and by the end everyone realizes the AI-girlfriend joke was a demo of shared-attention persistent personal agents with memory and computer agency.
+
+---
+
+## 8. Gaze reality check (from `eye/RESEARCH.md`)
+
+The tracker lives in `eye/` (Python, MediaPipe 1.0.0, 47 tests passing). Findings that change the plan:
+
+- **Accuracy is 2-4° (100-200pt) with a still head, 7-31° once the head moves.** Calibration must include head-motion targets. Design every gaze target big: profile regions (photo vs prompt) are fine, restaurant cards need to be large and well spaced.
+- **Swap "double blink to confirm" for a held blink.** Spontaneous blinks are fully shut for ~50ms, so quick blinks can't carry intent. Held closure past a personalized threshold (250-500ms) is the click, with tones as feedback. Winks are unreliable, keep them off.
+- **Freeze the gaze point at blink onset.** Eyes roll down 1-5° during a blink, so post-onset gaze is garbage.
+- **Saccade-gated averaging, not low-pass.** Fixation = mean of samples within ~2.5°. That is exactly the fixation/revisit signal Act I needs.
+- **Calibration is ~90s full, ~45s `--quick`.** Demo should use quick mode or calibrate before walking on stage.
+- **Snap to targets.** Gaze resolves to the nearest semantic element, not a raw pixel. Same idea as the DOM-region resolver in the attention pipeline.
+- Pins: `mediapipe==1.0.0` (1.0.1 aborts on macOS), `opencv-contrib-python==4.13` (5.0 arm64 segfaults). Don't bump.
