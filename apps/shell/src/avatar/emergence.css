@@ -1,0 +1,146 @@
+/* Act II: the card she steps out of. */
+
+.emg {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: radial-gradient(120% 90% at 50% 38%, oklch(0.2 0.05 var(--card-hue)) 0%, var(--bg) 62%);
+}
+
+.emg-bg {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(40% 36% at 50% 34%, oklch(0.72 0.14 var(--card-hue) / 0.28), transparent 70%),
+    repeating-linear-gradient(0deg, oklch(1 0 0 / 0.025) 0 1px, transparent 1px 3px);
+  opacity: 0.55;
+  transition: opacity 1.2s ease, transform 1.6s var(--ease-out);
+}
+.emg-bg[data-phase="reveal"],
+.emg-bg[data-phase="glitch"] { opacity: 1; transform: scale(1.04); }
+.emg-bg[data-phase="step"],
+.emg-bg[data-phase="stage"] { opacity: 0.8; transform: scale(1.1); }
+
+.emg-card-anchor {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding-top: 9vh;
+}
+
+.emg-card-slot {
+  position: relative;
+  width: min(340px, 78vw);
+  aspect-ratio: 340 / 500;
+}
+
+.emg-card {
+  position: absolute;
+  inset: 0;
+  border-radius: 26px;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, oklch(0.3 0.06 var(--card-hue) / 0.9), oklch(0.17 0.03 var(--card-hue) / 0.96) 64%);
+  border: 1px solid oklch(0.85 0.08 var(--card-hue) / 0.28);
+  box-shadow:
+    0 30px 80px -20px oklch(0.05 0.03 var(--card-hue) / 0.9),
+    0 0 0 1px oklch(0.2 0.03 var(--card-hue) / 0.6),
+    inset 0 1px 0 oklch(1 0 0 / 0.12);
+}
+
+.emg-portrait {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  top: 12px;
+  height: 60%;
+  border-radius: 18px;
+  overflow: hidden;
+  background:
+    radial-gradient(70% 60% at 50% 30%, oklch(0.62 0.13 var(--card-hue) / 0.75), transparent 72%),
+    linear-gradient(180deg, oklch(0.4 0.1 calc(var(--card-hue) + 40)), oklch(0.22 0.05 var(--card-hue)));
+}
+.emg-portrait-glow {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(40% 32% at 50% 28%, oklch(0.95 0.06 var(--card-hue) / 0.55), transparent);
+  animation: emg-pulse 2.8s ease-in-out infinite;
+}
+.emg-portrait[data-phase="card"] .emg-portrait-glow { animation-duration: 4.2s; }
+@keyframes emg-pulse { 50% { opacity: 0.45; } }
+
+/* Holo foil sheen: two color-dodge layers drifting. */
+.emg-foil {
+  position: absolute;
+  inset: -40%;
+  mix-blend-mode: color-dodge;
+  background:
+    linear-gradient(115deg, transparent 38%, oklch(0.9 0.12 calc(var(--card-hue) + 80) / 0.35) 48%, transparent 58%),
+    linear-gradient(65deg, transparent 42%, oklch(0.9 0.1 calc(var(--card-hue) - 60) / 0.25) 50%, transparent 60%);
+  animation: emg-foil 5s ease-in-out infinite alternate;
+}
+@keyframes emg-foil {
+  from { transform: translateX(-12%) translateY(-6%); }
+  to { transform: translateX(12%) translateY(6%); }
+}
+
+.emg-info {
+  position: absolute;
+  left: 22px;
+  right: 22px;
+  bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.emg-kicker {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: oklch(0.85 0.1 var(--card-hue) / 0.8);
+}
+.emg-name {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 34px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+}
+.emg-match {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--ok);
+}
+.emg-tagline {
+  font-size: 14px;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+.emg-dials {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px 16px;
+}
+.emg-dial {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 9px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+}
+.emg-dial i {
+  display: block;
+  height: 3px;
+  border-radius: 2px;
+  transform-origin: 0 50%;
+  background: linear-gradient(90deg, oklch(0.8 0.14 var(--card-hue)), oklch(0.85 0.12 calc(var(--card-hue) + 50)));
+}
+
+.emg-shard { will-change: transform, opacity; }
+
+@media (prefers-reduced-motion: reduce) {
+  .emg-foil, .emg-portrait-glow { animation: none; }
+}
