@@ -24,8 +24,8 @@ describe("candidates", () => {
   });
   test("no em or en dashes in copy", () => {
     const text = JSON.stringify(CANDIDATES);
-    expect(text.includes("—")).toBe(false);
-    expect(text.includes("–")).toBe(false);
+    expect(text.includes(String.fromCharCode(0x2014))).toBe(false);
+    expect(text.includes(String.fromCharCode(0x2013))).toBe(false);
   });
   test("region keys never collide across candidates", () => {
     const keys = CANDIDATES.flatMap((c) => c.regions.map((r) => regionKey(c.id, r.id)));

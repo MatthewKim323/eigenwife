@@ -1,22 +1,25 @@
 /**
  * Browsers refuse to play audio until a user gesture. The boot "begin" click
  * is the one required click in the whole demo, so it calls unlockAudio().
- * The avatar/voice layer reuses getAudioContext() for playback and lipsync.
+ *
+ * One AudioContext for the whole shell: it lives on globalThis.__eveAudioCtx,
+ * the same slot voice/audio.ts uses, so unlocking here unlocks Eve's voice.
  */
 
-let ctx: AudioContext | null = null;
+type G = typeof globalThis & { __eveAudioCtx?: AudioContext };
+const g = globalThis as G;
 let unlocked = false;
 
 export function getAudioContext(): AudioContext | null {
-  if (ctx) return ctx;
+  if (g.__eveAudioCtx) return g.__eveAudioCtx;
   const AC = (globalThis as any).AudioContext ?? (globalThis as any).webkitAudioContext;
   if (!AC) return null;
-  ctx = new AC() as AudioContext;
-  return ctx;
+  g.__eveAudioCtx = new AC({ latencyHint: "interactive" }) as AudioContext;
+  return g.__eveAudioCtx;
 }
 
 export function isAudioUnlocked(): boolean {
-  return unlocked && ctx?.state === "running";
+  return unlocked && g.__eveAudioCtx?.state === "running";
 }
 
 /** Call from inside a click handler. Idempotent. Resolves true when audio can play. */
@@ -51,15 +54,15 @@ export async function unlockAudio(): Promise<boolean> {
 
 /** Tiny UI blip for theatrical moments. Silent until audio is unlocked. */
 export function blip(freq = 880, ms = 70, gain = 0.035) {
-  const c = ctx;
+  const c = g.__eveAudioCtx;
   if (!c || c.state !== "running") return;
   const o = c.createOscillator();
-  const g = c.createGain();
+  const amp = c.createGain();
   o.type = "sine";
   o.frequency.value = freq;
-  g.gain.setValueAtTime(gain, c.currentTime);
-  g.gain.exponentialRampToValueAtTime(0.0001, c.currentTime + ms / 1000);
-  o.connect(g).connect(c.destination);
+  amp.gain.setValueAtTime(gain, c.currentTime);
+  amp.gain.exponentialRampToValueAtTime(0.0001, c.currentTime + ms / 1000);
+  o.connect(amp).connect(c.destination);
   o.start();
   o.stop(c.currentTime + ms / 1000 + 0.02);
 }
