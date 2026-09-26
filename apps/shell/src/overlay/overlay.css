@@ -1,0 +1,124 @@
+/* Desktop overlay: Eve alone on a transparent page. transform / opacity only. */
+
+html[data-mode="overlay"],
+html[data-mode="overlay"] body,
+html[data-mode="overlay"] #root {
+  background: transparent !important;
+  overflow: hidden;
+}
+
+.ov-root {
+  position: fixed;
+  inset: 0;
+  cursor: default;
+  --ov-ease: cubic-bezier(0.23, 1, 0.32, 1);
+}
+.ov-root[data-cursor="grab"] { cursor: grab; }
+.ov-root[data-cursor="grabbing"] { cursor: grabbing; }
+
+.ov-eve {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  /* Same soft bottom as the shell layer, never a hard canvas edge. */
+  -webkit-mask-image: linear-gradient(to bottom, #000 76%, transparent 98%);
+  mask-image: linear-gradient(to bottom, #000 76%, transparent 98%);
+  transition: filter 600ms ease, opacity 600ms ease;
+}
+.ov-eve[data-offline="true"] { filter: saturate(0.45) brightness(0.8); opacity: 0.72; }
+/* On a real desktop the aura reads as a smudge over other apps: keep it faint. */
+.ov-eve .eve-aura { opacity: 0.35; }
+
+/* Subtitles span the window, sitting over her lower body like a caption. */
+.ov-root .eve-subs[data-placement="column"] {
+  left: 10px;
+  right: 10px;
+  width: auto;
+  bottom: 58px;
+}
+.ov-root .eve-subs p { font-size: 21px; -webkit-text-stroke-width: 6px; }
+
+/* Status chip: one small pill, bottom center. */
+.ov-chip {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  max-width: calc(100% - 32px);
+  padding: 6px 12px 6px 10px;
+  border-radius: 999px;
+  background: oklch(0.2 0.03 var(--hue) / 0.72);
+  border: 1px solid oklch(0.85 0.06 var(--hue) / 0.16);
+  box-shadow: 0 6px 22px oklch(0.1 0.03 var(--hue) / 0.35);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  backdrop-filter: blur(14px) saturate(1.3);
+  color: oklch(0.97 0.01 var(--hue));
+  font: 500 11.5px/1.2 var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  transition: opacity 200ms var(--ov-ease), transform 200ms var(--ov-ease);
+}
+.ov-chip[data-hidden="true"] { opacity: 0; transform: translateX(-50%) translateY(4px) scale(0.97); }
+.ov-chip-text { overflow: hidden; text-overflow: ellipsis; }
+.ov-chip-sub { color: oklch(0.85 0.03 var(--hue) / 0.62); overflow: hidden; text-overflow: ellipsis; }
+.ov-chip-sub::before { content: "·"; margin-right: 7px; opacity: 0.6; }
+.ov-chip[data-kind="heard"] .ov-chip-text { font-family: var(--font-voice); font-weight: 700; font-size: 13px; letter-spacing: 0.01em; text-transform: none; }
+
+.ov-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: oklch(0.7 0.02 var(--hue));
+  transition: background-color 200ms ease;
+}
+.ov-chip[data-kind="listening"] .ov-dot,
+.ov-chip[data-kind="heard"] .ov-dot { background: var(--ok); box-shadow: 0 0 10px var(--ok); }
+.ov-chip[data-kind="thinking"] .ov-dot { background: var(--accent); animation: ov-pulse 1.1s ease-in-out infinite; }
+.ov-chip[data-kind="approval"] { border-color: oklch(0.85 0.14 var(--hue) / 0.5); }
+.ov-chip[data-kind="approval"] .ov-dot { background: var(--accent); box-shadow: 0 0 12px var(--accent); animation: ov-pulse 1.4s ease-in-out infinite; }
+.ov-chip[data-kind="offline"] .ov-dot,
+.ov-chip[data-kind="mic-error"] .ov-dot { background: var(--warn); }
+.ov-chip[data-kind="muted"] .ov-dot { background: oklch(0.6 0.02 var(--hue)); }
+.ov-chip[data-kind="asleep"] .ov-dot { background: oklch(0.7 0.05 var(--hue)); animation: ov-pulse 3s ease-in-out infinite; }
+@keyframes ov-pulse { 50% { opacity: 0.35; } }
+
+/* Flashes: memory / attention, top of the window, one line each. */
+.ov-flashes {
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  right: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+}
+.ov-flash {
+  max-width: 100%;
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: oklch(0.2 0.03 var(--hue) / 0.7);
+  border: 1px solid oklch(0.85 0.06 var(--hue) / 0.14);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  color: oklch(0.95 0.02 var(--hue));
+  font-size: 10.5px;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ov-flash[data-kind="memory"] { color: oklch(0.9 0.1 var(--hue)); }
+.ov-flash[data-kind="attention"] { color: oklch(0.9 0.1 calc(var(--hue) + 60)); }
+
+@media (prefers-reduced-motion: reduce) {
+  .ov-chip .ov-dot { animation: none !important; }
+  .ov-chip { transition: opacity 200ms ease; }
+}
