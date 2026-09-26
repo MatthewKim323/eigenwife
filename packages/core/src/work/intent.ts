@@ -35,7 +35,8 @@ const FILE_NOUN = "file|doc|document|pdf|deck|slides|spreadsheet|sheet|notes|not
 
 const TESTS = /^(?:run|rerun|re-run|kick off)\s+(?:the\s+|my\s+)?tests?\b|\b(?:are|do)\s+(?:the\s+)?tests\s+(?:pass|passing|green|still pass)|\bdid\s+(?:the\s+)?tests\s+pass\b/i;
 const STATUS = /\b(?:git|repo|branch)\s+status\b|\bwhat(?:'s| is)\s+(?:the\s+)?(?:status|state)\s+of\s+(?:the\s+|my\s+)?(?:repo|branch|code|build)\b|\bwhat\s+changed\b.*\b(?:repo|branch|code)\b|\bhow\s+many\s+(?:dirty|changed|uncommitted)\s+files\b/i;
-const CONTEXT = /\bwhat\s+am\s+i\s+(?:working\s+on|doing)\b|\bwhat\s+(?:repo|project|branch)\s+am\s+i\s+(?:in|on)\b/i;
+// "what am i doing" is a screen question (she looks); "working on" is the coarse app/repo answer.
+const CONTEXT = /\bwhat\s+am\s+i\s+working\s+on\b|\bwhat\s+(?:repo|project|branch)\s+am\s+i\s+(?:in|on)\b/i;
 
 const FIND = new RegExp(`^(?:find|locate|search\\s+for|look\\s+for|pull\\s+up|dig\\s+up|where(?:'s|\\s+is|\\s+are|\\s+did\\s+i\\s+(?:put|save))|get\\s+me)\\s+(.+)$`, "i");
 const FIND_MINE = new RegExp(`\\b(?:my|the|that)\\b.*\\b(?:${FILE_NOUN})s?\\b|\\.[a-z0-9]{1,5}\\b|\\bmy\\s+\\w+`, "i");

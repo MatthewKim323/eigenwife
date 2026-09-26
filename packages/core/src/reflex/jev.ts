@@ -1,4 +1,5 @@
 import { REFLEX_DECISIONS, type ReflexDecision, type RelationshipState, type WorldSnapshot } from "@eigenwife/protocol";
+import { screenDeictic } from "../screen/intent";
 import { readIntent, type UtteranceIntent } from "./intent";
 import type { Trigger } from "./rules";
 
@@ -118,7 +119,7 @@ export function addressed(input: JevInput, text: string, it: ReturnType<typeof r
   if (it.stop || (it.approval && input.pendingApproval) || it.outfit || it.music || it.command || it.task || it.work || it.browse) return { yes: true, why: "something she does" };
   const last = Math.max(w.companion.lastSpokeAt ?? -Infinity, input.lastReactionAt ?? -Infinity);
   if (input.now - last < CONVERSATION_WINDOW_MS) return { yes: true, why: "mid-conversation" };
-  if (it.deictic && it.question) return { yes: true, why: "asking about what he's looking at" };
+  if ((it.deictic && it.question) || screenDeictic(text)) return { yes: true, why: "asking about what he's looking at" };
   if (/^(?:(?:yo|hey|ok(?:ay)?|bro)[, ]+)?(?:look(?: at)?|check(?: out)?|peep|see|rate|read) (?:this|that|it)\b|\b(?:check this out|look at this|can you see (?:this|that|my screen))\b/i.test(text))
     return { yes: true, why: "asking her to look" };
   return { yes: false, why: "not talking to her" };
