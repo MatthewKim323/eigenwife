@@ -41,6 +41,10 @@ export function Subtitles({ placement }: { placement: "stage" | "column" | "hidd
   useEffect(() => {
     if (!sub) return;
     setFaded(false);
+    if (sub.revealTo !== undefined) {
+      setShown(Math.min(chars.length, graphemes(sub.text.slice(0, sub.revealTo)).length));
+      return;
+    }
     let raf = 0;
     let last = -1;
     const loop = () => {

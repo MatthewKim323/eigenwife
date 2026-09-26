@@ -1,14 +1,16 @@
 import type { SpeechMark } from "@eigenwife/protocol";
 import { getAudioContext } from "./audio";
-import { fakeMouth, LipsyncEnvelope, rmsOfBytes } from "./lipsync";
-import { estimateSpeechMs, markTimes, SegmentQueue, type Segment } from "./queue";
+import { LipsyncEnvelope, rmsOfBytes } from "./lipsync";
+import { estimateSpeechMs, MarkCursor, markTimes, SegmentQueue, type Segment } from "./queue";
+import { bestVoice, SynthMouth, wordLengthAt } from "./synth";
 
 export interface PlayerHooks {
   played(utteranceId: string, seq: number): void;
   mark(mark: SpeechMark, utteranceId: string): void;
   utteranceDone(utteranceId: string, interrupted: boolean): void;
   /** A segment started: text is shown progressively over durationMs. */
-  subtitle(s: { utteranceId: string; before: string; text: string; startedAt: number; durationMs: number } | null): void;
+  /** revealTo: chars confirmed spoken (word boundaries); when absent, reveal by time. */
+  subtitle(s: { utteranceId: string; before: string; text: string; startedAt: number; durationMs: number; revealTo?: number } | null): void;
   /** Mouth + speaking flag every frame. */
   mouth(value: number, hold: boolean, speaking: boolean): void;
 }
@@ -16,6 +18,7 @@ export interface PlayerHooks {
 interface Playing {
   seg: Segment;
   kind: "audio" | "synth";
+  utterance?: SpeechSynthesisUtterance;
   stop(): void;
 }
 
@@ -35,6 +38,7 @@ export class SpeechPlayer {
   private spoken = new Map<string, string>();
   private timers: ReturnType<typeof setTimeout>[] = [];
   private envelope = new LipsyncEnvelope();
+  private synthMouth = new SynthMouth();
   private analyser: AnalyserNode | null = null;
   private bytes: Uint8Array<ArrayBuffer> = new Uint8Array(1024);
   private raf = 0;
@@ -203,48 +207,85 @@ export class SpeechPlayer {
   }
 
   private playSynth(s: Segment, before: string, done: () => void) {
-    const est = estimateSpeechMs(s.text);
+    const est = estimateSpeechMs(s.text) / SYNTH_RATE;
+    const sub = (revealTo?: number) =>
+      this.hooks.subtitle({ utteranceId: s.utteranceId, before, text: s.text, startedAt: performance.now(), durationMs: est, revealTo });
     const hasSynth = "speechSynthesis" in globalThis && typeof SpeechSynthesisUtterance !== "undefined";
     if (!hasSynth) {
       // Silent: still animate and subtitle so the scene reads.
       const t = setTimeout(done, est);
+      this.synthMouth.start(performance.now());
       this.playing = { seg: s, kind: "synth", stop: () => clearTimeout(t) };
       this.scheduleMarks(s, est);
-      this.hooks.subtitle({ utteranceId: s.utteranceId, before, text: s.text, startedAt: performance.now(), durationMs: est });
+      sub();
       return;
     }
     const u = new SpeechSynthesisUtterance(s.text);
     const v = pickVoice();
     if (v) u.voice = v;
-    u.rate = 1.04;
-    u.pitch = 1.18;
+    u.lang = v?.lang ?? "en-US";
+    u.rate = SYNTH_RATE;
+    u.pitch = SYNTH_PITCH;
+    const cursor = new MarkCursor(s.marks ?? []);
+    const fireMarks = (list: SpeechMark[]) => list.forEach((m) => this.hooks.mark(m, s.utteranceId));
     let started = false;
-    const fire = () => {
+    let boundaries = 0;
+    const start = () => {
       if (started) return;
       started = true;
-      this.scheduleMarks(s, est);
-      this.hooks.subtitle({ utteranceId: s.utteranceId, before, text: s.text, startedAt: performance.now(), durationMs: est });
+      this.synthMouth.start(performance.now());
+      fireMarks(cursor.advance(0));
+      sub(0);
+      // Voices that never report word boundaries: fall back to time-based marks + subtitles.
+      this.timers.push(
+        setTimeout(() => {
+          if (boundaries > 0) return;
+          const t0 = 700;
+          for (const { t, mark } of markTimes(s.text, cursor.pending(), est)) {
+            this.timers.push(setTimeout(() => cursor.take(mark) && fireMarks([mark]), Math.max(0, t - t0)));
+          }
+          sub(undefined);
+        }, 700),
+      );
     };
-    u.onstart = fire;
-    u.onend = done;
-    u.onerror = done;
-    // Chrome sometimes never fires onstart when audio is locked: don't hang.
-    const guard = setTimeout(() => {
-      fire();
-    }, 400);
-    const hardStop = setTimeout(done, est * 2.2 + 1500);
+    u.onstart = start;
+    u.onboundary = (ev: SpeechSynthesisEvent) => {
+      if (ev.name && ev.name !== "word") return;
+      start();
+      boundaries++;
+      const len = ev.charLength || wordLengthAt(s.text, ev.charIndex);
+      this.synthMouth.word(performance.now(), len);
+      fireMarks(cursor.advance(ev.charIndex + Math.ceil(len / 2)));
+      sub(ev.charIndex + len);
+    };
+    const finish = () => {
+      this.synthMouth.end();
+      fireMarks(cursor.rest());
+      done();
+    };
+    u.onend = finish;
+    u.onerror = finish;
+    // Chrome sometimes never fires onstart (locked audio, busy engine): don't hang the queue.
+    const guard = setTimeout(start, 500);
+    const hardStop = setTimeout(finish, est * 2.2 + 2000);
     this.playing = {
       seg: s,
       kind: "synth",
+      utterance: u, // keep a strong ref: Chrome GCs utterances and then never fires onend
       stop: () => {
         clearTimeout(guard);
         clearTimeout(hardStop);
+        this.synthMouth.end();
         u.onend = null;
+        u.onerror = null;
+        u.onboundary = null;
         try {
           speechSynthesis.cancel();
         } catch {}
       },
     };
+    // A stale queue from a previous page state can block speak() forever.
+    if (speechSynthesis.speaking || speechSynthesis.pending) speechSynthesis.cancel();
     speechSynthesis.speak(u);
   }
 
@@ -263,33 +304,39 @@ export class SpeechPlayer {
     const dt = this.lastFrame ? Math.min(100, t - this.lastFrame) : 16;
     this.lastFrame = t;
     const p = this.playing;
-    let rms = 0;
-    let live = false;
-    if (p?.kind === "audio" && this.analyser) {
-      this.analyser.getByteTimeDomainData(this.bytes);
-      rms = rmsOfBytes(this.bytes);
-      live = true;
-    }
     let mouth: number;
     if (p?.kind === "synth") {
-      mouth = fakeMouth(t);
-      this.envelope.value = mouth;
-      this.envelope.update(0.3, true, dt, t); // keep the envelope "speaking" so release works after
-      this.envelope.value = mouth;
+      mouth = this.synthMouth.value(t);
+      this.envelope.drive(mouth);
     } else {
+      let rms = 0;
+      const live = p?.kind === "audio" && !!this.analyser;
+      if (live) {
+        this.analyser!.getByteTimeDomainData(this.bytes);
+        rms = rmsOfBytes(this.bytes);
+      }
       mouth = this.envelope.update(rms, live, dt, t);
     }
     this.hooks.mouth(mouth, !p && this.envelope.holding(t), !!p);
   }
 }
 
-let cachedVoice: SpeechSynthesisVoice | null | undefined;
-function pickVoice(): SpeechSynthesisVoice | null {
-  if (cachedVoice !== undefined && cachedVoice !== null) return cachedVoice;
+export const SYNTH_RATE = 1.04;
+export const SYNTH_PITCH = 1.15;
+
+let cachedVoice: SpeechSynthesisVoice | null = null;
+if (typeof speechSynthesis !== "undefined") {
+  try {
+    speechSynthesis.addEventListener("voiceschanged", () => (cachedVoice = null));
+  } catch {}
+}
+
+/** Best available voice (see synth.ts PREFERRED_VOICES). Override with ?voice=<name substring>. */
+export function pickVoice(): SpeechSynthesisVoice | null {
+  if (cachedVoice) return cachedVoice;
   const voices = speechSynthesis.getVoices();
   if (!voices.length) return null;
-  const prefs = ["Samantha", "Google US English", "Microsoft Aria", "Microsoft Jenny", "Karen", "Moira", "Tessa", "Victoria"];
-  cachedVoice =
-    prefs.map((n) => voices.find((v) => v.name.includes(n))).find(Boolean) ?? voices.find((v) => v.lang.startsWith("en")) ?? voices[0] ?? null;
+  const want = new URLSearchParams(location.search).get("voice");
+  cachedVoice = (want && voices.find((v) => v.name.toLowerCase().includes(want.toLowerCase()))) || bestVoice(voices) || voices[0] || null;
   return cachedVoice;
 }

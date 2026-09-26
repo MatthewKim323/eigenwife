@@ -13,6 +13,8 @@ export interface SubtitleState {
   text: string;
   startedAt: number;
   durationMs: number;
+  /** Chars confirmed spoken by word boundaries (speechSynthesis). Absent: reveal by time. */
+  revealTo?: number;
 }
 
 export interface VoiceUi {
@@ -91,8 +93,12 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
           doneListeners.forEach((fn) => fn(id, interrupted));
         },
         subtitle: (s) => {
-          if (s) voiceUi.set({ subtitle: s });
-          else voiceUi.set({ subtitle: null });
+          if (!s) return voiceUi.set({ subtitle: null });
+          const cur = voiceUi.get().subtitle;
+          // Same segment, new progress (word boundary): keep the clock so words don't re-pop.
+          if (cur && cur.utteranceId === s.utteranceId && cur.text === s.text && cur.before === s.before)
+            voiceUi.set({ subtitle: { ...cur, revealTo: s.revealTo } });
+          else voiceUi.set({ subtitle: s });
         },
         mouth: (value, hold, speaking) => {
           avatarRuntime.mouth = value;

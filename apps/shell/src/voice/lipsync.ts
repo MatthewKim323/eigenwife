@@ -41,6 +41,12 @@ export class LipsyncEnvelope {
     return this.value;
   }
 
+  /** Set the value directly while speaking from a non-audio source (speechSynthesis). */
+  drive(v: number) {
+    this.endedAt = -1;
+    this.value = v;
+  }
+
   /** True while the post-speech 0 hold is in force (release + 500ms). */
   holding(now: number): boolean {
     return this.endedAt >= 0 && now - this.endedAt < LIPSYNC.releaseMs + LIPSYNC.holdMs;

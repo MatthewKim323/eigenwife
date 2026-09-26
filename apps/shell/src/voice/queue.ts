@@ -4,7 +4,7 @@ export type Segment = EventMap["speech.segment"];
 
 interface Utterance {
   id: string;
-  /** Next seq to play; null until the first segment arrives. */
+  /** Next seq to play. Seqs start at 0 (protocol contract). */
   expect: number | null;
   pending: Map<number, Segment>;
   ended: boolean;
@@ -22,12 +22,15 @@ interface Utterance {
 export class SegmentQueue {
   private utterances: Utterance[] = [];
   private dead = new Set<string>();
-  constructor(private gapMs = 1500) {}
+  constructor(
+    private gapMs = 1500,
+    private firstGapMs = 400,
+  ) {}
 
   private get(id: string, create = true): Utterance | undefined {
     let u = this.utterances.find((x) => x.id === id);
     if (!u && create && !this.dead.has(id)) {
-      u = { id, expect: null, pending: new Map(), ended: false, played: 0, gapSince: null };
+      u = { id, expect: 0, pending: new Map(), ended: false, played: 0, gapSince: null };
       this.utterances.push(u);
     }
     return u;
@@ -37,7 +40,6 @@ export class SegmentQueue {
     const u = this.get(s.utteranceId);
     if (!u) return;
     if (u.expect !== null && s.seq < u.expect) return; // late duplicate
-    if (u.expect === null) u.expect = s.seq;
     u.pending.set(s.seq, s);
   }
 
@@ -66,7 +68,9 @@ export class SegmentQueue {
         // A later seq is waiting on a missing one.
         const lowest = Math.min(...u.pending.keys());
         if (u.gapSince === null) u.gapSince = now;
-        if (u.ended || now - u.gapSince >= this.gapMs) {
+        // Nothing played yet: seq 0 is probably just in flight, but don't hold her mouth for long.
+        const wait = u.played === 0 ? this.firstGapMs : this.gapMs;
+        if (u.ended || now - u.gapSince >= wait) {
           u.expect = lowest;
           continue;
         }
@@ -115,6 +119,36 @@ export function markTimes(text: string, marks: SpeechMark[], durationMs: number)
   return marks
     .map((mark) => ({ t: Math.max(0, Math.min(1, mark.at / len)) * Math.max(0, durationMs), mark }))
     .sort((a, b) => a.t - b.t);
+}
+
+/**
+ * Marks for a speechSynthesis segment, fired as word boundaries report
+ * progress (charIndex). Each mark fires exactly once.
+ */
+export class MarkCursor {
+  private left: SpeechMark[];
+  constructor(marks: SpeechMark[]) {
+    this.left = [...marks].sort((a, b) => a.at - b.at);
+  }
+  /** Marks at or before charIndex that haven't fired yet. */
+  advance(charIndex: number): SpeechMark[] {
+    const out: SpeechMark[] = [];
+    while (this.left.length && this.left[0]!.at <= charIndex) out.push(this.left.shift()!);
+    return out;
+  }
+  pending(): SpeechMark[] {
+    return [...this.left];
+  }
+  /** Claim one specific mark (time-based fallback). False if it already fired. */
+  take(m: SpeechMark): boolean {
+    const i = this.left.indexOf(m);
+    if (i < 0) return false;
+    this.left.splice(i, 1);
+    return true;
+  }
+  rest(): SpeechMark[] {
+    return this.left.splice(0);
+  }
 }
 
 /** Rough speaking time for text without audio (speechSynthesis), ~14 chars/s. */
