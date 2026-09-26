@@ -480,3 +480,12 @@ describe("speech module", () => {
     expect((await (await fetch(`http://127.0.0.1:${port}/api/speech/stop`, { method: "POST", body: "{}" })).json()) as any).toEqual({ ok: true });
   });
 });
+
+test("tts pronunciation: short hums become sounds, not spelled letters", async () => {
+  const { normalizeForCache } = await import("../src/speech/tts");
+  expect(normalizeForCache("mm.")).toBe("mmm.");
+  expect(normalizeForCache("Mm, hold on.")).toBe("Mmm, hold on.");
+  expect(normalizeForCache("hm. okay")).toBe("hmm. okay");
+  expect(normalizeForCache("um, uh")).toBe("umm, uhh");
+  expect(normalizeForCache("summer mmhm hmmm")).toBe("summer mmhm hmm");
+});

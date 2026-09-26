@@ -197,8 +197,19 @@ export function sayTts(io: TtsIO): TtsBackend {
   };
 }
 
+/**
+ * What the voice actually reads. Subtitles keep the original text; TTS engines
+ * spell short hums out ("mm" -> "em em"), so stretch them into sounds.
+ * Also part of the cache key, so pronunciation fixes re-render stale audio.
+ */
 export function normalizeForCache(text: string): string {
-  return text.trim().replace(/\s+/g, " ");
+  return text
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/\b[mM]{2,}\b/g, (m) => (m[0] === "M" ? "Mmm" : "mmm"))
+    .replace(/\b([hH])m+\b/g, "$1mm")
+    .replace(/\b([uU])m+\b/g, "$1mm")
+    .replace(/\b([uU])h+\b/g, "$1hh");
 }
 
 export function audioKey(voiceKey: string, text: string): string {
