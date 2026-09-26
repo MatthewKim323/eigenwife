@@ -39,6 +39,14 @@ import {
   type SizeName,
 } from "./state";
 
+// Keep Eve painting through macOS Space swipes and Mission Control: Chromium
+// otherwise treats the overlay as occluded mid-swipe, stops rendering her
+// canvas, and she "pops back" when the swipe ends.
+app.commandLine.appendSwitch("disable-renderer-backgrounding");
+app.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
+app.commandLine.appendSwitch("disable-background-timer-throttling");
+app.commandLine.appendSwitch("disable-features", "CalculateNativeWinOcclusion,MacWebContentsOcclusion");
+
 const EVE_HOME = process.env.EVE_HOME || join(homedir(), ".eve");
 const STATE_PATH = join(EVE_HOME, "overlay.json");
 const URL = overlayUrl(process.env);
@@ -107,7 +115,12 @@ function createWindow() {
     },
   });
   win.setAlwaysOnTop(true, "screen-saver");
-  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  // skipTransformProcessType: don't flip the app's process type on every call (dock/space flicker).
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
+  // Not a "window" macOS should shuffle around in Mission Control / Space swipes.
+  if (process.platform === "darwin") win.setHiddenInMissionControl?.(true);
+  // Space swipes briefly blur/occlude her; re-assert the floor so she never drops behind.
+  win.on("blur", () => win?.setAlwaysOnTop(true, "screen-saver"));
   win.setContentProtection(!(state.capturable || capturableEnv));
   win.setIgnoreMouseEvents(true, { forward: true });
   interactive = false;
