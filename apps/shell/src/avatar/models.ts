@@ -218,7 +218,64 @@ export const HARU: ModelDef = {
     "Haru, official Live2D Cubism sample model (Live2D/CubismWebSamples Samples/Resources/Haru). Live2D Free Material License: free for individuals and small orgs (annual revenue under 10M JPY); larger businesses need a Cubism SDK Release License.",
 };
 
-export const MODELS: Record<string, ModelDef> = { haru: HARU };
+/**
+ * Alexia: silver hair, cat ears and tail, black streetwear. A third-party model
+ * matt supplied; local only (public/avatar/local/alexia, gitignored), never
+ * committed. Cubism 5.0 moc, standard parameter ids, 16 expressions (pinyin
+ * abbreviations), verified by screenshot:
+ *   lzx grin, lh blush, sq dark "shadow over the eyes" anger, wh floating "?",
+ *   xxy star eyes, dyj sunglasses on, mj sunglasses up, k tears, h sweat drop,
+ *   y swirl eyes, bbt lollipop, yf/yfmz blue cat hoodie, yjys1/2 odd eye color.
+ */
+export const ALEXIA: ModelDef = {
+  id: "alexia",
+  name: "Alexia",
+  url: "/avatar/local/alexia/Alexia.model3.json",
+  params: STANDARD_PARAMS,
+  faceRest: {
+    ParamEyeLOpen: 1,
+    ParamEyeROpen: 1,
+    ParamEyeLSmile: 0,
+    ParamEyeRSmile: 0,
+    ParamEyeBallX: 0,
+    ParamEyeBallY: 0,
+    ParamBrowLY: 0,
+    ParamBrowLForm: 0,
+    ParamMouthForm: 0.3,
+    ParamMouthOpenY: 0,
+  },
+  expressions: {
+    happy: "lzx",
+    annoyed: "sq",
+    thinking: "wh",
+    surprised: "xxy",
+    smug: "dyj",
+    sad: "k",
+  },
+  poses: {
+    neutral: {},
+    happy: { ParamEyeLSmile: abs(0.6), ParamEyeRSmile: abs(0.6), ParamMouthForm: abs(1), ParamAngleZ: add(6), ParamBodyAngleZ: add(3) },
+    annoyed: { ParamMouthForm: abs(-0.7), ParamBrowLForm: abs(-1), ParamEyeLOpen: abs(0.8), ParamEyeROpen: abs(0.8), ParamAngleX: add(20), ParamEyeBallX: add(-0.6) },
+    thinking: { ParamEyeBallX: abs(0.8), ParamEyeBallY: abs(0.8), ParamAngleZ: add(10), ParamAngleY: add(4), ParamMouthForm: abs(0.1) },
+    surprised: { ParamEyeLOpen: abs(1.2), ParamEyeROpen: abs(1.2), ParamMouthOpenY: abs(0.4), ParamAngleY: add(5) },
+    smug: { ParamMouthForm: abs(1), ParamAngleZ: add(-8), ParamAngleY: add(-3), ParamBodyAngleZ: add(-3) },
+    sad: { ParamBrowLY: abs(-0.4), ParamAngleY: add(-12), ParamEyeBallY: abs(-0.4), ParamMouthForm: abs(-0.3) },
+  },
+  // Her only motion lives in the unnamed group.
+  idleMotionGroup: "",
+  framing: {
+    column: { scale: 2.6, y: -0.07, x: 0.5, head: { x: 0.5, y: 0.32 } },
+    stage: { scale: 2.0, y: -0.018, x: 0.5, head: { x: 0.5, y: 0.28 } },
+    overlay: { scale: 2.0, y: -0.018, x: 0.5, head: { x: 0.5, y: 0.28 } },
+  },
+  license: "Third-party model supplied by matt. Local only (gitignored), not redistributed; check its original terms before any public use.",
+};
+
+export const MODELS: Record<string, ModelDef> = { haru: HARU, alexia: ALEXIA };
+/** Models only present on some machines (gitignored files). */
+export const LOCAL_ONLY = new Set(["alexia"]);
+/** First available wins: a local favorite when its files are on this machine, else Haru. */
+export const DEFAULT_ORDER = ["alexia", "haru"];
 export const DEFAULT_MODEL = "haru";
 
 /**
@@ -230,15 +287,22 @@ export function adHocModel(url: string): ModelDef {
   return { ...HARU, id: `url:${url}`, name, url, expressions: {} };
 }
 
-/** ?model= beats EVE_MODEL beats the default. Unknown ids fall back to the default. */
-export function resolveModel(search: string, env?: string | null): ModelDef {
+/**
+ * ?model= beats EVE_MODEL beats the default. Unknown ids fall back to the default.
+ * Local-only models count only when their files are on this machine (`localIds`,
+ * baked in by vite from public/avatar/local).
+ */
+export function resolveModel(search: string, env?: string | null, localIds: string[] = []): ModelDef {
+  const local = new Set(localIds.map((x) => x.trim().toLowerCase()).filter(Boolean));
+  const available = (id: string) => !!MODELS[id] && (!LOCAL_ONLY.has(id) || local.has(id));
   const q = new URLSearchParams(search).get("model")?.trim();
   for (const pick of [q, env?.trim()]) {
     if (!pick) continue;
     if (/\.model3\.json$/i.test(pick) && (pick.startsWith("/") || /^https?:\/\//.test(pick))) return adHocModel(pick);
-    const def = MODELS[pick.toLowerCase()];
-    if (def) return def;
+    const id = pick.toLowerCase();
+    if (available(id)) return MODELS[id]!;
   }
+  for (const id of DEFAULT_ORDER) if (available(id)) return MODELS[id]!;
   return MODELS[DEFAULT_MODEL] ?? HARU;
 }
 

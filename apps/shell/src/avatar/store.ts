@@ -4,10 +4,11 @@ import { AttentionController } from "./attention";
 import { resolveModel, type FramingSlot } from "./models";
 import { EveRig } from "./rig";
 
-/** The avatar model for this page: ?model= beats the build-time EVE_MODEL beats the default (Haru). */
+/** The avatar model for this page: ?model= beats the build-time EVE_MODEL beats the default (a local favorite, else Haru). */
 export const activeModel = resolveModel(
   typeof location !== "undefined" ? location.search : "",
   (import.meta as any).env?.EVE_MODEL as string | undefined,
+  String((import.meta as any).env?.EVE_LOCAL_MODELS ?? "").split(","),
 );
 
 function makeRig() {

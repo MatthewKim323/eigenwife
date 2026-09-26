@@ -173,3 +173,19 @@ describe("no mood change without an event", () => {
     for (const id of FACE_ONLY) expect(params.get(id)).toBe(HARU.faceRest[id]);
   });
 });
+
+describe("local-only models", () => {
+  test("alexia is the default only when her files are on this machine", () => {
+    expect(resolveModel("", "", ["alexia"]).id).toBe("alexia");
+    expect(resolveModel("", "", []).id).toBe("haru");
+    expect(resolveModel("?model=alexia", "", []).id).toBe("haru");
+    expect(resolveModel("?model=haru", "", ["alexia"]).id).toBe("haru");
+    expect(resolveModel("", "alexia", ["alexia"]).id).toBe("alexia");
+  });
+
+  test("alexia maps every mood to her own expressions", () => {
+    const a = MODELS.alexia!;
+    expect(a.expressions).toMatchObject({ happy: "lzx", annoyed: "sq", thinking: "wh", surprised: "xxy", smug: "dyj", sad: "k" });
+    expect(Object.keys(a.poses).sort()).toEqual(["annoyed", "happy", "neutral", "sad", "smug", "surprised", "thinking"]);
+  });
+});

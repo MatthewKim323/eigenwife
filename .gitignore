@@ -9,3 +9,4 @@ build/
 .env*
 .DS_Store
 .claude/worktrees/
+apps/shell/public/avatar/local/
