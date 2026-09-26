@@ -9,7 +9,7 @@ Concrete recipes for every layer of Eigenwife: what to build, the numbers to use
 | Question | Answer |
 |---|---|
 | Main stage | Fullscreen web shell we own (Vite + React). No Electron overlay unless there's spare time. |
-| Avatar | Live2D, sample model **Hiyori**, via `pixi-live2d-display@0.4.0` on `pixi.js@6.5.10`. Tachie (PNG per emotion) as the safety net. |
+| Avatar | Live2D, sample model **Haru** (adult receptionist; Hiyori was dropped, see AVATAR.md), via `pixi-live2d-display@0.4.0` on `pixi.js@6.5.10`. Tachie (PNG per emotion) as the safety net. |
 | Voice out | ElevenLabs `eleven_flash_v2_5` for live lines, `eleven_v3` pre-renders for scripted demo lines. `kokoro-js` in-browser as fallback. |
 | Voice in | Chrome Web Speech API. No VAD model today. |
 | Bus | One websocket hub inside jabby (`Bun.serve`), port **7777**. `eye serve` stays on 8765. |
@@ -167,7 +167,7 @@ Before starting: null the SDK's expression manager and eye blink, `delete intern
 
 **Breath.** `ParamBreath` 0 to 0.5, 2s cosine cycle, then 1.2s pause.
 
-**Emotion poses (1.5h).** Hiyori ships no expressions, so poses are our own param overrides:
+**Emotion poses (1.5h).** Poses are param overrides (with Haru, blended over her own expressions, see AVATAR.md):
 
 | Mood | Params |
 |---|---|
@@ -188,7 +188,7 @@ Before starting: null the SDK's expression manager and eye blink, `delete intern
 **Emergence (2h).** Covered in section 8.
 
 **Assets.**
-- Hiyori comes from the official Live2D sample page. Its license covers individuals and small orgs.
+- Haru comes from the official Live2D sample page (Free Material License). It covers individuals and small orgs.
 - Tachie fallback: 5 PNGs (neutral/happy/annoyed/thinking/surprised), CSS bob + blink overlay.
 
 ---

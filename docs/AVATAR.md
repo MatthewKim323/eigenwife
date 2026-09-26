@@ -9,19 +9,24 @@ Eve's face, body, voice and ears in the shell. Owner paths: `apps/shell/src/avat
 | ![idle](screens/avatar-idle.png) | ![happy](screens/avatar-happy.png) |
 | ![annoyed](screens/avatar-annoyed.png) | ![speaking](screens/avatar-speaking.png) |
 | ![thinking](screens/avatar-thinking.png) | ![listening](screens/avatar-listening.png) |
+| ![stage](screens/avatar-emergence-stage.png) | ![overlay](screens/avatar-overlay.png) |
 
 ## Live2D Eve
 
 - **Stack:** `pixi.js@6.5.10` + `pixi-live2d-display@0.4.0` (pinned exactly, v7/v8 break it). Only the `cubism4` entry is imported.
 - **Cubism core** (`public/avatar/live2dcubismcore.min.js`, 5.1.0) is fetched from the official distribution (`cubism.live2d.com/sdk-web/cubismcore/`) and injected as a global `<script>` *before* `pixi-live2d-display` is dynamically imported (`avatar/live2d.ts`).
-- **Model:** Hiyori from the official `Live2D/CubismWebSamples` repo (`Samples/Resources/Hiyori`), in `public/avatar/hiyori/`. License: Live2D Open Software License + the Free Material License for sample data. Free for individuals and small orgs (annual revenue under 10M JPY); larger businesses need a Cubism SDK Release License. Fine for a hackathon demo, check before commercial use.
+- **Model: Haru**, the receptionist from the official `Live2D/CubismWebSamples` repo (`Samples/Resources/Haru`), in `public/avatar/haru/`. An adult woman in an office suit. We ship the moc3, textures, physics, pose, expressions F01-F08 and only the calm `haru_g_idle` loop (no gesture motions, no sounds). She replaced Hiyori, the previous sample, who is drawn as a schoolgirl (sailor uniform, young face): unacceptable next to a companion demo, removed entirely.
+- **License:** Live2D Free Material License for the sample data (same terms as every official sample). Free for individuals and small orgs (annual revenue under 10M JPY); larger businesses need a Cubism SDK Release License. Fine for a hackathon demo, check before commercial use. Cubism core: Live2D Proprietary Software License.
+- **Candidates** (`screens/avatar-candidates.png`): Haru picked. Mao reads young (witch hat, hoodie, childlike face). Ren's moc3 is v6 and needs Cubism Core 5.3+ (we ship 5.1 with pixi-live2d-display 0.4), so she can't render here. Natori and Mark are male, Rice is a young magician, Wanko is a dog.
+- **Model registry (`avatar/models.ts`).** Everything model-specific: url, rig param ids, face rest values, mood -> expression map, our pose overrides, idle motion group, framing per slot (`column`, `stage`, `overlay`: scale in box heights, top offset, head position for look-at) and the license note. Pick with `?model=<id>` (or a direct `/path/X.model3.json` to try a new model with Haru's settings), else the build-time `EVE_MODEL` env, else `haru`. Framing eases inside the box when the dock changes (card + stage share one slot so the emergence spring never reframes).
+- **She only emotes on events.** The idle loop keyframes blinks and a mouth shape of its own, and Hiyori's 9 idle motions all carried expressions, which is why she seemed to emote randomly. Now every face param in `faceRest` is pinned right after the motion stage each frame, so her face changes only on `avatar.mood`, speech marks or `avatar.state`, and auto-returns to neutral. Idle = breath, blinks, saccades, look-at and small head/body drift from the loop. Tested ("no mood change without an event").
 - **One canvas for her whole life.** `AvatarLayer` renders a fixed 560x840 transparent WebGL box above every scene and moves it with a transform spring (card, center stage, right column). The canvas is never re-laid out or re-created.
 - **Built-ins off:** expression manager and eye blink nulled, `internalModel.breath` deleted, `updateNaturalMovements` no-op. `internalModel.updateFocus` is replaced by our rig, so it runs after motions and *before* physics: hair and ribbons react to our head turns in the same frame. `model.focus()` is never used.
 - **Errors:** `app.render` and `model.update` are wrapped; on a throw the ticker stops and the tachie takes over.
 
 ### Per-frame pipeline (`avatar/rig.ts`)
 
-`motion -> emotion pose -> blink -> look-at -> mouth -> breath`, every frame:
+`motion -> face rest -> emotion pose -> blink -> look-at -> mouth -> breath`, every frame, with param ids from the model def:
 
 | Stage | Numbers |
 |---|---|
@@ -32,16 +37,20 @@ Eve's face, body, voice and ears in the shell. Owner paths: `apps/shell/src/avat
 | Mouth | `max(pose mouth, lipsync)`; forced to 0 during the post-speech hold and while asleep. |
 | Breath | `ParamBreath` 0..0.5, 2s cosine then 1.2s rest (1.8x slower asleep). |
 
-Emotion poses (Hiyori has no expressions). Absolute values lerp, `+` values add:
+Emotion poses: Haru's own expression (loaded from its exp3.json, SDK blend modes kept: Add, Multiply, Overwrite) with our overrides replacing it per param (`buildPoses`), all blended by our weight so the cap, easing and auto-return still apply. The SDK expression manager stays off. Absolute values lerp, `+` values add. Rest face: eyes open, MouthForm 0.45 (0 reads as a faint frown on Haru).
 
-| Mood | Params |
-|---|---|
-| happy | EyeSmile 1, MouthForm 1, Cheek 1, EyeOpen 0.7, MouthOpenY 0.18, BrowY 0.3, AngleZ +6, bob |
-| annoyed | EyeOpen 0.55, BrowForm -1, BrowAngle -0.6, MouthForm -0.6, AngleX +15 (away), EyeBallX -0.45 (eyes stay on you) |
-| thinking | EyeBallX 0.6, EyeBallY 0.7, AngleZ +8, AngleY +4, MouthForm -0.2 |
-| surprised | EyeOpen 1.2, BrowY 1, MouthOpenY 0.4, AngleY +5 |
-| smug | EyeOpen 0.62, EyeSmile 0.6, MouthForm 0.7, one brow up, AngleZ -7, AngleY -4 |
-| sad | EyeOpen 0.65, BrowForm 0.8, BrowAngle 0.7, MouthForm -0.8, AngleY -8, EyeBallY -0.4 |
+![moods](screens/avatar-moods.png)
+
+| Mood | Expression | Our overrides |
+|---|---|---|
+| happy | F05 (^^ smile) | EyeOpen 0.25 (a sliver open), MouthForm 1, MouthOpenY 0.2, Tere (blush) 0.5, AngleZ +6, BodyZ +4, bob |
+| annoyed | F03 (angry) | mouth shut: MouthOpenY 0, MouthForm -0.8, both brows angled -1, EyeOpen 0.75, AngleX +24 (away), EyeBallX -0.6 (eyes stay on you) |
+| thinking | none | EyeBallX/Y 0.8, AngleZ +12, BodyZ +5, AngleY +4, MouthForm 0.1, uneven brows |
+| surprised | F06 (wide) | EyeOpen 1.25, MouthOpenY 0.45, AngleY +5 |
+| smug | F01 (soft smile) | EyeOpen 0.6, EyeSmile 0.7, MouthForm 1, Tere 0.35, one brow up, AngleZ -10, AngleY -4 |
+| sad | F08 (displeased) | brows up-in (Form -0.6, Angle 0.8, Y -0.3), AngleY -12, EyeBallY -0.4 |
+
+Haru's head reads AngleX/Y strongly but AngleZ weakly, so tilts also add `ParamBodyAngleZ`.
 
 ### States (`avatar.state`, resolved in `AvatarLayer`)
 
@@ -62,7 +71,7 @@ She looks at the user by default: out of the screen toward the webcam (top-cente
 
 If Live2D hasn't rendered within 4s (or throws), `Tachie` shows stills: `public/avatar/tachie/{mood}.webp` plus `{mood}-blink.webp` and `{mood}-talk.webp` for all 7 moods, with a CSS bob, a blink overlay driven by the same blink scheduler, and the talk frame when the mouth is open. If Live2D finishes loading late, she upgrades to it. Force it with `?eve=tachie`.
 
-The stills are rendered from the live rig so she looks identical: open `?scene=emergence&mic=0` in a GPU Chromium, call `__eve.hush()`, then per mood `__eve.state("idle"); __eve.still(true, eyesClosed, mouth); __eve.mood(m, 1, 600000)` and take an element screenshot of `.eve-box` with a transparent background, then `cwebp -q 86 -alpha_q 90`.
+The stills are rendered from the live rig so she looks identical: open `?scene=emergence&stay=1&mic=0` (`stay=1` holds center stage) in a GPU Chromium at deviceScaleFactor 2, hide everything but `.eve-box` (and its aura), call `__eve.hush(); __eve.frame("column")`, then per mood `__eve.state("idle"); __eve.still(true, eyesClosed, mouth); __eve.mood(m, 1, 600000)` and take an element screenshot of `.eve-box` with a transparent background, resize to 880x1320, then `cwebp -q 86 -alpha_q 90`. They use the column framing (where she lives).
 
 ## Emergence (`scenes/Emergence.tsx`)
 
@@ -110,8 +119,8 @@ Timeline from mount (`T` in the file):
 
 ## Debug handle
 
-`window.__eve`: `mood(m, intensity, holdMs)`, `state(s | null)`, `look(x, y, ms)`, `blink()`, `say(text, mood?)` (local, speechSynthesis), `hush()`, `still(on, eyesClosed, mouth)`, `runtime`.
+`window.__eve`: `mood(m, intensity, holdMs)`, `state(s | null)`, `look(x, y, ms)`, `blink()`, `say(text, mood?)` (local, speechSynthesis), `hush()`, `still(on, eyesClosed, mouth)`, `frame("column" | "stage" | "overlay")`, `model` (active id), `runtime`.
 
 ## Tests
 
-`bun test apps/shell/src`: blink scheduler, saccade scheduler, spring, emotion blend/cap/auto-return, breath, attention glances, lipsync envelope, fake mouth, mark timing + mark cursor, segment queue ordering/gaps/abort, turn-commit debounce, half-duplex gate, voice ranking.
+`bun test apps/shell/src`: blink scheduler, saccade scheduler, spring, emotion blend/cap/auto-return, breath, attention glances, lipsync envelope, fake mouth, mark timing + mark cursor, segment queue ordering/gaps/abort, turn-commit debounce, half-duplex gate, voice ranking. `models.test.ts`: registry selection (`?model=` > `EVE_MODEL` > default), Haru ids/expressions/idle-only motions match the shipped files, exp3 blend mapping, override merge, and no mood change without an event (a simulated minute of a face-scribbling idle loop stays neutral).
