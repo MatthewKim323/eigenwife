@@ -9,7 +9,7 @@
     "start": "bun run build && bun run ensure-electron && electron .",
     "typecheck": "tsc -p . --noEmit",
     "test": "bun test src",
-    "ensure-electron": "node -e \"require('electron')\" 2>/dev/null || install-electron"
+    "ensure-electron": "node -e \"require('electron')\" 2>/dev/null || node -e \"require('child_process').execFileSync(process.execPath,[require.resolve('electron/install.js')],{stdio:'inherit'})\""
   },
   "dependencies": {
     "@eigenwife/protocol": "workspace:*"
