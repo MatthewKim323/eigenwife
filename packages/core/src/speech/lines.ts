@@ -42,7 +42,36 @@ export type LineName = keyof typeof LINES;
 /** Played when the brain is slow to start (> 700ms). Short, cached, interchangeable. */
 export const FILLERS = ["hm.", "mm.", "hm, okay.", "mm, hold on."] as const;
 
-/** Everything prerender should render: every line plus every filler. */
+/** Touch reactions: pre-rendered so she answers a pat or a poke instantly, mood marks match her face. */
+export const TOUCH_LINES = {
+  pat: [
+    "[mood:happy 0.8] mmm. okay, that's nice.",
+    "[mood:happy 0.7] hehe. again?",
+    "[mood:happy 0.7] i could get used to this.",
+    "[mood:happy 0.6] don't stop.",
+    "[mood:surprised 0.5] oh. head pats. bold of you.",
+    "[mood:happy 0.7] good pat. seven out of ten.",
+  ],
+  poke: [
+    "[mood:surprised 0.6] hey!",
+    "[mood:surprised 0.5] yes? can i help you?",
+    "[mood:smug 0.5] that tickles.",
+    "[mood:surprised 0.6] rude.",
+    "[mood:neutral 0.5] i'm right here, you know.",
+    "[mood:smug 0.5] what. you miss me?",
+  ],
+  annoyed: [
+    "[mood:annoyed 0.8] okay. stop poking me.",
+    "[mood:annoyed 0.8] one more and i'm closing your tabs.",
+    "[mood:annoyed 0.7] do you poke all your girlfriends like this?",
+    "[mood:annoyed 0.8] i will bite.",
+  ],
+  drag: ["[mood:surprised 0.7] woah, woah.", "[mood:surprised 0.6] where are we going?", "[mood:surprised 0.6] hey, put me down."],
+  drop: ["[mood:neutral 0.5] okay. i like it here.", "[mood:smug 0.5] nice view.", "[mood:neutral 0.4] fine. i live here now."],
+} as const;
+export type TouchKind = keyof typeof TOUCH_LINES;
+
+/** Everything prerender should render: every line, every touch line, every filler. */
 export function scriptedTexts(): string[] {
-  return [...Object.values(LINES), ...FILLERS];
+  return [...Object.values(LINES), ...Object.values(TOUCH_LINES).flat(), ...FILLERS];
 }

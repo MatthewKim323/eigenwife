@@ -86,7 +86,9 @@ export interface TouchController {
 }
 
 /** Everything is rate limited and subtle; asleep, she doesn't react at all. */
-export function createTouchController(slot: FramingSlot, emitPoke: (region: "head" | "body", count: number) => void): TouchController {
+export type TouchSay = (kind: "pat" | "poke" | "annoyed" | "drag" | "drop", region?: "head" | "body", count?: number) => void;
+
+export function createTouchController(slot: FramingSlot, emitTouch: TouchSay): TouchController {
   const hover = new HoverLimiter();
   const pokes = new PokeCounter();
   const f = () => activeModel.framing[slot];
@@ -108,22 +110,29 @@ export function createTouchController(slot: FramingSlot, emitPoke: (region: "hea
       const r = pokes.click(region, now);
       if (!r) return region;
       playTouch(r, avatarRuntime.rig, now, lookAt(p));
-      if (r.emit) emitPoke(r.region, r.count);
+      // Every reaction gets a line (the core rate limits); annoyed only when the counter says so.
+      if (r.kind !== "annoyed" || r.emit) emitTouch(r.kind, r.region, r.count);
       return region;
     },
     dragStart() {
-      if (!asleep()) playTouch({ kind: "drag-start" }, avatarRuntime.rig, performance.now(), () => {});
+      if (asleep()) return;
+      playTouch({ kind: "drag-start" }, avatarRuntime.rig, performance.now(), () => {});
+      emitTouch("drag");
     },
     drop() {
-      if (!asleep()) playTouch({ kind: "drop" }, avatarRuntime.rig, performance.now(), () => {});
+      if (asleep()) return;
+      playTouch({ kind: "drop" }, avatarRuntime.rig, performance.now(), () => {});
+      emitTouch("drop");
     },
   };
 }
 
-/** A stable touch controller for a component, emitting avatar.poke on the bus. */
+/** A stable touch controller for a component, emitting avatar.touch on the bus. */
 export function useTouchController(slot: FramingSlot): TouchController {
   const { client } = useBus();
   const ref = useRef<TouchController | null>(null);
-  ref.current ??= createTouchController(slot, (region, count) => client.emit("avatar.poke", { region, count }));
+  ref.current ??= createTouchController(slot, (kind, region, count) =>
+    client.emit("avatar.touch", { kind, ...(region ? { region } : {}), ...(count !== undefined ? { count } : {}) }),
+  );
   return ref.current;
 }

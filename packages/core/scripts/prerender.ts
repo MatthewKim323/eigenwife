@@ -13,7 +13,7 @@ import { homedir } from "os";
 import { join } from "path";
 import { secret } from "../src/config";
 import { segmentText } from "../src/speech/chunker";
-import { LINES, FILLERS } from "../src/speech/lines";
+import { LINES, FILLERS, TOUCH_LINES } from "../src/speech/lines";
 import { buildTts, ttsIO } from "../src/speech/module";
 
 const args = process.argv.slice(2);
@@ -31,7 +31,11 @@ if (!tts) {
 console.log(`audio cache: ${tts.cache.dir} (${tts.cache.size} files)`);
 console.log(`backends: ${tts.backends.map((b) => `${b.name}${b.configured() ? "" : " (not configured)"}`).join(" > ")}`);
 
-const entries: [string, string][] = [...Object.entries(LINES), ...FILLERS.map((f, i) => [`filler${i}`, f] as [string, string])];
+const entries: [string, string][] = [
+  ...Object.entries(LINES),
+  ...Object.entries(TOUCH_LINES).flatMap(([k, lines]) => lines.map((l, i) => [`touch.${k}${i}`, l] as [string, string])),
+  ...FILLERS.map((f, i) => [`filler${i}`, f] as [string, string]),
+];
 let rendered = 0;
 let cached = 0;
 let failed = 0;

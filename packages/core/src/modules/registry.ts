@@ -12,6 +12,7 @@ import { wardrobeModule } from "../wardrobe/module";
 import { workModule } from "../work/module";
 import { screenModule } from "../screen/module";
 import { clock } from "./clock";
+import { touchModule } from "../touch/module";
 
 /**
  * The full Eve. Modules never import each other: they talk over the bus.
@@ -30,6 +31,7 @@ export function allModules(): Module[] {
     earsModule(),
     reflexModule(),
     agencyModule(),
+    touchModule(),
     workModule(),
     screenModule(),
   ];
