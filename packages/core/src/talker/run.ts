@@ -174,12 +174,15 @@ export function createTalker(deps: TalkerDeps): Talker {
       const start = now();
       let spoke = false;
       let rawText = false;
+      let raw = "";
       const events = b.stream(msg, { maxTokens, temperature: 0.9, signal: run.signal, userText: run.req.userText });
       const textOnly = async function* (): AsyncGenerator<string> {
         for await (const e of events) {
           if (run.aborted) return;
           if (e.type === "text") {
-            if (e.text.trim()) rawText = true;
+            // Real words, not just a [mood:...] mark: then the stall would be a second opener.
+            raw += e.text;
+            if (!rawText && /[\p{L}\p{N}]/u.test(raw.replace(/\[[^\]]*\]?/g, ""))) rawText = true;
             yield e.text;
           } else if (e.type === "stall") {
             if (!rawText && !run.stalled) {

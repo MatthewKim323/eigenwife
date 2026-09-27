@@ -38,7 +38,7 @@ function tidy(s: string): string {
   return s
     .replace(/https?:\/\/\S+/g, "")
     .replace(/[`*_#"{}[\]<>]/g, "")
-    .replace(/^\s*(?:\w+\s*)?(?:agent|worker|wife)\s*\d*\s*[:>-]\s*/i, "")
+    .replace(/^\s*[a-z][\w-]*(?: \d+)?\s*[:>]\s+/i, "")
     .replace(/\s+/g, " ")
     .trim()
     .replace(/[.!…]+$/, "")

@@ -6,6 +6,7 @@ import { earsModule } from "../src/ears/module";
 import { acceptWhileSpeaking, SpeakingTracker } from "../src/ears/gate";
 import { listenUrl, optionsFromQuery, TranscriptAssembler } from "../src/ears/deepgram";
 import { EarsSession } from "../src/ears/session";
+import { fluxUrl, FluxTurnTracker, sameTurn } from "../src/ears/flux";
 
 const until = async (cond: () => boolean, ms = 3000) => {
   const t0 = Date.now();
@@ -274,5 +275,126 @@ describe("ears module on the hub", () => {
     ws.close();
     off();
     off2();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Flux: eager / resume / end-of-turn state machine
+// ---------------------------------------------------------------------------
+
+const turn = (event: string, transcript = "", turn_index = 0, extra: Record<string, unknown> = {}) => ({ type: "TurnInfo", event, transcript, turn_index, ...extra });
+
+describe("flux turns", () => {
+  test("url: v2 listen, flux model, eager threshold on", () => {
+    const u = new URL(fluxUrl({ encoding: "linear16", sampleRate: 16000 }));
+    expect(u.pathname).toBe("/v2/listen");
+    expect(u.searchParams.get("model")).toBe("flux-general-en");
+    expect(u.searchParams.get("eager_eot_threshold")).toBe("0.5");
+    expect(u.searchParams.get("eot_threshold")).toBe("0.7");
+    expect(u.searchParams.get("sample_rate")).toBe("16000");
+    expect(new URL(fluxUrl({ eagerEotThreshold: 0 })).searchParams.get("eager_eot_threshold")).toBeNull();
+  });
+
+  test("eager -> resumed -> eager -> end of turn: one final, hooks in order", () => {
+    const out: string[] = [];
+    const f = new FluxTurnTracker({
+      start: () => out.push("start"),
+      partial: (t) => out.push(`p:${t}`),
+      eager: (t) => out.push(`eager:${t}`),
+      resumed: () => out.push("resumed"),
+      final: (t, c) => out.push(`final:${t}:${c}`),
+    });
+    f.push(turn("StartOfTurn", "", 0));
+    f.push(turn("Update", "what should", 0));
+    f.push(turn("EagerEndOfTurn", "what should", 0));
+    f.push(turn("EagerEndOfTurn", "what should", 0)); // same guess twice: once
+    f.push(turn("TurnResumed", "what should", 0));
+    f.push(turn("Update", "what should we eat", 0));
+    f.push(turn("EagerEndOfTurn", "what should we eat", 0));
+    f.push(turn("EndOfTurn", "What should we eat?", 0, { end_of_turn_confidence: 0.83 }));
+    f.push(turn("EndOfTurn", "", 0)); // nothing left: no second final
+    expect(out).toEqual([
+      "start",
+      "p:what should",
+      "eager:what should",
+      "resumed",
+      "p:what should we eat",
+      "eager:what should we eat",
+      "final:What should we eat?:0.83",
+    ]);
+    expect(f.state).toBe("idle");
+    expect(sameTurn("what should we eat", "What should we eat?")).toBe(true);
+    expect(sameTurn("what should", "what should we eat")).toBe(false);
+  });
+
+  test("resumed without an eager is silent; a new turn index commits a dangling turn", () => {
+    const out: string[] = [];
+    const f = new FluxTurnTracker({ partial: () => {}, resumed: () => out.push("resumed"), final: (t) => out.push(`final:${t}`) });
+    f.push(turn("StartOfTurn", "hey", 0));
+    f.push(turn("TurnResumed", "hey", 0));
+    f.push(turn("StartOfTurn", "yo", 1));
+    f.commit();
+    expect(out).toEqual(["final:hey", "final:yo"]);
+  });
+
+  test("session speaks flux: eager/resumed hooks and endOfTurn finals", async () => {
+    const dg = fakeDeepgram();
+    const events: string[] = [];
+    const s = new EarsSession({
+      url: fluxUrl({ encoding: "linear16" }, dg.endpoint.replace("/v1/listen", "/v2/listen")),
+      protocol: "flux",
+      apiKey: "k",
+      minBackoffMs: 20,
+      hooks: {
+        partial: (t) => events.push(`partial:${t}`),
+        final: (t, _c, eot) => events.push(`final:${t}:${eot}`),
+        eager: (t) => events.push(`eager:${t}`),
+        resumed: () => events.push("resumed"),
+        bargeIn: () => {},
+        toClient: () => {},
+        log: () => {},
+      },
+    });
+    s.start();
+    await until(() => s.state === "open");
+    const up = dg.last().ws;
+    up.send(JSON.stringify(turn("Update", "tell me a joke")));
+    up.send(JSON.stringify(turn("EagerEndOfTurn", "tell me a joke")));
+    up.send(JSON.stringify(turn("EndOfTurn", "Tell me a joke.")));
+    await until(() => events.some((e) => e.startsWith("final:")));
+    expect(events).toEqual(["partial:tell me a joke", "eager:tell me a joke", "final:Tell me a joke.:true"]);
+    s.close();
+    void dg.server.stop(true);
+  });
+
+  test("flux that never connects falls back to nova", async () => {
+    const urls: string[] = [];
+    const fake = (url: string) => {
+      urls.push(url);
+      const sock: any = { readyState: 0, send() {}, close() {}, onopen: null, onmessage: null, onclose: null, onerror: null };
+      if (url.includes("/v2/")) setTimeout(() => sock.onclose?.({ code: 1006, reason: "nope" }), 1);
+      else
+        setTimeout(() => {
+          sock.readyState = 1;
+          sock.onopen?.({});
+        }, 1);
+      return sock;
+    };
+    const s = new EarsSession({
+      url: "wss://x/v2/listen?model=flux-general-en",
+      fallbackUrl: "wss://x/v1/listen?model=nova-3",
+      protocol: "flux",
+      apiKey: "k",
+      connect: fake,
+      minBackoffMs: 5,
+      maxBackoffMs: 5,
+      hooks: { partial() {}, final() {}, bargeIn() {}, toClient() {}, log() {} },
+    });
+    s.start();
+    await until(() => s.state === "open");
+    expect(s.protocol).toBe("nova");
+    expect(urls.filter((u) => u.includes("/v2/")).length).toBe(2);
+    expect(urls.at(-1)).toContain("/v1/");
+    s.close();
   });
 });
