@@ -13,7 +13,7 @@ import { homedir } from "os";
 import { join } from "path";
 import { secret } from "../src/config";
 import { segmentText } from "../src/speech/chunker";
-import { LINES, FILLERS, TOUCH_LINES } from "../src/speech/lines";
+import { GREET_LINES, LINES, FILLERS, TOUCH_LINES } from "../src/speech/lines";
 import { buildTts, ttsIO } from "../src/speech/module";
 
 const args = process.argv.slice(2);
@@ -34,6 +34,7 @@ console.log(`backends: ${tts.backends.map((b) => `${b.name}${b.configured() ? ""
 const entries: [string, string][] = [
   ...Object.entries(LINES),
   ...Object.entries(TOUCH_LINES).flatMap(([k, lines]) => lines.map((l, i) => [`touch.${k}${i}`, l] as [string, string])),
+  ...Object.entries(GREET_LINES).flatMap(([k, lines]) => lines.map((l, i) => [`greet.${k}${i}`, l] as [string, string])),
   ...FILLERS.map((f, i) => [`filler${i}`, f] as [string, string]),
 ];
 let rendered = 0;

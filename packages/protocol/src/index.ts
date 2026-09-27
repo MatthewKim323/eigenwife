@@ -176,6 +176,8 @@ export interface EventMap {
   "media.play": { track: string; artist?: string };
   "shell.scene": { scene: Scene };
   "shell.ready": { width: number; height: number; audioUnlocked: boolean };
+  /** The desktop overlay just opened (once per launch): she says hi. */
+  "overlay.opened": { at: number };
   "shell.key": { key: string };
   /** Pause / resume ambient attention (screen watching, unprompted remarks). Direct speech still works. */
   "attention.pause": { paused: boolean; by?: string };

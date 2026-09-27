@@ -96,6 +96,18 @@ export const TOUCH_LINES = {
 } as const;
 export type TouchKind = keyof typeof TOUCH_LINES;
 
+/** Hello when the desktop overlay opens, picked by time of day and how long she's been gone. */
+export const GREET_LINES = {
+  first: ["[mood:happy 0.8] hey matt! i live here now. don't mind me."],
+  morning: ["[mood:happy 0.8] morning matt! glad to be back.", "[mood:happy 0.7] morning. did you actually sleep?"],
+  afternoon: ["[mood:happy 0.8] hey matt! what's good?", "[mood:happy 0.7] hey you. i'm back."],
+  evening: ["[mood:happy 0.8] hey matt! what's good tonight?", "[mood:smug 0.6] evening. what are we getting into?"],
+  late: ["[mood:smug 0.6] matt. it's late. why are we up.", "[mood:happy 0.6] hey night owl. glad to be back."],
+  long: ["[mood:happy 0.9] matt! it's been a minute.", "[mood:surprised 0.6] oh, he remembers me. hi."],
+  soon: ["[mood:smug 0.6] back already? missed me.", "[mood:happy 0.6] oh hey, you're back."],
+} as const;
+export type GreetKind = keyof typeof GREET_LINES;
+
 /**
  * First-run onboarding (packages/core/src/onboarding, docs/KNOW_ME.md). One
  * question at a time, in character, every one skippable. Scripted so they're
@@ -129,5 +141,5 @@ export type OnboardingStepId = keyof typeof ONBOARDING_LINES.questions;
 export function scriptedTexts(): string[] {
   const o = ONBOARDING_LINES;
   const onboarding = [o.intro, o.resume, o.redo, ...Object.values(o.questions), ...o.retry, ...o.skip, o.nudge, o.pause, o.outro, o.noRules];
-  return [...Object.values(LINES), ...Object.values(TOUCH_LINES).flat(), ...FILLERS, ...STALL_LINES, ...CANCEL_LINES, ...onboarding];
+  return [...Object.values(LINES), ...Object.values(TOUCH_LINES).flat(), ...Object.values(GREET_LINES).flat(), ...FILLERS, ...STALL_LINES, ...CANCEL_LINES, ...onboarding];
 }

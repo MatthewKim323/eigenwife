@@ -17,6 +17,7 @@ import { screenModule } from "../screen/module";
 import { desktopGazeModule } from "../gaze/module";
 import { clock } from "./clock";
 import { touchModule } from "../touch/module";
+import { greetModule } from "../greet/module";
 import { liveModule } from "../live/module";
 
 /**
@@ -43,6 +44,7 @@ export function allModules(): Module[] {
     reflexModule(),
     agencyModule(),
     touchModule(),
+    greetModule(),
     workModule(),
     // The next step after anything she did (docs/FOLLOW_THROUGH.md).
     followupModule(),

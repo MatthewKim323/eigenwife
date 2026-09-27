@@ -94,6 +94,15 @@ export function OverlayApp() {
     }, 1500);
     return () => clearTimeout(id);
   }, [connected, born]);
+
+  // Once per launch: tell the core the overlay opened, so she says hi.
+  const { emit } = useBus();
+  const greeted = useRef(false);
+  useEffect(() => {
+    if (!connected || greeted.current) return;
+    greeted.current = true;
+    emit("overlay.opened", { at: Date.now() });
+  }, [connected, emit]);
   useEffect(() => {
     const upd = () => avatarUi.set({ state: avatarRuntime.speaking ? "speaking" : worldState });
     upd();
