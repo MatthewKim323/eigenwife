@@ -72,6 +72,7 @@ class Features:
     brow: float = 0.0  # browInnerUp
     jaw: float = 0.0  # jawOpen
     smile: float = 0.0  # mean of mouthSmileLeft/Right
+    appearance: np.ndarray | None = None  # optional versioned image-model features
 
 
 FOREHEAD = 10
@@ -171,7 +172,7 @@ GAZE_SCALE_FLOOR = np.array([0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 1.5, 1.5, 1.5, 
 
 def gaze_vector(f: Features) -> np.ndarray:
     z = -f.pos[2] if f.pos[2] < -1 else 1.0
-    return np.array(
+    base = np.array(
         [
             f.left.u,
             f.left.v,
@@ -192,3 +193,4 @@ def gaze_vector(f: Features) -> np.ndarray:
         ],
         dtype=np.float64,
     )
+    return base if f.appearance is None else np.concatenate((base, np.asarray(f.appearance, dtype=np.float64)))

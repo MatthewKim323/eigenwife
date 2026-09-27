@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>iPhone gaze experiment</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,sans-serif;background:#10131a;color:#e6ebf4}*{box-sizing:border-box}body{margin:0;padding:24px;max-width:1500px;margin-inline:auto}h1{font-size:26px;margin:0 0 8px}p{line-height:1.5}header{display:flex;gap:20px;align-items:start;justify-content:space-between}.controls{display:flex;gap:10px;flex-wrap:wrap}button{font:inherit;color:inherit;background:#252e40;border:1px solid #596681;border-radius:10px;padding:12px 18px;cursor:pointer}button:disabled{opacity:.4;cursor:default}button:focus-visible{outline:3px solid #87baff;outline-offset:4px}.status{padding:12px;background:#192232;border-radius:8px;line-height:1.6;margin:16px 0}.setup{display:grid;grid-template-columns:1fr 1fr;gap:24px}details{padding:12px;border:1px solid #3b4557;border-radius:8px}summary{cursor:pointer}code{overflow-wrap:anywhere;user-select:all}#result{white-space:pre-wrap;padding:12px;border-left:3px solid #7394c9;min-height:48px}main{display:grid;grid-template-columns:1fr 1fr;gap:70px;margin:36px 0}main button{min-height:150px;background:#1b273c;font-size:24px}#dot{position:fixed;width:12px;height:12px;border:2px solid white;border-radius:50%;transform:translate(-50%,-50%);pointer-events:none;display:none;z-index:2147483646;background:#72aaff99}small{color:#b8c3d7}@media(max-width:850px){.setup{grid-template-columns:1fr}header{display:block}main{gap:24px}}
+</style>
+<header data-eye-ui>
+<div><h1>iPhone gaze experiment</h1><small>TrueDepth + ARKit · measured model comparison</small></div>
+<div class="controls"><button id="fullscreen">fullscreen</button><button id="calibrate" disabled>1. calibrate + record · ~75 sec</button><button id="recenter" disabled>recenter · ~4 sec</button><button id="validate" disabled>2. check accuracy · ~20 sec</button></div>
+</header>
+<section class="status" data-eye-ui aria-live="polite"><div id="phone">waiting for iPhone telemetry</div><div id="tracking">connecting to the Mac receiver</div></section>
+<section data-eye-ui><button id="record" disabled>record experiment locally</button> <button id="stop-record" disabled>finish recording</button><p id="recording">recording off. saves numeric tracking locally; camera images are included only if enabled in EyePhone. no cloud upload.</p></section>
+<section class="setup" data-eye-ui>
+<details open><summary>connect the phone</summary><p>open the iPhone app. keep the phone and Mac on the same Wi-Fi; the cable is used to install the app. allow camera and local network access.</p><p>mount the phone at a laptop screen edge, front camera facing you. keep its position fixed relative to the screen. moving the phone requires a new calibration.</p><details><summary>show pairing details</summary><p>receiver: <code id="endpoint">loading…</code></p><p>pairing token: <code id="token">loading…</code></p><small>enter these in the iPhone app. the token changes when the receiver restarts.</small></details></details>
+<div id="method"><p>calibration repeats nine locations in three randomized blocks: centered, slightly left, then slightly right. hold a comfortable posture within each block and follow the dots with your eyes. keep the phone fixed.</p><p>then check accuracy on 9 separate locations. after that, shift in your chair and run the check again. a calibration fit alone does not demonstrate accuracy.</p><small>ARKit estimates eye direction. this experiment uses TrueDepth-assisted tracking, not raw infrared eye video.</small></div>
+</section>
+<p id="result" data-eye-ui role="status">connect the phone before starting calibration.</p>
+<details data-eye-ui><summary>accuracy diagnostics · raw predictions</summary><pre id="diagnostics" style="overflow:auto">run an accuracy check to see offset and jitter at each target.</pre></details>
+<main aria-label="gaze selection test">
+<button id="article" data-gaze="article">open article</button><button id="search" data-gaze="search">search this page</button><button id="save" data-gaze="save">save for later</button><button id="next" data-gaze="next">next page</button>
+</main>
+<footer data-eye-ui><p id="selection">look at a button. yellow means settling; green means ready. Alt+Enter selects and focuses. Alt+Space opens nearby choices; press a number to choose. nothing clicks automatically.</p><small>these four buttons are harmless demonstrations. press Enter after selecting to test activation.</small></footer>
+<div id="dot" data-eye-ui></div>
+<div id="smoothing-controls" data-eye-ui hidden><label>cursor smoothing <select id="smoothing"><option value="steady">steady</option><option value="responsive">responsive</option><option value="off">off · raw</option></select></label><p>steady calms jitter and ignores isolated jumps. intentional large moves need two agreeing samples, adding about 0.2 seconds. accuracy checks still measure raw predictions.</p></div>
+<script type="module">
+import { EyeClient } from './eye-client.js';
+import { GazeDOMTargets } from './dom-targets.js';
+import { calibrationPlan, validationPlan, GazeSmoother, CursorMotion } from './iphone-protocol.js';
+const $ = id => document.getElementById(id);
+const appearance = new URLSearchParams(location.search).get('source') === 'appearance';
+const eye = new EyeClient({url: `ws://${location.host}${appearance ? '/appearance/ws' : '/ws'}`, gazeSmoother: appearance ? new GazeSmoother({strength:'steady'}) : null});
+if (appearance) {
+  $('smoothing-controls').hidden = false;
+  document.querySelector('header').after($('smoothing-controls'));
+  $('smoothing').style.cssText = 'font:inherit;color:inherit;background:#252e40;padding:8px;border:1px solid #596681;border-radius:8px';
+  $('dot').style.willChange = 'transform';
+  $('smoothing').onchange = () => {
+    const mode = $('smoothing').value;
+    eye.setGazeSmoother(mode === 'off' ? null : new GazeSmoother({strength:mode}));
+    hideCursor();
+  };
+  document.title = 'iPhone image-model challenger';
+  document.querySelector('h1').textContent = 'iPhone image-model challenger';
+  document.querySelector('header small').textContent = 'UniGaze · frozen personal mapping · fresh live check';
+  for (const id of ['calibrate','recenter','record','stop-record','recording']) $(id).hidden = true;
+  $('validate').textContent = 'check image-model accuracy · ~35 sec';
+  $('method').textContent = 'this explicitly selected challenger uses camera images and a personal mapping trained from your saved calibration. enable “include camera images for model research” in EyePhone. keep the phone in the same position and orientation. check accuracy on fresh dots; this test does not retrain the model. processing stays on your Mac.';
+  $('result').textContent = 'waiting for the image-model challenger; the receiver must be started with a saved appearance profile.';
+}
+const targets = new GazeDOMTargets(eye);
+let appearanceReady = false;
+eye.on('message', m => {
+  if (appearance && !appearanceReady && m.type === 'hello' && m.backend?.name === 'iphone-appearance-frozen') {
+    appearanceReady = true;
+    $('result').textContent = 'image-only profile loaded. try the steady cursor; switch to responsive for less damping or off to compare raw movement. no new calibration is needed.';
+  }
+});
+window.eye = eye;
+window.gazeTargets = targets;
+let status = eye.status(), phone = null, phoneAt = 0, busy = false, recording = {active:false,available:false};
+const freshPhone = () => phone && Date.now() - phoneAt < 2000 && phone.connected !== false && phone.stale !== true;
+const render = () => {
+  const live = freshPhone();
+  const hz = Number.isFinite(phone?.receivingHz) ? `${phone.receivingHz.toFixed(0)} frames/sec` : 'rate unknown';
+  $('phone').textContent = live ? `iPhone connected · ${hz} · ${phone.depthAvailable ? 'depth available' : 'depth not reported'} · ${phone.source || 'ARKit TrueDepth'}` : 'iPhone disconnected or samples stopped · keep the app open and check Wi-Fi';
+  $('tracking').textContent = !status.connected ? 'Mac receiver disconnected' : status.guidance || status.reason || (!status.calibrated ? 'no screen calibration yet' : status.valid ? 'tracking' : 'waiting for usable tracking');
+  $('record').disabled = busy || !status.connected || !recording.available || recording.active;
+  $('stop-record').disabled = busy || !status.connected || !recording.active;
+  $('calibrate').textContent = recording.available ? '1. calibrate + record · ~75 sec' : '1. calibrate · ~75 sec';
+  $('calibrate').disabled = busy || !status.connected || !live || !(status.calibrated || status.canCalibrate);
+  $('recenter').disabled = busy || !status.connected || !live || !status.calibrated;
+  $('validate').disabled = busy || !status.connected || !live || !status.calibrated;
+  if (!live || !status.valid) hideCursor();
+};
+eye.on('status', s => {status = s; render();});
+eye.on('message', m => {if (m.type === 'record_status') {recording=m; $('recording').textContent=m.error ? `recording stopped: ${m.error}` : m.active ? `recording locally: ${m.path}. finish after the accuracy check.` : m.path ? `saved experiment: ${m.path}` : 'recording off. saves numeric tracking locally; camera images only if enabled in EyePhone. no cloud upload.'; render();} if (m.type === 'iphone_status') {phone = m; phoneAt = Date.now(); render();}});
+eye.on('message', m => {if(m.type === 'error') $('result').textContent = m.error;});
+const motion = new CursorMotion();
+let cursorFrame = null;
+function hideCursor() {
+  if (cursorFrame !== null) cancelAnimationFrame(cursorFrame);
+  cursorFrame = null;
+  motion.reset();
+  $('dot').style.display = 'none';
+}
+function drawCursor(p) {
+  Object.assign($('dot').style, {display:'block',left:'0',top:'0',transform:`translate3d(${p.x}px,${p.y}px,0) translate(-50%,-50%)`});
+}
+function animateCursor(t) {
+  cursorFrame = null;
+  if (!freshPhone() || !eye.status().valid || document.hidden) {hideCursor(); return;}
+  const p = motion.step(t);
+  if (p) drawCursor(p);
+  cursorFrame = requestAnimationFrame(animateCursor);
+}
+eye.on('lost', e => {
+  // Leaving a DOM target is not a tracking loss; don't restart cursor motion.
+  if (!['target_changed','ambiguous_target'].includes(e.reason)) hideCursor();
+});
+document.addEventListener('visibilitychange', () => {if (document.hidden) hideCursor();});
+eye.on('gaze', g => {
+  if (!freshPhone()) return;
+  if (!appearance || $('smoothing').value === 'off') {drawCursor(g); return;}
+  motion.setTarget({x:g.x,y:g.y}, performance.now());
+  if (cursorFrame === null) cursorFrame = requestAnimationFrame(animateCursor);
+});
+setInterval(render, 500);
+fetch('/pairing', {cache:'no-store'}).then(r => {if (!r.ok) throw new Error(`pairing request failed (${r.status})`); return r.json();}).then(p => {
+  $('endpoint').textContent = p.endpoint;
+  $('token').textContent = p.token;
+}).catch(e => {$('endpoint').textContent = e.message; $('token').textContent = 'restart or reconnect to the Mac receiver';});
+$('fullscreen').onclick = async () => {try {await document.documentElement.requestFullscreen();} catch(e) {$('result').textContent = `fullscreen failed: ${e.message}`;}};
+const n = value => Number.isFinite(value) ? value.toFixed(2) : '?';
+async function ensureRecording() {
+  if (!recording.available || recording.active) return;
+  const requestId=crypto.randomUUID();
+  await new Promise((resolve,reject)=>{
+    const off=eye.on('message',m=>{
+      if (m.type==='record_status' && m.requestId===requestId) {
+        clearTimeout(timer); off();
+        m.active ? resolve() : reject(new Error(m.error || 'recording did not start'));
+      } else if (m.type==='error') {clearTimeout(timer);off();reject(new Error(m.error));}
+    });
+    const timer=setTimeout(()=>{off();reject(new Error('recording did not respond; calibration has not started'));},3000);
+    eye.send({type:'record_start',requestId});
+  });
+}
+async function collect(validateOnly) {
+  busy = true; render();
+  $('result').textContent = validateOnly ? 'checking fresh targets; mapping stays unchanged' : 'collecting screen calibration';
+  try {
+    if (!validateOnly) await ensureRecording();
+    const seed=crypto.getRandomValues(new Uint32Array(1))[0];
+    const plan = validateOnly ? validationPlan(seed) : calibrationPlan(seed);
+    if (appearance) Object.assign(plan, {validateOnly:true,sampleMs:2500,settleMs:800,label:'IMAGE-MODEL CHECK · LOOK AT THE DOT'});
+    const r = await eye.calibrate(plan);
+    if (!r.ok) {$('result').textContent = `${validateOnly ? 'accuracy check' : 'calibration'} failed: ${r.error || r.reason || 'no usable result'}`; return;}
+    if (validateOnly) {
+      const v = r.validation || r;
+      if (Array.isArray(v.perTarget)) $('diagnostics').textContent =
+        'target (%)    offset x/y (pt)    jitter RMS (pt)    mean error (pt)\n' +
+        v.perTarget.map(p => `${n(p.nx*100)}, ${n(p.ny*100)}    ${n(p.biasXPoints)}, ${n(p.biasYPoints)}    ${n(p.jitterRmsPoints)}    ${n(p.meanPoints)}`).join('\n');
+      const angle = Number.isFinite(v.meanDeg) && Number.isFinite(v.p90Deg) ? ` approximate angle: mean ${n(v.meanDeg)}°, p90 ${n(v.p90Deg)}° (assumes 55 cm viewing distance).` : '';
+      $('result').textContent = `raw, unsmoothed error on usable samples: mean ${n(v.meanPoints)} screen points, p90 ${n(v.p90Points)} screen points.${angle} coverage ${Number.isFinite(v.coverage) ? (100*v.coverage).toFixed(0) : '?'}%.\n${appearance ? 'image-model result only. ' : ''}shift in your chair and repeat the accuracy check to test robustness. mapping unchanged.`;
+    } else {
+      if (r.modelCandidates) $('diagnostics').textContent = JSON.stringify({selectedModel:r.selectedModel,candidates:r.modelCandidates},null,2);
+      $('result').textContent = r.applied ? 'screen calibration applied. now run the independent accuracy check; this fit is not proof of accuracy.' : `current mapping retained: ${r.reason || 'candidate was not applied'}`;
+    }
+  } catch (e) {$('result').textContent = `test failed: ${e.message}`;}
+  finally {busy = false; render();}
+}
+$('record').onclick = () => eye.send({type:'record_start'});
+$('stop-record').onclick = () => eye.send({type:'record_stop'});
+$('calibrate').onclick = () => collect(false);
+$('validate').onclick = () => collect(true);
+$('recenter').onclick = async () => {
+  busy = true; render();
+  try {
+    const r = await eye.calibrate({points:[[.5,.5]], sampleMs:2200, settleMs:800,
+      recenterOnly:true, label:'LOOK AT THE CENTER · KEEP YOUR HEAD COMFORTABLE AND STILL'});
+    $('result').textContent = r.ok && r.recenterOnly && r.applied
+      ? 'center offset corrected. now run check accuracy on separate targets; recentering is not proof of accuracy.'
+      : `recenter failed: ${r.error || 'receiver does not support recentering'}`;
+  } catch(e) { $('result').textContent = `recenter failed: ${e.message}`; }
+  finally { busy = false; render(); }
+};
+targets.on('select', selected => {$('selection').textContent = `selected ${selected.selector}; focused, awaiting your action.`;});
+for (const button of document.querySelectorAll('main button')) button.onclick = () => {$('selection').textContent = `activated ${button.id} · demo only`;};
+</script>
+</html>

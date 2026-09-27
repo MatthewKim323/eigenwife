@@ -120,7 +120,9 @@ class EyeCursor:
         self.mouse = Mouse(double_click_s=1.5, dry_run=dry_run)
         self.animator = CursorAnimator(self.mouse)
         self.snapper = Snapper(radius=settings.snap_radius) if settings.snap else None
-        self.tracker = Tracker(camera if camera is not None else settings.camera, on_frame=self.on_frame)
+        from .backend import for_calibration
+        self.tracker = Tracker(camera if camera is not None else settings.camera, on_frame=self.on_frame,
+                               appearance=for_calibration(calib))
         sound.enabled = settings.sounds
 
         # state the overlay reads
@@ -185,7 +187,7 @@ class EyeCursor:
     # tracker thread
     def on_frame(self, frame, obs, feats) -> None:
         t = frame.t
-        if feats is None:
+        if feats is None or (self.model is not None and len(gaze_vector(feats)) < self.model.n_features):
             self.face = False
             self._stable_since = None
             self.gestures.reset()

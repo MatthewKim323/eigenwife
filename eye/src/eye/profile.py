@@ -44,6 +44,38 @@ class FaceProfile:
     jaw_neutral: float = 0.02
     jaw_open: float = 0.55
     calibrated: bool = False
+    # Open-eye models use observable iris position and head pitch, never the
+    # displayed target or the gaze prediction that this filter is protecting.
+    gaze_quality_coeffs: tuple = ()  # four (intercept, iris-v, pitch/30) models
+    gaze_quality_bounds: tuple = ()  # min/max for left-v, right-v, pitch/30
+
+    def gaze_closure(self, f: Features) -> tuple[float, float]:
+        """Gaze data quality, separate from intentional expression gestures."""
+        if len(self.gaze_quality_coeffs) != 12 or len(self.gaze_quality_bounds) != 6:
+            return self.closure(f)
+        inputs = np.array([f.left.v, f.right.v, f.pitch / 30.0])
+        if not np.isfinite(inputs).all():
+            return 1.5, 1.5
+        bounds = np.asarray(self.gaze_quality_bounds).reshape(2, 3)
+        lv, rv, pitch = np.clip(inputs, bounds[0], bounds[1])
+        coeffs = np.asarray(self.gaze_quality_coeffs).reshape(4, 3)
+        open_values = [float(c @ [1, v, pitch])
+                       for c, v in zip(coeffs, [lv, rv, lv, rv])]
+        bl, br = self._bs(f)
+        result = []
+        for ear, bs, eo, bo, ec, bc in zip(
+            [f.left.ear, f.right.ear], [bl, br], open_values[:2], open_values[2:],
+            [self.ear_closed_l, self.ear_closed_r], [self.bs_closed_l, self.bs_closed_r],
+        ):
+            if not np.isfinite([ear, bs]).all():
+                result.append(1.5)
+                continue
+            e = _norm(ear, max(eo, ec + 0.04), ec)
+            b = _norm(bs, min(bo, bc - 0.12), bc)
+            # Moderate closure needs agreement. Severe geometric closure is
+            # still rejected even if the expression model misses a blink.
+            result.append(max(min(e, b), e if e >= 0.75 else 0.0))
+        return tuple(result)
 
     def _bs(self, f: Features) -> tuple[float, float]:
         a, b = f.bs_blink
@@ -80,7 +112,8 @@ class FaceProfile:
         kwargs = {}
         for name, default in asdict(cls()).items():
             if prefix + name in d:
-                kwargs[name] = type(default)(np.asarray(d[prefix + name]).item())
+                value = np.asarray(d[prefix + name])
+                kwargs[name] = tuple(value.tolist()) if isinstance(default, tuple) else type(default)(value.item())
         return cls(**kwargs)
 
 

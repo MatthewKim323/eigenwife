@@ -1,9 +1,10 @@
 # eye
 
-A webcam eye cursor for macOS. Your gaze moves the pointer, a held blink clicks.
+Local eye tracking for macOS, with webcam and iPhone TrueDepth-assisted modes.
 
-No hardware beyond the built-in camera. Everything runs locally: frames never leave the
-machine and nothing is written except your calibration.
+The iPhone image-model challenger runs UniGaze on the Mac, with a personal calibration, independent accuracy checks, and a continuously animated browser gaze cursor. Start with the [iPhone setup guide](docs/IPHONE-APP.md) and [implementation and measured results](docs/IPHONE-REBUILD-PLAN.md). Model weights and personal profiles are not bundled.
+
+The webcam commands below use the built-in camera. Phone frames travel over the paired local connection; optional research recording saves images only on the Mac. Nothing is uploaded to a cloud inference service.
 
 ```bash
 uv run eye doctor      # permissions, cameras, displays
@@ -98,7 +99,7 @@ uv run eye serve          # http://127.0.0.1:8765/ demo page, ws://127.0.0.1:876
 ```
 
 For serve, `eye calibrate --no-expressions` skips the blink/wink/brow steps (not used).
-Open the demo page, hit **quick calibrate** (5 dots, ~10 s), look around. The full
+Open the demo page in fullscreen at 100% zoom, run **quick calibrate**, then **measure accuracy**. The full
 `eye calibrate` should happen beforehand; the quick one fits a small drift correction on
 top of it (saved to `~/.eye/correction.json`, `--fresh` ignores it) and is only applied
 if it beats no correction on held-out dots.
@@ -114,8 +115,8 @@ eye.stats();   // { prompt_1: { dwellMs, visits, revisits, fixations, longestMs,
 await eye.calibrate();                        // the LOOK HERE dots
 ```
 
-Screen to page coords assume the browser chrome is on top and zoom is 100%. Fullscreen
-the page for the demo; the quick calibration absorbs whatever offset is left.
+Screen-to-page mapping requires document fullscreen on the calibrated display at 100% zoom.
+Unknown geometry disables mapped gaze; drift calibration must not absorb browser chrome offsets.
 
 Raw protocol, for non-browser consumers (jabby): JSON messages, coordinates in macOS
 screen points (`x`, `y`) and normalized display coords (`nx`, `ny`), times in epoch ms.
@@ -135,20 +136,48 @@ screen points (`x`, `y`) and normalized display coords (`nx`, `ny`), times in ep
 
 ## Calibration
 
-Once per setup (or after you move the laptop a lot). About 90 seconds:
+Once per setup (or after you move the laptop a lot). About two minutes without expression gestures:
 
 1. 13 dots to look at.
-2. A dot that circles the screen edges, slowly. Follow it with your eyes.
-3. Four dots where you **keep looking at the dot while slowly moving your head**. Don't
-   skip this: a model calibrated with a perfectly still head measures ~4° of error while
-   still and ~31° once you move.
-4. Five guided expressions: both eyes shut, each wink, brows, mouth. Tones tell you when.
-5. Five fresh dots to measure accuracy honestly, then a live preview before saving.
+2. A dot that circles the screen edges, slowly.
+3. Five head-motion targets repeated for yaw and nod/lean movements, with neutral recenter cues.
+4. Optional guided expressions for cursor mode; skip with `--no-expressions` for gaze streaming.
+5. Nine neutral and five moving-head validation targets, then a live preview before saving.
 
 Under about 2.5° is good. `--quick` (~45 s) drops to 9 points and skips the sweep and head motion.
 
 Every run also saves raw landmarks to `~/.eye/sessions/`, so `eye fit` can try a
 different model later without recalibrating.
+
+### Optional image-based research backend
+
+MGazeNet supplies local image features alongside the landmark features. Its weights
+and adapted preprocessing use **CC BY-NC-SA 4.0**; this optional path is for
+noncommercial research. See `src/eye/appearance.py` for pinned provenance.
+
+From the `eye` directory:
+
+```bash
+uv run --extra appearance eye prepare-appearance
+uv run --extra appearance eye calibrate --backend appearance --no-expressions --serve-after
+```
+
+Stop any running tracker first so it releases the camera. Press Space at the intro
+to begin. Validation retries targets with insufficient usable samples up to twice;
+all attempts remain in reported aggregate errors and coverage. The model stays
+frozen during validation. Results include a separately fitted landmark baseline
+measured on the same validation session. Better accuracy must be measured, not assumed.
+
+Press Space on results to save explicitly, or Escape to discard. `--serve-after`
+starts the gaze server with the saved model, or the previous model after cancellation.
+Existing calibration is backed up before replacement. For later starts use
+`uv run --extra appearance eye serve`; model metadata enforces matching features
+and verified weights without silently falling back to landmarks.
+
+Replay recordings include the image feature vectors, not camera images. Old
+landmark-only recordings cannot train the image-based backend. Browser validation
+also retries low-coverage targets and reports live rejection reasons; it does not
+alter the fitted mapping to improve its own score.
 
 ## Tuning
 
@@ -196,3 +225,101 @@ machine, `pointer.py` cursor control, `snap.py` accessibility targets, `app.py` 
 
 Pinned deliberately: `mediapipe==1.0.0` (1.0.1 aborts on macOS) and
 `opencv-contrib-python==4.13` (5.0's arm64 resize segfaults).
+
+## Reliable attention tracking
+
+Use `eye serve` for Eigenwife; `eye run` is the separate cursor-control tool.
+
+1. Run `uv run eye calibrate --no-expressions` for the full, roughly two-minute calibration. Follow the yaw, nod/lean, and return-to-neutral cues. The quick script does not cover head movement.
+2. Stop/restart `eye serve` after saving a new calibration; it loads the model at startup. Existing recordings remain available for replay.
+3. Open the tracker or shell in a normal browser on the calibrated display, at 100% zoom, and use **enter fullscreen**. Embedded browser panels and unknown viewport geometry deliberately disable mapped gaze.
+4. Run **check drift and recalibrate**, then **measure accuracy**. The latter uses a fresh nine-target sequence and does not fit or change the mapping. It reports valid-frame mean, p90, worst error and coverage. At least 80% of captured frames at every target must be usable; missing targets fail validation.
+
+The native calibration also reports individual-frame errors and target coverage. A validation with insufficient coverage does not auto-save. `Space` still lets you explicitly save it for diagnosis, but that does not make the accuracy reliable.
+
+Eye tracking never silently falls back to the mouse. `?gaze=mouse` explicitly enables simulation and displays that state. Lost faces, blinks, out-of-range head poses, sample gaps, and ambiguous targets clear attention. The cursor is smoothed separately from DOM attention; small shifts can now change the target without waiting for a backend saccade event.
+
+`accuracyDeg` is the saved base estimate, or the mean of the last independent live validation. After a correction it is unknown until validated. `uncertaintyDeg` is separately labelled as either a conservative estimate or a live-validation p90; it is used to abstain when another visible target lies within the estimated error radius. Neither value guarantees future accuracy. Corrections are bound to the model/profile/display fingerprint and ignored after a new calibration.
+
+Replay a recording without touching the active calibration:
+
+```bash
+uv run python -m eye.audit ~/.eye/sessions/calib-YYYYMMDD-HHMMSS.npz > /tmp/eye-audit.json
+```
+
+This reports whole-head-target holdouts, untrimmed validation errors, neutral/moving-head metrics, and coverage. Calibration profile fitting excludes validation; regression normalization is learned within each cross-validation fold.
+
+From `eye/`, `uv run --extra appearance pytest -q` and `node --test tests/*.test.mjs` run Python and browser-client regressions. Live human accuracy still needs the independent check above.
+
+## DOM selection and browser integration
+
+The demo now includes a DOM target mode: look at a distinct button/link/control,
+wait for a green outline, then press **Alt+Enter** to select and focus it. Selection
+emits a descriptor (`selector`, `tag`, `role`, `label`, `uncertaintyPx`, `source`)
+and never invokes `.click()`. Standard keyboard activation remains explicit.
+
+```js
+import { GazeDOMTargets } from './dom-targets.js';
+const targets = new GazeDOMTargets(eye);
+targets.on('select', ({ element, selector, role, label }) => {
+  console.log({ selector, role, label });
+});
+// On teardown: targets.destroy(); eye.close();
+```
+
+Targets clear on blink/loss, stale data, scrolling, resize, or DOM changes.
+Nearby competing controls cause automatic abstention. Press Alt+Space to explicitly
+open a numbered list of nearby controls, then 1–9 to select/focus one or Escape to
+dismiss. Mark app-owned overlay/panel elements
+with `data-eye-ui` to exclude them from targeting and mutation invalidation.
+
+For regular websites, see [Chrome extension setup](browser-extension/README.md).
+The extension is built locally, enabled per tab, and requires an exact extension
+ID on `eye serve --extension-id ID`. Fullscreen geometry remains required.
+
+The upgraded fitting pipeline learns gaze-specific open-eye baselines from
+observed iris position and head pitch, separately from cursor expression gestures.
+Robust ridge fitting is selected by grouped training cross-validation only when
+it improves that score materially. Validation data never fits those weights.
+Saved-session replay is development evidence; repeat a fresh live validation
+before claiming an accuracy improvement for a new setup.
+
+### Geometry-aware research challenger
+
+The live MGazeNet model remains the baseline. The optional UniGaze-B pipeline
+uses measured camera intrinsics, exact checkpoint normalization and an isolated
+personal screen mapping. It is not activated automatically and has not yet
+passed a fresh-session accuracy comparison on this laptop.
+
+Start with [the rebuild guide](docs/GAZE-FRONTIER-REBUILD.md),
+[camera calibration](docs/GAZE-INTRINSICS.md), and
+[UniGaze setup/replay](docs/GAZE-UNIGAZE.md).
+
+From this `eye` directory, explicitly record identical camera frames while
+saving a separate candidate:
+
+```sh
+uv run --extra appearance eye calibrate --backend appearance --no-expressions \
+  --candidate-only --record-images "$HOME/.eye/research-captures"
+uv run --extra appearance python -m eye.capture_replay /path/to/completed-capture
+```
+
+Images stay local, are lossless, and are retained on cancel; default calibration
+never records them. Capture has a bounded queue and 2 GB limit per attempt; every
+drop is recorded, and the limit can be raised with `--capture-max-mb`. The
+introduction waits for Space before recording starts. A separate run after
+reseating is required to evaluate the first frozen candidate independently.
+
+After producing a UniGaze ray JSONL using the setup guide:
+
+```sh
+uv run --extra appearance python -m eye.challenger \
+  --capture /path/to/completed-capture --rays /path/to/rays.jsonl \
+  --output /path/to/new-experiment --baseline "$HOME/.eye/calibration.npz"
+```
+
+This writes a new `candidate.npz`, aligned `session.npz`, and `report.json`.
+Reports compare the frozen incumbent and challenger on identical frames with
+separate coverage figures. Existing outputs are protected; validation features are hidden from fitting.
+The resulting ray backend is offline only and intentionally cannot be loaded
+by the live MGazeNet runtime.

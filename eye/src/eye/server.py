@@ -12,6 +12,9 @@ from __future__ import annotations
 import asyncio
 import json
 import mimetypes
+import ipaddress
+import re
+from urllib.parse import urlsplit
 from pathlib import Path
 
 from websockets.asyncio.server import ServerConnection, broadcast, serve
@@ -24,20 +27,52 @@ from .config import Settings
 from .screen import Display
 from .stream import Correction, GazeStream
 from .tracker import Tracker
+from .backend import for_calibration
 
 WEB_DIR = Path(__file__).parent / "web"
 
-def load_correction() -> Correction | None:
+def load_correction(stream: GazeStream) -> Correction | None:
     path = paths.correction_file()
     if not path.exists():
         return None
     try:
-        return Correction.from_json(path.read_text())
-    except (ValueError, KeyError):
+        data = json.loads(path.read_text())
+        if not stream.fingerprint() or data.get("fingerprint") != stream.fingerprint():
+            return None
+        correction = Correction.from_json(json.dumps(data))
+        loo = data.get("looDeg")
+        if isinstance(loo, (int, float)) and 0 <= loo < 90:
+            stream.correction_loo_deg = float(loo)
+        return correction
+    except (ValueError, KeyError, TypeError, OSError):
         return None
 
 
-def _static(request: Request) -> Response | None:
+def _loopback_origin(origin: str) -> bool:
+    try:
+        parsed = urlsplit(origin)
+        if parsed.scheme not in ("http", "https") or parsed.username or parsed.password or parsed.path or parsed.query or parsed.fragment:
+            return False
+        _ = parsed.port
+        return parsed.hostname == "localhost" or ipaddress.ip_address(parsed.hostname).is_loopback
+    except (ValueError, TypeError):
+        return False
+
+
+def extension_origin(extension_id: str | None) -> str | None:
+    if extension_id is None:
+        return None
+    if not re.fullmatch(r"[a-p]{32}", extension_id):
+        raise ValueError("extension ID must be the 32 lowercase letters shown in chrome://extensions")
+    return f"chrome-extension://{extension_id}"
+
+
+def _static(request: Request, allowed_extension: str | None = None) -> Response | None:
+    origins = request.headers.get_all("Origin")
+    origin = origins[0] if len(origins) == 1 else None
+    extension_ws = allowed_extension is not None and origin == allowed_extension and request.path == "/ws"
+    if origins and (origin is None or not (_loopback_origin(origin) or extension_ws)):
+        return Response(403, "Forbidden", Headers({"Content-Type": "text/plain"}), b"loopback origins only\n")
     path = request.path.split("?", 1)[0]
     if path == "/ws":
         return None  # websocket handshake
@@ -47,10 +82,13 @@ def _static(request: Request) -> Response | None:
         return Response(404, "Not Found", Headers({"Content-Type": "text/plain"}), b"not found\n")
     ctype = mimetypes.guess_type(file.name)[0] or "application/octet-stream"
     headers = Headers({"Content-Type": ctype, "Cache-Control": "no-store"})
+    if origin:
+        headers["Access-Control-Allow-Origin"] = origin
+        headers["Vary"] = "Origin"
     return Response(200, "OK", headers, file.read_bytes())
 
 
-async def _serve(stream: GazeStream, tracker: Tracker, host: str, port: int) -> None:
+async def _serve(stream: GazeStream, tracker: Tracker, host: str, port: int, allowed_extension: str | None = None) -> None:
     loop = asyncio.get_running_loop()
     clients: set[ServerConnection] = set()
 
@@ -69,7 +107,12 @@ async def _serve(stream: GazeStream, tracker: Tracker, host: str, port: int) -> 
                     msg = json.loads(text)
                 except ValueError:
                     continue
-                reply = stream.command(msg)
+                if not isinstance(msg, dict):
+                    continue
+                try:
+                    reply = stream.command(msg)
+                except (ValueError, TypeError, KeyError, OverflowError) as exc:
+                    reply = {"type": "error", "error": str(exc)}
                 if reply is None:
                     continue
                 if reply.get("type") == "calib_result":
@@ -82,7 +125,7 @@ async def _serve(stream: GazeStream, tracker: Tracker, host: str, port: int) -> 
             clients.discard(ws)
 
     async def process_request(connection: ServerConnection, request: Request):
-        return _static(request)
+        return _static(request, allowed_extension)
 
     async with serve(handler, host, port, process_request=process_request) as server:
         tracker.start()
@@ -98,7 +141,10 @@ def _persist(stream: GazeStream) -> None:
     if stream.correction.identity:
         path.unlink(missing_ok=True)
     else:
-        path.write_text(stream.correction.to_json())
+        data = json.loads(stream.correction.to_json())
+        data["fingerprint"] = stream.fingerprint()
+        data["looDeg"] = stream.correction_loo_deg
+        path.write_text(json.dumps(data))
 
 
 def run(
@@ -109,19 +155,22 @@ def run(
     host: str = "127.0.0.1",
     port: int = 8765,
     fresh: bool = False,
+    extension_id: str | None = None,
 ) -> None:
-    correction = None if fresh else load_correction()
-
+    allowed_extension = extension_origin(extension_id)
     stream = GazeStream(
         display,
         calib,
         emit=lambda msg: None,
-        correction=correction,
+
         distance_cm=settings.pointer.distance_cm,
         fixation_radius_deg=settings.pointer.fixation_radius_deg,
     )
-    tracker = Tracker(camera if camera is not None else settings.camera, on_frame=stream.on_frame)
+    if not fresh:
+        stream.correction = load_correction(stream) or Correction()
+    tracker = Tracker(camera if camera is not None else settings.camera, on_frame=stream.on_frame,
+                      appearance=for_calibration(calib))
     try:
-        asyncio.run(_serve(stream, tracker, host, port))
+        asyncio.run(_serve(stream, tracker, host, port, allowed_extension))
     except KeyboardInterrupt:
         pass

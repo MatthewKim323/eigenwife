@@ -56,12 +56,14 @@ def run(camera=None, mirror: bool = True) -> None:
             info["closure"] = (cl, cr)
             info["parts"] = profile.closure_parts(feats)
             info["expr"] = (profile.brow_level(feats), profile.jaw_level(feats))
-            if model is not None:
+            if model is not None and len(gaze_vector(feats)) >= model.n_features:
                 info["gaze"] = model.predict(gaze_vector(feats))[0]
         with lock:
+            latest.clear()
             latest.update(info)
 
-    tracker = Tracker(camera, on_frame=on_frame).start()
+    from .backend import for_calibration
+    tracker = Tracker(camera, on_frame=on_frame, appearance=for_calibration(calib)).start()
     print(f"camera: {tracker.camera.info.name} {tracker.camera.frame_size}. q or esc to quit")
     cv2.namedWindow("eye debug", cv2.WINDOW_NORMAL)
     try:

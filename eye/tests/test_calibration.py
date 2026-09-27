@@ -48,7 +48,7 @@ def synthetic_recording(script, seed=0, swap=False, blink_every=None):
     while t < script.duration:
         cue = script.at(t)
         yaw = pitch = 0.0
-        if cue.step.kind == cal.HEAD:
+        if cue.step.kind == cal.HEAD or (cue.step.kind == cal.VALIDATE and cue.step.what == "motion"):
             yaw, pitch = 9 * np.sin(cue.tau * 1.3), 5 * np.sin(cue.tau * 0.9)
         gx, gy = cue.x - 0.5, cue.y - 0.5
         # the eyes counter-rotate against the head to stay on the target
@@ -140,3 +140,60 @@ def test_head_only_calibration_still_fits_but_says_so():
     res = cal.fit(synthetic_recording(script), script, DISPLAY, latency=0.0)
     assert res.stats["validation_points"] < 80
     assert res.stats["head_range_deg"][0] < 2  # quick run has no head motion
+
+
+def test_validation_cannot_change_profile_or_model():
+    script = cal.build_script(quick=True, expressions=False)
+    rec = synthetic_recording(script)
+    before = cal.fit(rec, script, DISPLAY, latency=0)
+    # Corrupt only validation with open eyes and extreme gaze features.
+    for t, f in zip(rec.t, rec.features):
+        if script.at(t).step.kind == cal.VALIDATE:
+            f.left.u += 0.4
+            f.right.u += 0.4
+            f.brow = 0.9
+            f.jaw = 0.9
+    after = cal.fit(rec, script, DISPLAY, latency=0)
+    for key, value in before.profile.to_arrays().items():
+        assert np.array_equal(value, after.profile.to_arrays()[key])
+    assert np.allclose(before.model.coef, after.model.coef)
+    assert after.stats["validation_frame_mean_points"] > before.stats["validation_frame_mean_points"] * 2
+    assert after.stats["validation_samples"] == before.stats["validation_samples"]
+
+
+def test_pursuit_lag_does_not_shift_static_or_validation_labels():
+    script = cal.build_script(expressions=False)
+    rec = synthetic_recording(script)
+    base = {i: cue for i, cue in cal._label(rec, script, 0.05)}
+    shifted = {i: cue for i, cue in cal._label(rec, script, 0.05, pursuit_latency=0.3)}
+    for i, cue in base.items():
+        if cue.step.kind != cal.PURSUIT:
+            assert shifted[i] == cue
+
+
+def test_head_targets_repeat_across_poses_and_are_held_out_together():
+    script = cal.build_script(expressions=False)
+    rec = synthetic_recording(script)
+    profile, _ = cal.fit_profile(rec, script)
+    _, y, groups, _, kinds, _ = cal._prepare(rec, script, profile, 0)
+    heads = [step for step in script.steps if step.kind == cal.HEAD]
+    for target in cal.HEAD_POINTS:
+        assert len({step.what for step in heads if (step.x, step.y) == target}) == 2
+        mask = (kinds == cal.HEAD) & np.all(y == target, axis=1)
+        assert len(np.unique(groups[mask])) == 1
+    assert sum(step.kind == cal.VALIDATE and step.what == "motion" for step in script.steps) == 5
+    assert script.duration < 160
+
+
+def test_validation_outliers_remain_and_missing_faces_reduce_coverage():
+    script = cal.build_script(quick=True, expressions=False)
+    rec = synthetic_recording(script)
+    rows = [(i, cue) for i, cue in cal._label(rec, script, 0) if cue.step.kind == cal.VALIDATE]
+    rec.features[rows[1][0]].left.u = 100
+    for i, _ in rows[::2]:
+        rec.features[i] = None
+    res = cal.fit(rec, script, DISPLAY, latency=0)
+    assert 0.45 < res.stats["validation_coverage"] < 0.55
+    assert res.stats["validation_complete"] is False
+    assert res.stats["validation_frame_worst_points"] > res.stats["validation_frame_p90_points"]
+    assert res.stats["validation_samples"] == len(rows) - len(rows[::2])

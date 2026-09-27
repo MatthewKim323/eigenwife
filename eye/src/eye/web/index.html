@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>eye serve</title>
+<title>eye · browser gaze playground</title>
 <style>
   :root { --bg: #0b0b10; --card: #15151d; --line: #262633; --dim: #8a8aa0; --fg: #f2f2f7; --hot: #ff5c93; --ok: #6ee7b7; }
   * { box-sizing: border-box; }
@@ -15,7 +15,9 @@
   header .grow { flex: 1; }
   button { background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; padding: 7px 12px; font: inherit; cursor: pointer; }
   button:hover { border-color: var(--dim); }
-  main { display: grid; grid-template-columns: 1fr 300px; height: calc(100vh - 57px); }
+  main { display: grid; grid-template-columns: 1fr 300px; height: calc(100vh - 112px); }
+  .dense-toolbar { display:flex; gap:8px; align-items:center; padding:8px 20px; border-bottom:1px solid var(--line); }
+  .dense-toolbar span { color:var(--dim); margin-right:16px; }
   .profile { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 28px; padding: 28px; }
   .region { position: relative; border-radius: 18px; background: var(--card); border: 2px solid transparent; display: flex; align-items: center; justify-content: center; padding: 28px; transition: border-color .15s, box-shadow .15s; }
   .region.photo { background: linear-gradient(135deg, #2a2440, #3b2238 60%, #1e2a3a); }
@@ -34,31 +36,46 @@
 </style>
 </head>
 <body>
-<header class="mono">
+<header class="mono" data-eye-ui>
   <span id="conn" class="chip">offline</span>
   <span id="face" class="chip">no face</span>
   <span id="acc" class="chip">uncalibrated</span>
   <span class="grow"></span>
+  <button id="fullscreen">enable fullscreen tracking</button>
   <button id="calib">quick calibrate</button>
+  <button id="validate">measure accuracy</button>
   <button id="reset">reset stats</button>
 </header>
+<nav class="dense-toolbar" aria-label="Dense controls demo">
+  <span>crowded controls · Alt+Space to choose</span>
+  <button id="demo-back" class="demo-control">back</button>
+  <button id="demo-reload" class="demo-control">reload</button>
+  <button id="demo-bookmark" class="demo-control">bookmark</button>
+  <button id="demo-copy" class="demo-control">copy link</button>
+  <button id="demo-tab" class="demo-control">new tab</button>
+</nav>
 <main>
   <section class="profile">
-    <div class="region photo" data-gaze="photo_1"><span class="tag mono">photo_1</span></div>
-    <div class="region" data-gaze="prompt_1"><span class="tag mono">prompt_1</span><p>my most controversial opinion: tabs are better than spaces</p></div>
-    <div class="region" data-gaze="prompt_2"><span class="tag mono">prompt_2</span><p>looking for someone to split a $21 ramen with</p></div>
-    <div class="region photo" data-gaze="photo_2"><span class="tag mono">photo_2</span></div>
+    <button id="browse-profile" class="region photo" data-gaze="photo_1"><span class="tag mono">read article</span><p>open article</p></button>
+    <button id="read-prompt" class="region" data-gaze="prompt_1"><span class="tag mono">prompt_1</span><p>search this page</p></button>
+    <button id="save-profile" class="region" data-gaze="prompt_2"><span class="tag mono">prompt_2</span><p>save for later</p></button>
+    <button id="next-profile" class="region photo" data-gaze="photo_2"><span class="tag mono">next page</span><p>next page</p></button>
   </section>
-  <aside class="mono">
-    <h2>ATTENTION</h2>
+  <aside class="mono" data-eye-ui>
+    <h2>DOM SELECTION</h2>
+    <p id="target">look at a large button. yellow means settling; green means ready. press Alt+Enter to select and focus it. then use Enter normally to activate. for crowded controls, Alt+Space opens numbered choices.</p>
+    <p id="selected">no selection yet</p>
+    <h2>TIME LOOKING AT EACH TILE</h2>
     <table id="stats"></table>
+    <p id="empty" style="color:var(--dim)">waiting for the tracker. this table fills when you look steadily at the center of a tile.</p>
     <h2>EVENTS</h2>
     <div id="log"></div>
   </aside>
 </main>
-<div id="dot"></div>
+<div id="dot" data-eye-ui></div>
 <script type="module">
   import { EyeClient } from "./eye-client.js";
+  import { GazeDOMTargets } from "./dom-targets.js";
 
   const eye = new EyeClient();
   window.eye = eye;
@@ -66,14 +83,36 @@
   const lines = [];
   const log = (s) => { lines.unshift(s); lines.length = Math.min(lines.length, 14); $("log").textContent = lines.join("\n"); };
 
+  const targets = new GazeDOMTargets(eye);
+  window.gazeTargets = targets;
+  targets.on("candidate", candidate => {
+    $("target").textContent = candidate
+      ? `${candidate.stable ? "ready — Alt+Enter to select" : "settling"}: ${candidate.label || candidate.selector}`
+      : "no clear target. look near a button’s center; nearby competing controls remain unassigned.";
+  });
+  targets.on("select", selected => {
+    $("selected").textContent = `selected ${selected.selector} (${selected.role}). focused, awaiting your action.`;
+    log(`SELECT ${selected.selector}`);
+    window.dispatchEvent(new CustomEvent("gaze-select", { detail: selected }));
+  });
+  for (const button of document.querySelectorAll(".profile button, .demo-control")) {
+    button.addEventListener("click", () => log(`ACTIVATED ${button.id} — demo only`));
+  }
+
+  let latestStatus = eye.status();
+  let busy = false;
   eye.on("status", (s) => {
+    latestStatus = s;
     $("conn").textContent = s.connected ? "eye serve" : "offline";
     $("conn").classList.toggle("on", s.connected);
     $("face").textContent = s.face ? "face" : "no face";
     $("face").classList.toggle("on", s.face);
-    $("acc").textContent = !s.calibrated ? "uncalibrated" : `calib ${s.accuracyDeg?.toFixed(1)}°${s.corrected ? " +drift fix" : ""}`;
-    $("acc").classList.toggle("on", s.calibrated);
+    $("acc").textContent = s.guidance || s.reason || (!s.calibrated ? "uncalibrated" : s.accuracyValidated && Number.isFinite(s.accuracyDeg) ? `validation ${s.accuracyDeg.toFixed(1)}°` : Number.isFinite(s.uncertaintyDeg) ? `estimated uncertainty ${s.uncertaintyDeg.toFixed(1)}°` : "accuracy unverified");
+    if (!s.valid) $("dot").style.display = "none";
+    $("acc").classList.toggle("on", s.valid);
+    for (const id of ["calib", "validate"]) $(id).disabled = busy || !s.connected || !s.calibrated;
   });
+  eye.on("lost", () => { $("dot").style.display = "none"; });
   eye.on("gaze", (g) => {
     const dot = $("dot");
     dot.style.display = "block";
@@ -84,17 +123,47 @@
   eye.on("enter", ({ el }) => el.classList.add("looking"));
   eye.on("leave", ({ el }) => el.classList.remove("looking", "fixed"));
   eye.on("fixation", ({ el, key }) => { if (el) el.classList.add("fixed"); });
-  eye.on("fixation_end", ({ el, key, ms }) => { if (key) log(`${key.padEnd(10)} ${(ms / 1000).toFixed(1)}s`); });
+  eye.on("fixation_end", ({ el, key, ms }) => { el?.classList.remove("fixed"); if (key) log(`${key.padEnd(10)} ${(ms / 1000).toFixed(1)}s`); });
 
   const render = () => {
     const rows = Object.entries(eye.stats()).sort((a, b) => b[1].dwellMs - a[1].dwellMs);
     $("stats").innerHTML = rows.map(([k, s]) => `<tr><td>${k}</td><td>${(s.dwellMs / 1000).toFixed(1)}s</td><td>${s.revisits ? "rev " + s.revisits : ""}</td></tr>`).join("");
+    $("empty").style.display = rows.length ? "none" : "block";
+    const s = latestStatus;
+    $("empty").textContent = !s.connected ? "tracker disconnected. start eye serve and reload."
+      : s.guidance || (s.reason === "head_pose_outside_calibration"
+        ? "return to your calibrated head position. if that does not restore tracking, run a fresh base calibration; quick correction cannot extend the learned head range."
+        : s.reason ? `tracking paused: ${s.reason}`
+        : !s.face ? "keep your face visible to the camera."
+        : "look steadily at the center of a tile. its time appears here once the tracker can distinguish it from its neighbors; uncertain gaze is left unassigned.");
   };
   setInterval(render, 250);
 
+  $("fullscreen").onclick = async () => {
+    try { await document.documentElement.requestFullscreen(); }
+    catch (error) { log(`FULLSCREEN FAILED ${error.message}`); }
+  };
+  const collect = async (validate) => {
+    busy = true;
+    $("calib").disabled = $("validate").disabled = true;
+    try { return await (validate ? eye.validate() : eye.calibrate()); }
+    finally {
+      busy = false;
+      $("calib").disabled = $("validate").disabled = !latestStatus.connected || !latestStatus.calibrated;
+    }
+  };
+  eye.on("calib_progress", p => {
+    if (!p.done && p.attempt > 1) log(`retrying dot ${p.index + 1}/${p.total}; attempt ${p.attempt}/3. collected frames are retained.`);
+  });
   $("calib").onclick = async () => {
-    const r = await eye.calibrate();
-    log(r.ok ? `CALIBRATED ${r.beforeDeg}° -> ${r.afterDeg}° (held out ${r.looDeg ?? "?"}°)${r.applied ? "" : " not applied"}` : `CALIBRATION FAILED ${r.error}`);
+    const r = await collect(false);
+    log(r.ok ? `${r.applied ? "APPLIED" : "KEPT CURRENT MAPPING"}: old mapping on these targets ${r.currentDeg ?? "?"}°; candidate held-out estimate ${r.looDeg ?? "?"}°; training fit ${r.afterDeg ?? "?"}°. independent validation still required.${r.reason ? ` ${r.reason}` : ""}` : `CALIBRATION FAILED ${r.error}`);
+  };
+  $("validate").onclick = async () => {
+    const r = await collect(true);
+    if (!r.ok) return log(`VALIDATION FAILED ${r.error}`);
+    const v = r.validation ?? {};
+    log(`MEASURED ERROR: mean ${v.meanDeg ?? "?"}°, p90 ${v.p90Deg ?? "?"}°, worst ${v.worstDeg ?? "?"}° on valid frames; coverage ${Number.isFinite(v.coverage) ? (100 * v.coverage).toFixed(0) : "?"}%. mapping unchanged.`);
   };
   $("reset").onclick = () => { eye.resetStats(); render(); };
 </script>

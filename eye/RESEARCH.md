@@ -1,5 +1,7 @@
 # Webcam eye cursor: what the research says, and what we built
 
+> Historical design notes. See [the September 26 research update](../docs/GAZE-RESEARCH-2026-09-26.md) for fresh-session evidence, benchmark caveats, and the current recommendation. Several implementation details below have since changed.
+
 Research done 2026-09-21 across four parallel passes (gaze estimation, blink/click UX,
 macOS + MediaPipe platform, prior art). Everything below was checked against current
 sources, and the platform numbers were measured on this machine (M2 MacBook Air,

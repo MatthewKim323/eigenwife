@@ -76,17 +76,35 @@ def cmd_calibrate(args) -> int:
 
     settings = config.load()
     display = screen.pick(args.display if args.display is not None else settings.display)
-    ui = calibrate.run(display, args.camera or settings.camera, quick=args.quick, expressions=not args.no_expressions)
+    ui = calibrate.run(display, args.camera or settings.camera, quick=args.quick, expressions=not args.no_expressions,
+                       backend=args.backend, capture_root=args.record_images, candidate_only=args.candidate_only,
+                       capture_max_bytes=args.capture_max_mb * 1_000_000,
+                       width=args.width, height=args.height)
     if ui.saved_path is None:
         print("calibration discarded" if ui.cancelled else "calibration not saved")
+        if args.serve_after:
+            from . import calibration, server
+            server.run(settings, display, calibration.load(), camera=args.camera or settings.camera)
         return 1
     st = ui.result.stats
-    print(f"saved {ui.saved_path}")
+    print(f"saved {'candidate (active calibration unchanged)' if args.candidate_only else 'calibration'}: {ui.saved_path}")
+    for capture_path in ui.capture_paths:
+        print(f"local image capture: {capture_path}")
     print(f"raw session {ui.session_path}")
     if "validation_deg" in st:
-        print(f"accuracy ~{st['validation_deg']:.1f}° ({st['validation_points']:.0f} pt), {st['samples']} samples, alpha {st['alpha']:g}")
+        print(f"held-out frame error: mean {st['validation_frame_mean_points']:.0f} pt, p90 {st['validation_frame_p90_points']:.0f} pt, coverage {st['validation_coverage']:.0%}; {st['samples']} training samples")
     p = ui.result.profile
     print(f"winks: left {'ok' if p.wink_l else 'not detected'}, right {'ok' if p.wink_r else 'not detected'}")
+    if args.serve_after:
+        from . import calibration, server
+        server.run(settings, display, calibration.load(), camera=args.camera or settings.camera)
+    return 0
+
+
+def cmd_prepare_appearance(args) -> int:
+    from .appearance import prepare_model
+    print(f"verified research/noncommercial MGazeNet weights: {prepare_model(download=True)}")
+    print("start with: uv run --extra appearance eye calibrate --backend appearance --no-expressions --serve-after")
     return 0
 
 
@@ -130,6 +148,7 @@ def cmd_serve(args) -> int:
         host=args.host,
         port=args.port,
         fresh=args.fresh,
+        extension_id=args.extension_id,
     )
     return 0
 
@@ -145,8 +164,13 @@ def cmd_fit(args) -> int:
     rec, script, disp, camera_name = calibration.load_session(path)
     display = Display(0, disp["name"], 0, 0, disp["w"], disp["h"], 2.0, True, tuple(disp["mm"]))
     result = calibration.fit(rec, script, display)
+    from .validation_recovery import evaluate
+    evaluate(result, rec, script, display)
     st = result.stats
-    print(f"{path.name}: accuracy ~{st.get('validation_deg', float('nan')):.2f}° ({st.get('validation_points', float('nan')):.0f} pt), alpha {st['alpha']:g}, cv {st['cv_error']}")
+    print(f"{path.name}: held-out frame mean {st.get('validation_frame_mean_points', float('nan')):.1f} pt, "
+          f"p90 {st.get('validation_frame_p90_points', float('nan')):.1f} pt, "
+          f"coverage {st.get('validation_coverage', 0):.1%}, complete={st.get('validation_complete', False)}; "
+          f"training CV {st['cv_error']}, alpha {st['alpha']:g}")
     if args.save:
         print(f"saved {calibration.save(result, display, camera_name)}")
     return 0
@@ -178,7 +202,19 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--display", help="display name substring or index (default: built-in)")
     p.add_argument("--quick", action="store_true", help="9 points only, skip the sweep and head motion")
     p.add_argument("--no-expressions", action="store_true", help="skip the blink, wink, brow and mouth steps")
+    p.add_argument("--backend", choices=("landmarks", "appearance"), default="landmarks",
+                   help="appearance uses optional local MGazeNet research features and compares a landmark baseline")
+    p.add_argument("--record-images", type=Path, metavar="DIRECTORY",
+                   help="explicitly save local lossless camera images for model comparisons (also kept on cancel)")
+    p.add_argument("--capture-max-mb", type=int, default=2000, help="image storage limit per attempt; dropped frames stay in ledger")
+    p.add_argument("--candidate-only", action="store_true", help="save a separate candidate without replacing the active model")
+    p.add_argument("--width", type=int, default=1280, help="requested capture width (actual size recorded with image capture)")
+    p.add_argument("--height", type=int, default=720, help="requested capture height")
+    p.add_argument("--serve-after", action="store_true", help="start the app gaze server after saving (or restore it after cancel)")
     p.set_defaults(fn=cmd_calibrate)
+
+    p = sub.add_parser("prepare-appearance", help="download and verify the optional noncommercial image model")
+    p.set_defaults(fn=cmd_prepare_appearance)
 
     p = sub.add_parser("run", help="start the eye cursor")
     p.add_argument("--mode", choices=("hybrid", "gaze", "head"))
@@ -194,6 +230,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8765)
     p.add_argument("--fresh", action="store_true", help="ignore the saved drift correction")
+    p.add_argument("--extension-id", help="allow this specific Chrome extension to read gaze and calibrate")
     p.set_defaults(fn=cmd_serve)
 
     p = sub.add_parser("fit", help="refit the gaze model from a saved calibration session")
@@ -205,6 +242,8 @@ def main(argv: list[str] | None = None) -> int:
     p.set_defaults(fn=cmd_config)
 
     args = parser.parse_args(argv)
+    if args.cmd == "calibrate" and min(args.width, args.height, args.capture_max_mb) <= 0:
+        parser.error("capture dimensions and storage limit must be positive")
     if not getattr(args, "fn", None):
         parser.print_help()
         return 0

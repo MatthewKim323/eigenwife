@@ -23,7 +23,8 @@ from __future__ import annotations
 import json
 import math
 import time
-from dataclasses import asdict, dataclass, field
+import shutil
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 
 import numpy as np
@@ -151,8 +152,8 @@ class Script:
 
 GRID = [(x, y) for y in (0.05, 0.5, 0.95) for x in (0.05, 0.5, 0.95)]
 INNER = [(0.27, 0.27), (0.73, 0.27), (0.27, 0.73), (0.73, 0.73)]
-HEAD_POINTS = [(0.25, 0.3), (0.75, 0.3), (0.75, 0.7), (0.25, 0.7)]
-VALIDATION = [(0.5, 0.22), (0.2, 0.5), (0.8, 0.5), (0.5, 0.78), (0.5, 0.5)]
+HEAD_POINTS = [(0.12, 0.15), (0.88, 0.15), (0.5, 0.5), (0.88, 0.85), (0.12, 0.85)]
+VALIDATION = [(0.08, 0.08), (0.92, 0.08), (0.5, 0.22), (0.2, 0.5), (0.8, 0.5), (0.08, 0.92), (0.92, 0.92), (0.5, 0.78), (0.5, 0.5)]
 
 EXPRESSIONS = (
     ("both", "close BOTH eyes when the ring turns red, open at the beep", 1.5),
@@ -168,7 +169,7 @@ def build_script(quick: bool = False, expressions: bool = True) -> Script:
     steps: list[Step] = []
     prev = (0.5, 0.5)
 
-    def fixate(p, kind=FIXATE, glide=0.45, dwell=1.35, settle=0.5):
+    def fixate(p, kind=FIXATE, glide=0.45, dwell=1.35, settle=0.5, text="", what=""):
         nonlocal prev
         steps.append(
             Step(
@@ -181,6 +182,8 @@ def build_script(quick: bool = False, expressions: bool = True) -> Script:
                 glide_s=glide,
                 sample_from=glide + settle,
                 sample_to=glide + dwell,
+                text=text,
+                what=what,
             )
         )
         prev = p
@@ -192,22 +195,16 @@ def build_script(quick: bool = False, expressions: bool = True) -> Script:
     if not quick:
         steps.append(Step(PURSUIT, 15.0, sample_from=1.0, sample_to=15.0, text="follow the dot"))
         prev = _border_path(1.0)
-        for p in HEAD_POINTS:
-            steps.append(
-                Step(
-                    HEAD,
-                    4.5,
-                    x=p[0],
-                    y=p[1],
-                    from_x=prev[0],
-                    from_y=prev[1],
-                    glide_s=0.45,
-                    sample_from=1.4,
-                    sample_to=4.5,
-                    text="keep your eyes on the dot, slowly move your head around",
-                )
-            )
-            prev = p
+        # Repeat the same spatial targets under two different movements. A
+        # single head sweep at one target confounds gaze position with pose.
+        for motion, instruction in (
+            ("yaw", "keep looking at the dot; gently turn your head left and right"),
+            ("pitch_depth", "keep looking at the dot; gently nod and lean a little"),
+        ):
+            fixate((0.5, 0.5), dwell=2.0, text="return to your normal sitting position")
+            for p in HEAD_POINTS:
+                fixate(p, kind=HEAD, dwell=3.2, settle=0.9, text=instruction, what=motion)
+        fixate((0.5, 0.5), dwell=2.0, text="return to your normal sitting position")
     if expressions:
         for what, text, hold in EXPRESSIONS:
             steps.append(
@@ -222,7 +219,11 @@ def build_script(quick: bool = False, expressions: bool = True) -> Script:
             )
     prev = (0.5, 0.5)
     for p in VALIDATION:
-        fixate(p, kind=VALIDATE)
+        fixate(p, kind=VALIDATE, what="neutral", text="validation: look at the dot, sit naturally")
+    if not quick:
+        for p in [(0.15, 0.2), (0.85, 0.2), (0.5, 0.5), (0.85, 0.8), (0.15, 0.8)]:
+            fixate(p, kind=VALIDATE, dwell=3.2, settle=0.9, what="motion",
+                   text="validation: keep looking at the dot and gently move your head")
     return Script(steps)
 
 
@@ -236,6 +237,7 @@ class Recording:
     blend: list[np.ndarray | None] = field(default_factory=list)
     matrix: list[np.ndarray | None] = field(default_factory=list)
     clock: list[tuple[float, float]] = field(default_factory=list)  # (monotonic, script time)
+    feature_backend: dict = field(default_factory=lambda: {"name": "landmarks"})
 
     def add(self, t: float, features: Features | None, obs) -> None:
         self.t.append(t)
@@ -256,6 +258,7 @@ class Result:
     stats: dict
     validation: list[dict]  # per target: x, y, px, py (normalized), n
     train: tuple[np.ndarray, np.ndarray, np.ndarray] | None = None  # (x, y, weights) fit on
+    feature_backend: dict = field(default_factory=lambda: {"name": "landmarks"})
 
 
 @dataclass
@@ -266,13 +269,20 @@ class Calibration:
     train: tuple[np.ndarray, np.ndarray, np.ndarray] | None
 
 
-def _label(rec: Recording, script: Script, latency: float, sampling_only: bool = True):
+def _label(rec: Recording, script: Script, latency: float, sampling_only: bool = True,
+           pursuit_latency: float | None = None):
     times = rec.script_times(latency)
+    pursuit_times = rec.script_times(pursuit_latency) if pursuit_latency is not None else times
     rows = []
     for i, (st, f) in enumerate(zip(times, rec.features)):
         if f is None:
             continue
-        cue = script.at(st)
+        cue = script.at(st) if st >= 0 else None
+        if cue is not None and cue.step.kind == PURSUIT:
+            shifted = script.at(pursuit_times[i]) if pursuit_times[i] >= 0 else None
+            if shifted is None or shifted.index != cue.index:
+                continue
+            cue = shifted
         if cue is None or (sampling_only and not cue.sampling):
             continue
         rows.append((i, cue))
@@ -295,7 +305,7 @@ def fit_profile(rec: Recording, script: Script, close_on: float = 0.55) -> tuple
     for i, cue in rows:
         f = rec.features[i]
         raw = (f.left.ear, f.right.ear, f.bs_blink[0], f.bs_blink[1], f.brow, f.jaw)
-        if cue.step.kind in (FIXATE, VALIDATE):
+        if cue.step.kind == FIXATE:
             open_raw.append(raw)
             open_y.append(cue.y)
         elif cue.step.kind == EXPRESS:
@@ -381,7 +391,7 @@ def fit_profile(rec: Recording, script: Script, close_on: float = 0.55) -> tuple
     last_t = None
     for i, cue in _label(rec, script, 0.0, sampling_only=False):
         f = rec.features[i]
-        if cue.step.kind not in GAZE_KINDS:
+        if cue.step.kind not in (FIXATE, PURSUIT, HEAD):
             run_start = None
             continue
         cl, cr = prof.closure(f, cue.y)
@@ -407,26 +417,35 @@ def _line(values, base, slope, y_offsets, closed):
 
 def _training_set(rec: Recording, script: Script, rows, profile: FaceProfile):
     xs, ys, groups, weights, kinds, times = [], [], [], [], [], []
+    # Personalization CV holds out every observation of a static training
+    # target together, including neutral and repeated head-motion steps.
+    # Validation retains its step identity for per-target coverage reporting.
+    spatial_groups = {}
+    step_groups = {}
+    for j, step in enumerate(script.steps):
+        group = j * 1000
+        if step.kind in (FIXATE, HEAD):
+            group = spatial_groups.setdefault((step.x, step.y), group)
+        step_groups[j] = group
     for i, cue in rows:
         kind = cue.step.kind
         if kind not in GAZE_KINDS:
             continue
         f = rec.features[i]
-        cl, cr = profile.closure(f, cue.y)
+        cl, cr = profile.gaze_closure(f)
         if max(cl, cr) > 0.35:  # blinking or squinting: iris landmarks are unreliable
             continue
-        xs.append(gaze_vector(f))
+        vector = gaze_vector(f)
+        expected = len(GAZE_FEATURES) + rec.feature_backend.get("feature_count", 0)
+        if len(vector) != expected or not np.isfinite(vector).all():
+            continue
+        xs.append(vector)
         ys.append((cue.x, cue.y))
         times.append(f.t)
-        if kind == PURSUIT:
-            groups.append(cue.index * 1000 + int(cue.tau))
-            weights.append(0.5)
-        elif kind == HEAD:
-            groups.append(cue.index * 1000 + int(cue.tau / 1.5))
-            weights.append(1.0)
-        else:
-            groups.append(cue.index * 1000)
-            weights.append(1.0)
+        # A continuous pursuit is one temporal block. Splitting it by seconds
+        # leaks neighboring, strongly correlated frames across CV folds.
+        groups.append(step_groups[cue.index])
+        weights.append(0.5 if kind == PURSUIT else 1.0)
         kinds.append(kind)
     return (
         np.array(xs),
@@ -442,7 +461,7 @@ def _reject_outliers(x, groups, kinds):
     """Drop fixation samples far from their group's median (glances away, landmark glitches)."""
     keep = np.ones(len(x), dtype=bool)
     for g in np.unique(groups):
-        m = (groups == g) & np.isin(kinds, (FIXATE, VALIDATE))
+        m = (groups == g) & (kinds == FIXATE)
         if m.sum() < 5:
             continue
         sub = x[m, 0:4]
@@ -453,8 +472,8 @@ def _reject_outliers(x, groups, kinds):
     return keep
 
 
-def _prepare(rec, script, profile, latency):
-    rows = _label(rec, script, latency)
+def _prepare(rec, script, profile, latency, pursuit_latency=None):
+    rows = _label(rec, script, latency, pursuit_latency=pursuit_latency)
     x, y, groups, weights, kinds, times = _training_set(rec, script, rows, profile)
     if len(x) < 30:
         raise RuntimeError(f"only {len(x)} usable samples; was your face visible to the camera?")
@@ -462,7 +481,7 @@ def _prepare(rec, script, profile, latency):
     return x[keep], y[keep], groups[keep], weights[keep], kinds[keep], int((~keep).sum())
 
 
-def new_model() -> GazeModel:
+def new_model(n_features: int = len(GAZE_FEATURES)) -> GazeModel:
     """Linear ridge over all gaze features.
 
     Quadratic eye terms fit a still head slightly better (161 vs 166 pt
@@ -470,11 +489,25 @@ def new_model() -> GazeModel:
     head moves (~1000 pt vs ~330 pt on a held-out head-motion step), and a
     moving head is the normal case.
     """
-    return GazeModel(degree=1, scale_floor=GAZE_SCALE_FLOOR)
+    if n_features < len(GAZE_FEATURES):
+        raise ValueError("calibration feature vector is incomplete")
+    floor = np.concatenate((GAZE_SCALE_FLOOR, np.full(n_features - len(GAZE_FEATURES), 0.05)))
+    return GazeModel(degree=1, scale_floor=floor,
+                     robust_deltas=(None, 100.0, 200.0) if n_features > len(GAZE_FEATURES) else (None,))
+
+
+def landmark_recording(rec: Recording) -> Recording:
+    """Same timestamps/targets, without image features, for a paired baseline."""
+    return replace(rec, features=[None if f is None else replace(f, appearance=None) for f in rec.features],
+                   feature_backend={"name": "landmarks"})
 
 
 def fit(rec: Recording, script: Script, display, latency: float = 0.05, distance_cm: float = 55.0) -> Result:
     profile, notes = fit_profile(rec, script)
+    from .gaze_quality import fit_gaze_quality
+    quality_features = [rec.features[i] for i, cue in _label(rec, script, 0.0)
+                        if cue.step.kind in (FIXATE, HEAD)]
+    notes["gaze_quality"] = fit_gaze_quality(profile, quality_features)
     x, y, groups, weights, kinds, rejected = _prepare(rec, script, profile, latency)
     stats: dict = {"rejected": rejected, "profile": notes}
 
@@ -482,30 +515,42 @@ def fit(rec: Recording, script: Script, display, latency: float = 0.05, distance
     # lag). Estimate the lag with a fixation-only model, then re-label with it.
     fixed = kinds == FIXATE
     if (kinds == PURSUIT).any() and fixed.sum() > 30:
-        base = new_model()
-        base.fit(x[fixed], y[fixed], groups[fixed])
+        base = new_model(x.shape[1])
+        base.fit(x[fixed], y[fixed], groups[fixed], error_scale=[display.w, display.h])
         best = (math.inf, latency)
         for extra in np.arange(0.0, 0.31, 0.03):
-            rows = [r for r in _label(rec, script, latency + extra) if r[1].step.kind == PURSUIT]
+            rows = [r for r in _label(rec, script, latency, pursuit_latency=latency + extra) if r[1].step.kind == PURSUIT]
             lx, ly, *_ = _training_set(rec, script, rows, profile)
             if len(lx) > 20:
-                err = float(np.median(np.linalg.norm(base.predict(lx) - ly, axis=1)))
+                err = float(np.median(np.linalg.norm((base.predict(lx) - ly) * [display.w, display.h], axis=1)))
                 best = min(best, (err, latency + extra))
-        latency = best[1]
-        stats["pursuit_lag"] = round(latency, 3)
-        x, y, groups, weights, kinds, rejected = _prepare(rec, script, profile, latency)
+        stats["pursuit_lag"] = round(best[1], 3)
+        x, y, groups, weights, kinds, rejected = _prepare(rec, script, profile, latency, pursuit_latency=best[1])
         stats["rejected"] = rejected
 
     train = kinds != VALIDATE
     stats["samples"] = int(train.sum())
-    model = new_model()
-    stats.update(model.fit(x[train], y[train], groups[train], weights[train]))
+    if train.sum() < 30:
+        raise RuntimeError("fewer than 30 usable training samples; redo calibration with your face visible")
+    model = new_model(x.shape[1])
+    stats.update(model.fit(x[train], y[train], groups[train], weights[train], error_scale=[display.w, display.h]))
+    stats["cv_error_units"] = "screen_points"
+    stats["cv_grouping"] = "spatial-target-and-pursuit-step-v2"
 
+    # Count every recorded frame in each validation window, including missed
+    # faces. Score coverage separately from accuracy on usable predictions.
+    expected_by_group = {i * 1000: 0 for i, step in enumerate(script.steps) if step.kind == VALIDATE}
+    for t in rec.script_times(latency):
+        cue = script.at(t) if t >= 0 else None
+        if cue is not None and cue.step.kind == VALIDATE and cue.sampling:
+            expected_by_group[cue.index * 1000] += 1
     validation = []
     val = ~train
     for g in np.unique(groups[val]):
         m = val & (groups == g)
-        pred = np.median(model.predict(x[m]), axis=0)
+        predictions = model.predict(x[m])
+        pred = np.median(predictions, axis=0)
+        frame_errors = np.linalg.norm((predictions - y[m]) * [display.w, display.h], axis=1)
         validation.append(
             {
                 "x": float(y[m][0, 0]),
@@ -513,6 +558,12 @@ def fit(rec: Recording, script: Script, display, latency: float = 0.05, distance
                 "px": float(pred[0]),
                 "py": float(pred[1]),
                 "n": int(m.sum()),
+                "expected_samples": expected_by_group[g],
+                "coverage": float(m.sum() / expected_by_group[g]) if expected_by_group[g] else 0.0,
+                "mean_points": float(frame_errors.mean()),
+                "p90_points": float(np.percentile(frame_errors, 90)),
+                "worst_points": float(frame_errors.max()),
+                "condition": script.steps[int(g) // 1000].what or "neutral",
             }
         )
     if validation:
@@ -520,17 +571,47 @@ def fit(rec: Recording, script: Script, display, latency: float = 0.05, distance
         stats["validation_points"] = float(np.mean(errs))
         stats["validation_worst"] = float(np.max(errs))
         stats["validation_deg"] = display.degrees(float(np.mean(errs)), distance_cm)
-    stats["head_range_deg"] = [float(np.ptp(x[:, 6])), float(np.ptp(x[:, 7]))]
-    return Result(model, profile, stats, validation, (x[train], y[train], weights[train]))
+    # Coverage includes missed faces and closed-eye frames; neither disappears
+    # from the denominator. Validation has no feature-outlier rejection.
+    expected = sum(expected_by_group.values())
+    target_count = sum(step.kind == VALIDATE for step in script.steps)
+    stats["validation_samples"] = int(val.sum())
+    stats["validation_expected_samples"] = expected
+    stats["validation_coverage"] = float(val.sum() / expected) if expected else 0.0
+    stats["validation_targets"] = len(validation)
+    stats["validation_expected_targets"] = target_count
+    stats["validation_complete"] = bool(expected and stats["validation_coverage"] >= 0.8
+                                          and len(validation) == target_count
+                                          and all(v["coverage"] >= 0.8 for v in validation))
+    if val.any():
+        frame_errors = np.linalg.norm((model.predict(x[val]) - y[val]) * [display.w, display.h], axis=1)
+        stats["validation_frame_mean_points"] = float(frame_errors.mean())
+        stats["validation_frame_p90_points"] = float(np.percentile(frame_errors, 90))
+        stats["validation_frame_worst_points"] = float(frame_errors.max())
+        stats["validation_frame_mean_deg"] = display.degrees(float(frame_errors.mean()), distance_cm)
+        conditions = np.array([script.steps[int(g) // 1000].what or "neutral" for g in groups[val]])
+        stats["validation_conditions"] = {}
+        for condition in np.unique(conditions):
+            errors = frame_errors[conditions == condition]
+            stats["validation_conditions"][str(condition)] = {
+                "samples": len(errors), "mean_points": float(errors.mean()),
+                "p90_points": float(np.percentile(errors, 90)), "worst_points": float(errors.max()),
+            }
+    stats["head_range_deg"] = [float(np.ptp(x[train, 6])), float(np.ptp(x[train, 7]))]
+    return Result(model, profile, stats, validation, (x[train], y[train], weights[train]), dict(rec.feature_backend))
 
 
 def save(result: Result, display, camera_name: str, path: Path | None = None) -> Path:
+    active = path is None
     path = path or paths.calibration_file()
+    if active and path.exists():
+        shutil.copy2(path, path.with_name(f"calibration-backup-{time.time_ns()}.npz"))
     meta = {
         "created": time.strftime("%Y-%m-%d %H:%M:%S"),
         "display": {"name": display.name, "w": display.w, "h": display.h},
         "camera": camera_name,
         "stats": result.stats,
+        "feature_backend": result.feature_backend,
     }
     train = {}
     if result.train is not None:
@@ -562,16 +643,20 @@ def load(path: Path | None = None) -> Calibration | None:
     return Calibration(GazeModel.from_arrays(d), FaceProfile.from_arrays(d), json.loads(str(d["meta"])), train)
 
 
-def save_session(rec: Recording, script: Script, display, camera_name: str, blend_names: list[str]) -> Path:
+def save_session(rec: Recording, script: Script, display, camera_name: str, blend_names: list[str], path: Path | None = None) -> Path:
     """Raw landmarks for every frame, so the model can be refit offline later."""
-    path = paths.sessions_dir() / time.strftime("calib-%Y%m%d-%H%M%S.npz")
+    path = path or paths.sessions_dir() / (time.strftime("calib-%Y%m%d-%H%M%S-") + str(time.time_ns()) + ".npz")
     n = len(rec.t)
     lm = np.full((n, 478, 3), np.nan, dtype=np.float32)
     blend = np.full((n, 52), np.nan, dtype=np.float32)
     matrix = np.full((n, 4, 4), np.nan, dtype=np.float32)
+    appearance_count = rec.feature_backend.get("feature_count", 0)
+    appearance = np.full((n, appearance_count), np.nan, dtype=np.float64)
     for i in range(n):
         if rec.lm[i] is not None:
             lm[i], blend[i], matrix[i] = rec.lm[i], rec.blend[i], rec.matrix[i]
+        if appearance_count and rec.features[i] is not None and rec.features[i].appearance is not None:
+            appearance[i] = rec.features[i].appearance
     np.savez_compressed(
         path,
         t=np.array(rec.t),
@@ -583,6 +668,8 @@ def save_session(rec: Recording, script: Script, display, camera_name: str, blen
         display=np.array(json.dumps({"name": display.name, "w": display.w, "h": display.h, "mm": display.mm})),
         camera=np.array(camera_name),
         blend_names=np.array(json.dumps(blend_names)),
+        appearance=appearance,
+        feature_backend=np.array(json.dumps(rec.feature_backend)),
     )
     return path
 
@@ -592,13 +679,27 @@ def load_session(path: Path):
     from .face import FaceObs
     from .features import BlendIdx, extract
 
-    d = np.load(path, allow_pickle=False)
-    idx = BlendIdx.from_names(json.loads(str(d["blend_names"])))
-    rec = Recording(clock=[tuple(c) for c in d["clock"]])
-    for t, lm, blend, matrix in zip(d["t"], d["lm"], d["blend"], d["matrix"]):
+    # NpzFile decompresses a member on every access. Materialize each array once,
+    # then close the archive before reconstructing thousands of frames.
+    with np.load(path, allow_pickle=False) as archive:
+        d = {key: archive[key] for key in archive.files}
+    names = json.loads(str(d["blend_names"]))
+    idx = BlendIdx.from_names(names) if names else None
+    rec = Recording(clock=[tuple(c) for c in d["clock"]],
+                    feature_backend=json.loads(str(d["feature_backend"])) if "feature_backend" in d else {"name": "landmarks"})
+    appearance = d.get("appearance")
+    feature_count = rec.feature_backend.get("feature_count", 0)
+    if feature_count and appearance is not None and appearance.shape != (len(d["t"]), feature_count):
+        raise ValueError("saved appearance feature dimensions differ from metadata")
+    for i, (t, lm, blend, matrix) in enumerate(zip(d["t"], d["lm"], d["blend"], d["matrix"])):
         if np.isnan(lm[0, 0]):
             rec.add(float(t), None, None)
             continue
+        if idx is None:
+            raise ValueError("session has face observations but no blendshape names")
         obs = FaceObs(t=float(t), size=(0, 0), lm=lm, blend=blend, matrix=matrix)
-        rec.add(float(t), extract(obs, idx), obs)
+        feats = extract(obs, idx)
+        if feature_count and appearance is not None and np.isfinite(appearance[i]).all():
+            feats.appearance = appearance[i].copy()
+        rec.add(float(t), feats, obs)
     return rec, Script.from_json(str(d["script"])), json.loads(str(d["display"])), str(d["camera"])

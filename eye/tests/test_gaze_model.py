@@ -65,3 +65,89 @@ def test_model_fitted_on_fewer_features_reads_leading_columns():
     wider = np.hstack([x, rng.normal(size=(200, 4))])
     assert m.n_features == 12
     assert np.allclose(m.predict(wider), m.predict(x))
+
+
+def test_grouped_cv_matches_independent_fits_with_training_only_normalization():
+    # An extreme held-out feature range used to leak into training scaling.
+    rng = np.random.default_rng(42)
+    x = np.concatenate([rng.normal(i * 8, 0.4, (20, 2)) for i in range(4)])
+    y = np.column_stack([x[:, 0] * 0.1, x[:, 1] * 0.2])
+    groups = np.repeat(np.arange(4), 20)
+    weights = rng.uniform(0.5, 1.5, len(x))
+    alpha = 4.0
+    expected = np.zeros(len(x))
+    for group in np.unique(groups):
+        held = groups == group
+        fold = GazeModel(degree=1)
+        fold.alpha = alpha
+        fold.fit(x[~held], y[~held], weights=weights[~held])
+        expected[held] = np.linalg.norm(fold.predict(x[held]) - y[held], axis=1)
+    model = GazeModel(degree=1)
+    result = model.fit(x, y, groups, weights, alphas=[alpha])
+    assert np.isclose(result["cv_error"], np.average(expected, weights=weights))
+
+
+def test_cv_measures_error_in_actual_screen_dimensions():
+    x, y, groups = _data(n=120)
+    scale = np.array([1512, 982])
+    expected = np.zeros(len(x))
+    for group in np.unique(groups):
+        held = groups == group
+        fold = GazeModel(degree=1)
+        fold.alpha = 4.0
+        fold.fit(x[~held], y[~held])
+        expected[held] = np.linalg.norm((fold.predict(x[held]) - y[held]) * scale, axis=1)
+    result = GazeModel(degree=1).fit(x, y, groups, alphas=[4.0], error_scale=scale)
+    assert np.isclose(result["cv_error"], expected.mean())
+
+
+def test_robust_cv_matches_independent_training_only_folds_and_roundtrips():
+    rng = np.random.default_rng(77)
+    x = rng.normal(size=(120, 4))
+    y = .5 + x[:, :2] * .12
+    y[::7] += rng.normal(0, .8, (len(y[::7]), 2))
+    groups = np.repeat(np.arange(6), 20)
+    scale = np.array([1512, 982])
+    expected = np.zeros(len(x))
+    for group in np.unique(groups):
+        held = groups == group
+        fold = GazeModel(degree=1)
+        fold.alpha = 4.0
+        fold.robust_delta = 100.0
+        fold.fit(x[~held], y[~held], error_scale=scale)
+        expected[held] = np.linalg.norm((fold.predict(x[held]) - y[held]) * scale, axis=1)
+    model = GazeModel(degree=1, robust_deltas=(100.0,))
+    result = model.fit(x, y, groups, alphas=[4.0], error_scale=scale)
+    assert np.isclose(result['cv_error'], expected.mean())
+    restored = GazeModel.from_arrays(model.to_arrays())
+    np.testing.assert_allclose(restored.predict(x), model.predict(x))
+    model.refit(x, y)
+    restored.refit(x, y)
+    np.testing.assert_allclose(restored.predict(x), model.predict(x))
+
+
+def test_robust_selection_recovers_mapping_despite_bad_training_fixations():
+    rng = np.random.default_rng(15)
+    x = rng.normal(size=(240, 4))
+    clean_y = .5 + x[:, :2] * .12
+    y = clean_y.copy()
+    y[::8] += [.8, -.8]
+    groups = np.repeat(np.arange(8), 30)
+    robust = GazeModel(degree=1, robust_deltas=(None, 100.0, 200.0))
+    report = robust.fit(x, y, groups, error_scale=[1512, 982])
+    plain = GazeModel(degree=1)
+    plain.fit(x, y, groups, error_scale=[1512, 982])
+    assert report['robust_delta_points'] == 100.0
+    assert np.linalg.norm(robust.predict(x) - clean_y, axis=1).mean() < np.linalg.norm(plain.predict(x) - clean_y, axis=1).mean() * .5
+
+
+def test_older_saved_model_without_robust_metadata_still_loads():
+    x, y, _ = _data(n=120)
+    model = GazeModel(degree=1)
+    model.fit(x, y)
+    arrays = model.to_arrays()
+    del arrays['gaze_robust_delta']
+    del arrays['gaze_error_scale']
+    restored = GazeModel.from_arrays(arrays)
+    assert restored.robust_delta is None
+    np.testing.assert_allclose(restored.predict(x), model.predict(x))

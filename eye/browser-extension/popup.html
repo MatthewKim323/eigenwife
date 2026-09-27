@@ -1,0 +1,6 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Eye DOM Selector</title>
+<style>body{width:320px;font:14px system-ui;padding:16px;background:#121722;color:#edf3ff}button{padding:10px;margin:4px 4px 4px 0}code{display:block;overflow-wrap:anywhere;user-select:all;font-size:12px}p{line-height:1.5}</style></head>
+<body><h2>Eye DOM Selector</h2><p>Enable one tab, then use its “enter fullscreen” button. Look at a target; Alt+Enter selects and focuses it. For crowded controls, Alt+Space opens numbered choices; press 1–9 to choose. It does not click.</p>
+<p><label for="backend">Tracking source</label> <select id="backend"><option value="webcam">Mac webcam · 8765</option><option value="iphone">iPhone TrueDepth · 8767</option></select></p><p id="source-help"></p>
+<button id="enable">Enable this tab</button><button id="disable">Stop</button><p id="status" role="status"></p>
+<p>Start the local tracker with this extension ID:</p><code id="command"></code><script src="popup.js"></script></body></html>

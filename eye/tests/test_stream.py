@@ -128,6 +128,139 @@ def test_bad_recalibration_is_not_applied(tmp_path):
     assert stream.correction.identity
 
 
+def test_failed_recalibration_reports_rejected_frames(tmp_path):
+    stream, _ = _stream(tmp_path)
+    rec = synthetic_recording(cal.build_script(quick=True, expressions=False))
+    base = copy.deepcopy(next(f for f in rec.features if f is not None))
+    base.yaw = 100
+    stream.command({"type": "calib_begin"})
+    stream.command({"type": "calib_target", "nx": .5, "ny": .5})
+    _feed(stream, [_shifted(base, i / 30) for i in range(10)])
+    assert stream.command({"type": "calib_target_end"})["samples"] == 0
+    result = stream.command({"type": "calib_finish"})
+    assert not result["ok"]
+    assert "head_pose_outside_calibration" in result["error"]
+    assert result["targetSamples"] == [0]
+    assert result["rejected"]["head_pose_outside_calibration"] == 10
+
+
 def rec_cue(rec, f):
     script = cal.build_script(quick=True, expressions=False)
     return script.at(f.t)
+
+
+def test_current_correction_is_baseline_and_sparse_targets_rejected(tmp_path):
+    from eye.stream import CalibPoint
+    stream, _ = _stream(tmp_path)
+    targets = np.array([[.1,.1],[.9,.1],[.5,.5],[.1,.9],[.9,.9]])
+    stream.correction = Correction(np.array([[1,0,.1],[0,1,.1]]))
+    original = stream.correction
+    stream._calib = [CalibPoint(*p, preds=[p - .1]*5) for p in targets]
+    result = stream._finish()
+    assert result['currentDeg'] == 0
+    assert not result['applied'] and stream.correction is original
+    stream._calib = [CalibPoint(*p, preds=[p]*5) for p in targets[:4]]
+    assert not stream._finish()['ok']
+    stream._calib = [CalibPoint(.5,.5,preds=[[.5,.5]]*5) for _ in range(5)]
+    assert not stream._finish()['ok']
+
+
+def test_display_moves_without_waiting_for_fixation_window(tmp_path):
+    stream, events = _stream(tmp_path)
+    rec = synthetic_recording(cal.build_script(quick=True, expressions=False))
+    base = next(f for f in rec.features if f is not None)
+    _feed(stream, [_shifted(base, i/30) for i in range(30)])
+    before = [e for e in events if e['type']=='gaze' and e.get('valid')][-1]
+    _feed(stream, [_shifted(base, 1+i/30, du=.007) for i in range(3)])
+    after = [e for e in events if e['type']=='gaze' and e.get('valid')][-1]
+    assert abs(after['x'] - before['x']) > .7 * abs(after['raw']['x'] - before['x'])
+    stream.on_frame(Frame(2), None, None)
+    assert not stream._history and stream._frozen is None
+    assert events[-1]['reason']=='face_lost'
+
+
+def test_pose_extrapolation_and_nonfinite_are_invalid(tmp_path):
+    stream, events = _stream(tmp_path)
+    rec = synthetic_recording(cal.build_script(quick=True, expressions=False))
+    base = copy.deepcopy(next(f for f in rec.features if f is not None))
+    base.yaw = 100
+    _feed(stream, [base])
+    assert events[-1]['reason'] == 'head_pose_outside_calibration'
+    base.yaw = float('nan')
+    _feed(stream, [base])
+    assert events[-1]['reason'] == 'nonfinite_features'
+
+
+def test_validation_measures_current_mapping_without_fitting(tmp_path):
+    from eye.stream import CalibPoint
+    stream, _ = _stream(tmp_path)
+    targets = np.array([[.1,.1],[.9,.1],[.5,.5],[.1,.9],[.9,.9]])
+    stream.correction = Correction([[1,0,.1],[0,1,.1]])
+    original = stream.correction
+    stream._calib = [CalibPoint(*p, preds=[p-.1]*5, attempted=5) for p in targets]
+    result = stream.command({'type':'calib_finish','validateOnly':True})
+    assert result['validationOnly'] and not result['applied']
+    assert result['validation']['samples'] == 25
+    assert result['validation']['p90Deg'] == 0
+    assert stream.correction is original
+    assert stream.hello()['accuracyValidated']
+    assert stream.hello()['accuracyDeg'] == 0
+    stream.command({'type':'calib_reset'})
+    assert stream.live_validation is None
+
+
+def test_validation_requires_all_targets_and_coverage(tmp_path):
+    from eye.stream import CalibPoint
+    stream, _ = _stream(tmp_path)
+    targets = np.array([[.1,.1],[.9,.1],[.5,.5],[.1,.9],[.9,.9]])
+    stream._calib = [CalibPoint(*p, preds=[p]*5, attempted=10) for p in targets]
+    assert not stream._finish(validate_only=True)['ok']
+    assert stream.live_validation is None
+    stream._calib = [CalibPoint(*p, preds=[p]*5, attempted=5) for p in targets]
+    stream._calib.append(CalibPoint(.3,.3,attempted=20))
+    assert not stream._finish(validate_only=True)['ok']
+    assert stream.live_validation is None
+
+
+def test_first_frame_closed_eyes_is_invalid_without_a_previous_gaze(tmp_path):
+    stream, events = _stream(tmp_path)
+    rec = synthetic_recording(cal.build_script(quick=True, expressions=False))
+    base = next(f for f in rec.features if f is not None)
+    stream.command({'type': 'calib_begin'})
+    stream.command({'type': 'calib_target', 'nx': .5, 'ny': .5})
+    _feed(stream, [_shifted(base, i / 30, shut=True) for i in range(6)])
+    gaze = [event for event in events if event['type'] == 'gaze']
+    assert len(gaze) == 6
+    assert all(event['valid'] is False and event['reason'] == 'blink' for event in gaze)
+    assert not any(event['type'] == 'fixation_start' for event in events)
+    assert stream.command({'type': 'calib_target_end'})['samples'] == 0
+
+
+def test_blink_ends_fixation_once_and_requires_reopening_settle(tmp_path):
+    stream, events = _stream(tmp_path)
+    rec = synthetic_recording(cal.build_script(quick=True, expressions=False))
+    base = next(f for f in rec.features if f is not None)
+    _feed(stream, [_shifted(base, i / 30) for i in range(30)])
+    assert any(event['type'] == 'fixation_start' for event in events)
+    events.clear()
+    _feed(stream, [_shifted(base, 1 + i / 30, shut=True) for i in range(6)])
+    assert len([event for event in events if event['type'] == 'fixation_end']) == 1
+    assert not any(event.get('valid') for event in events)
+    events.clear()
+    _feed(stream, [_shifted(base, 1.2 + i / 30) for i in range(4)])
+    assert not any(event.get('valid') for event in events)
+    _feed(stream, [_shifted(base, 1.4 + i / 30) for i in range(20)])
+    assert any(event.get('valid') for event in events)
+    assert len([event for event in events if event['type'] == 'fixation_start']) == 1
+
+
+def test_first_blink_without_history_still_requires_reopening_settle(tmp_path):
+    stream, events = _stream(tmp_path)
+    rec = synthetic_recording(cal.build_script(quick=True, expressions=False))
+    base = next(f for f in rec.features if f is not None)
+    _feed(stream, [_shifted(base, i / 30, shut=True) for i in range(6)])
+    events.clear()
+    _feed(stream, [_shifted(base, .2 + i / 30) for i in range(4)])
+    assert not any(event.get('valid') for event in events)
+    _feed(stream, [_shifted(base, .4)])
+    assert events[-1]['valid']
