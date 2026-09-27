@@ -92,8 +92,11 @@ export function readWorkIntent(raw: string): WorkAsk | null {
   if (TESTS.test(text)) return { kind: "code.status", tests: true };
   if (STATUS.test(text)) return { kind: "code.status", tests: false };
 
-  // Explicit shell: "run git log --oneline in eigenwife".
-  const sh = SHELL.exec(text);
+  // Explicit shell: "run git log --oneline in eigenwife" (also "open terminal and run ...").
+  const shText = text
+    .replace(/^(?:open|pull up|go to|use)\s+(?:up\s+)?(?:the\s+|a\s+|my\s+)?(?:terminal|ghostty|iterm|shell|command line)\s*(?:and\s+|then\s+|,\s*)?/i, "")
+    .replace(/\s+(?:in|on|from)\s+(?:the\s+|my\s+)?(?:terminal|shell|command line)\b/i, "");
+  const sh = SHELL.exec(shText);
   if (sh && SHELL_LOOKS.test(sh[1]!.trim())) return { kind: "shell.run", command: sh[1]!.trim(), ...(sh[2] ? { dir: sh[2] } : {}) };
 
   const read = READ.exec(text);

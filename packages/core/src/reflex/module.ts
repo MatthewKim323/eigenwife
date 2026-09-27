@@ -816,7 +816,9 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
       // user declined the booking): say it verbatim instead of letting the persona
       // brain paraphrase it into something that never happened.
       const words = res.summary.trim().split(/\s+/).filter(Boolean).length;
-      if (res.summary.trim() && words <= 32) {
+      // Raw tool output (commit hashes, paths, file names, flags) gets said like a person, not read out.
+      const raw = /\b[0-9a-f]{7,40}\b|[\w-]+\.(?:md|ts|tsx|js|json|py|txt|lock|yml|yaml)\b|\/[\w.-]+\/|--?\w+|\bdocs:|\bfeat:|\bfix:/i.test(res.summary);
+      if (res.summary.trim() && words <= 32 && !raw) {
         const said = await say(res.summary.trim(), null, t.parent, res.ok ? "happy" : "sad");
         await observe(userText, said, `task ${res.ok ? "done" : "failed"}: ${goal}. ${res.summary}`);
         return;
@@ -827,6 +829,7 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
         `outcome: ${res.ok ? "success" : "failed"}`,
         `result: ${res.summary}`,
         "the result above is the ground truth. only report what it says. never claim something was booked, sent or bought unless the result says so.",
+        "say it like a person, not a terminal: no commit hashes, file paths, flags or code punctuation out loud. one or two short sentences.",
       ]);
       const src = brains
         ? guarded(

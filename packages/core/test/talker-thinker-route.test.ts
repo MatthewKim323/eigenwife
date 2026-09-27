@@ -14,3 +14,8 @@ test("non-answers are never spoken; real answers pass", () => {
   expect(isNonAnswer("I don't have real-time data for that.")).toBe(true);
   expect(isNonAnswer("It's 72°F and sunny in Irvine, light breeze.")).toBe(false);
 });
+
+test("terminal phrasing: 'open terminal and run X' runs X", async () => {
+  const { readWorkIntent } = await import("../src/work/intent");
+  expect(readWorkIntent("open terminal and run git log")).toMatchObject({ kind: "shell.run", command: "git log" });
+});
