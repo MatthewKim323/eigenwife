@@ -98,6 +98,21 @@ for (let i = 0; i < turns; i++) {
   await waitFor((e) => e.type === "speech.end", 20_000, since);
   await Bun.sleep(1500);
 }
+// --delegate: one lookup through the thinker (jabby first): stall latency, result latency, what she said.
+if (process.argv.includes("--delegate")) {
+  const since = events.length;
+  const fin = envelope("voice.final", { text: "eve, what's the weather in irvine tonight?", endOfTurn: true }, "bench") as AnyEnvelope;
+  bus.publish(fin);
+  const del = await waitFor((e) => e.type === "talker.delegate", 20_000, since);
+  const stall = await waitFor((e) => e.type === "speech.segment" && !!(e.data as { audioUrl?: string }).audioUrl && !fillers.has((e.data as { text: string }).text), 20_000, since);
+  const begin = await waitFor((e) => e.type === "speech.begin" && (e.data as { brain: string }).brain === "thinker", 180_000, since);
+  const result = begin ? await waitFor((e) => e.type === "speech.segment" && (e.data as { utteranceId: string }).utteranceId === (begin.data as { utteranceId: string }).utteranceId, 30_000, since) : null;
+  await waitFor((e) => e.type === "speech.end" && !!begin && (e.data as { utteranceId: string }).utteranceId === (begin.data as { utteranceId: string }).utteranceId, 30_000, since);
+  const said = events.slice(since).filter((e) => e.type === "speech.segment").map((e) => (e.data as { text: string }).text);
+  console.log(`\ndelegate: ${JSON.stringify(del?.data ?? null)}`);
+  console.log(`stall audio ${stall ? stall.ts - fin.ts : "--"}ms, result audio ${result ? result.ts - fin.ts : "--"}ms`);
+  console.log(`said: ${said.join(" / ")}`);
+}
 const f = (xs: number[]) => `p50 ${Math.round(percentile(xs, 50) ?? NaN)}ms p95 ${Math.round(percentile(xs, 95) ?? NaN)}ms`;
 const status = (await (await fetch(`http://127.0.0.1:${port}/api/talker/status`)).json().catch(() => ({}))) as { latency?: unknown };
 console.log(`\n${which} (tts ${process.env.EVE_TTS}): reply ${f(reply)}, first sound ${f(sound)}  (n=${reply.length})`);
