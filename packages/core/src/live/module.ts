@@ -16,9 +16,10 @@ import type { UsageFile } from "./usage";
  * Socket:
  *   ws /live                the page's audio relay (packages/protocol/src/live.ts)
  */
-export function liveModule(opts: ControllerOptions & { config?: Partial<LiveConfig> } = {}): Module {
+export function liveModule(opts: ControllerOptions & { config?: Partial<LiveConfig> } = {}): Module & { controller(): LiveController | null } {
   let ctl: LiveController | null = null;
   return {
+    controller: () => ctl,
     name: "live",
     async start(ctx) {
       const cfg = liveConfig(undefined, opts.config);
