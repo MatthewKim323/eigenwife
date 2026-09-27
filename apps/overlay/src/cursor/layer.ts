@@ -166,9 +166,24 @@ export function startCursorLayer(opts: CursorLayerOpts): CursorLayer {
     lastCmd = e.data;
     send("cursor:event", e.data);
   });
+  // Belt and braces: if her browser sits untouched for 2 minutes, drop its outline
+  // (a window closed some way the core never heard about must not leave a frame behind).
+  let browserIdle: ReturnType<typeof setTimeout> | undefined;
+  const armBrowserIdle = () => {
+    clearTimeout(browserIdle);
+    if (!lastBrowser) return;
+    browserIdle = setTimeout(() => {
+      lastBrowser = null;
+      send("cursor:browser", { status: "closed" });
+    }, 120_000);
+  };
   bus.on("agent.browser", (e) => {
     lastBrowser = e.data.status === "open" ? e.data : null;
     send("cursor:browser", e.data);
+    armBrowserIdle();
+  });
+  bus.on("agent.cursor", () => {
+    if (lastBrowser) armBrowserIdle();
   });
   bus.onStatus((up) => {
     opts.log(`cursor layer ${up ? "connected to the core" : "lost the core, retrying"}`);

@@ -182,10 +182,18 @@ export function playwrightBackend(opts: { dir?: string; executablePath?: string 
           page = null;
           for (const cb of closed) cb();
         });
+        // On a Mac, closing her last window keeps Chromium running with no windows,
+        // so the context never closes: treat "no pages left" as closed.
+        const watch = (p: NonNullable<typeof page>) =>
+          p.on("close", () => {
+            if (ctx && ctx.pages().length === 0) void ctx.close().catch(() => {});
+          });
         ctx.on("page", (p) => {
           page = p;
+          watch(p);
         });
         page = ctx.pages()[0] ?? (await ctx.newPage());
+        watch(page);
         await page.bringToFront().catch(() => {});
       }
       const avail = await current().evaluate(() => ({
