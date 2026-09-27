@@ -122,7 +122,8 @@ test("stare needs silence, content, and continuity", () => {
   h.feed("voice.final", { text: "hmm" });
   h.feed("gaze.target", { target: ramen, dwellMs: 600, confidence: 0.8 });
   h.at(4500);
-  expect(h.feed("gaze.target", { target: ramen, dwellMs: 0, confidence: 0.8 }).map((x) => x.rule)).toEqual([]); // user just spoke
+  // user just spoke: she may glance at it with them, but doesn't talk over them
+  expect(h.feed("gaze.target", { target: ramen, dwellMs: 0, confidence: 0.8 }).map((x) => x.rule)).not.toContain("stare");
   const ui: GazeTarget = { key: "hud", label: "HUD", kind: "ui" };
   h.at(20_000);
   h.feed("gaze.target", { target: ui, dwellMs: 600, confidence: 0.8 });

@@ -48,6 +48,8 @@ export interface RuleContext {
   stare(): { key: string; label: string; kind: string; since: number; ms: number; meta?: Record<string, unknown> } | null;
   /** When this rule last fired, or undefined. */
   lastFired(rule: string): number | undefined;
+  /** When the rule fired before its latest firing (inside data(), lastFired is already "now"). */
+  prevFired(rule: string): number | undefined;
 }
 
 export interface WindowSpec {
@@ -87,7 +89,10 @@ export interface Rule {
 // ---------------------------------------------------------------------------
 
 export const MIN = 60_000;
-export const STARE_MS = 4_000;
+/** Seconds of steady looking before she says something about it. EIGEN_STARE_MS tunes it live. */
+export const STARE_MS = Number(process.env.EIGEN_STARE_MS) || 4_000;
+/** Before that, she silently looks at the same thing (shared attention). */
+export const STARE_GLANCE_MS = Math.min(2_500, STARE_MS - 500);
 export const STARE_COOLDOWN_MS = 45_000;
 export const SILENCE_MS = 3 * MIN;
 export const SILENCE_COOLDOWN_MS = 10 * MIN;
@@ -152,8 +157,29 @@ export const DEFAULT_RULES: Rule[] = [
     data: (e, _rc, n) => ({ track: (e.data as { track: string }).track, artist: (e.data as { artist?: string }).artist, count: n }),
   },
   {
+    id: "stare_glance",
+    doc: "same content target for 2.5s: she silently looks at it too (shared attention), once per stare.",
+    on: "gaze.target",
+    urgency: "immediate",
+    ambient: true,
+    after: "companion.born",
+    cooldownMs: 8_000,
+    when: (_e, rc) => {
+      const s = rc.stare();
+      if (!s || s.ms < STARE_GLANCE_MS || s.ms >= STARE_MS || !STARE_KINDS.has(s.kind)) return false;
+      const fired = rc.lastFired("stare_glance");
+      if (fired !== undefined && fired >= s.since) return false;
+      return rc.world.companion.state !== "speaking";
+    },
+    describe: (_e, rc) => `user is looking at "${rc.stare()!.label}"`,
+    data: (_e, rc) => {
+      const s = rc.stare()!;
+      return { targetKey: s.key, label: s.label, kind: s.kind, ms: s.ms };
+    },
+  },
+  {
     id: "stare",
-    doc: "same gaze target for 4s+ while nobody is talking (content only, not ui/avatar).",
+    doc: "same gaze target for STARE_MS (4s, EIGEN_STARE_MS) while nobody is talking (content only, not ui/avatar): she notices out loud.",
     on: "gaze.target",
     urgency: "soon",
     ambient: true,
@@ -168,11 +194,13 @@ export const DEFAULT_RULES: Rule[] = [
     },
     describe: (_e, rc) => {
       const s = rc.stare()!;
-      return `user has been staring at "${s.label}" for ${(s.ms / 1000).toFixed(1)}s without saying anything`;
+      return `user has been staring at "${s.label}" for ${(s.ms / 1000).toFixed(1)}s without saying anything. it clearly caught their attention: notice it out loud, about that exact thing`;
     },
     data: (_e, rc) => {
       const s = rc.stare()!;
-      return { targetKey: s.key, label: s.label, kind: s.kind, ms: s.ms, meta: s.meta };
+      const prev = rc.prevFired("stare");
+      // Time since the previous stare: only a fresh one earns a spoken "that caught your eye".
+      return { targetKey: s.key, label: s.label, kind: s.kind, ms: s.ms, meta: s.meta, gapMs: prev === undefined ? null : rc.now - prev };
     },
   },
   {
@@ -266,6 +294,7 @@ export class PerceptionEngine {
   private last = new Map<string, number>();
   private windows = new Map<string, number[]>();
   private fired = new Map<string, number>();
+  private prevFired = new Map<string, number>();
   private start: number | undefined;
   private lastVoice: number | undefined;
   private face: { present: boolean; since: number; awaySince?: number; lastAbsence: number } = { present: false, since: 0, lastAbsence: 0 };
@@ -305,6 +334,9 @@ export class PerceptionEngine {
       }
       const prev = this.fired.get(cdKey);
       if (r.cooldownMs && prev !== undefined && now - prev < r.cooldownMs) continue;
+      const prevOfRule = this.fired.get(r.id);
+      if (prevOfRule === undefined) this.prevFired.delete(r.id);
+      else this.prevFired.set(r.id, prevOfRule);
       this.fired.set(cdKey, now);
       this.fired.set(r.id, now);
       out.push({
@@ -386,6 +418,7 @@ export class PerceptionEngine {
         return { key: s.key, label: s.label, kind: s.kind, since: s.since, ms: now - s.since, meta: s.meta };
       },
       lastFired: (rule) => this.fired.get(rule),
+      prevFired: (rule) => this.prevFired.get(rule),
     };
   }
 

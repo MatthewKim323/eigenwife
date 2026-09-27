@@ -66,6 +66,9 @@ export function whim(id: string): number {
   return ((h >>> 0) / 2 ** 32) * 2 - 1;
 }
 
+/** A stare only earns a spoken notice if the last one was at least this long ago. */
+export const STARE_FRESH_MS = 3 * 60_000;
+
 export function softmax(logits: Scores, temperature = 1): Scores {
   const max = Math.max(...REFLEX_DECISIONS.map((d) => logits[d]));
   const exps = REFLEX_DECISIONS.map((d) => Math.exp((logits[d] - max) / temperature));
@@ -223,13 +226,23 @@ function ambientSalience(t: Trigger, input: JevInput, l: Scores, why: string[]) 
       l.REACT = 1.8;
       why.push("task finished");
       return;
+    case "stare_glance":
+      l.IGNORE = 0.5;
+      l.GLANCE = 3;
+      why.push("looking where you look");
+      return;
     case "stare": {
+      // Long steady looking is the clearest "this caught my eye" signal we get: she notices out loud,
+      // unless she just spoke (social modifiers below still hold her back).
       const kind = String(t.data.kind ?? "");
       const ms = Number(t.data.ms ?? 0);
-      l.IGNORE = 2.4;
-      l.GLANCE = 1.8 + 0.8 * Math.min(1, (ms - 4000) / 5000);
-      l.COMMENT = (kind === "menu-item" || kind === "restaurant" ? 0.5 : -0.2) + (r.initiative - 0.5);
-      why.push(`stare ${kind} ${(ms / 1000).toFixed(1)}s`);
+      const content = kind === "menu-item" || kind === "restaurant" || kind.startsWith("profile") ? 0.6 : 0;
+      const gap = t.data.gapMs === null || t.data.gapMs === undefined ? Infinity : Number(t.data.gapMs);
+      const fresh = gap >= STARE_FRESH_MS;
+      l.IGNORE = fresh ? 1.2 : 2.4;
+      l.GLANCE = fresh ? 1.4 : 1.8;
+      l.COMMENT = (fresh ? 2.8 + content : content - 0.2) + 0.4 * Math.min(1, Math.max(0, (ms - 4000) / 4000)) + (r.initiative - 0.5);
+      why.push(`stare ${kind} ${(ms / 1000).toFixed(1)}s${fresh ? "" : ", noticed one recently"}`);
       return;
     }
     case "long_silence":
@@ -294,7 +307,7 @@ export function localScore(input: JevInput): LocalResult {
   }
   ambientSalience(t, input, l, why);
   // Social modifiers apply to everything that is not a forced moment.
-  const forced = t.rule === "companion_born" || t.rule === "relapse" || t.rule === "poked";
+  const forced = t.rule === "companion_born" || t.rule === "relapse" || t.rule === "poked" || t.rule === "stare_glance";
   if (!forced) {
     let mod = (input.relationship.initiative - 0.5) * 2;
     const sinceHer = w.companion.lastSpokeAt !== undefined ? input.now - w.companion.lastSpokeAt : Infinity;
@@ -308,6 +321,8 @@ export function localScore(input: JevInput): LocalResult {
     if (w.scene === "swarm" || w.scene === "architecture") mod -= 0.5;
     // Deep focus (typing in a code or writing app, from the screen sense): stay quiet.
     if (w.slots.screen?.focus === "deep" && t.rule !== "screen_stuck") mod -= 1.5;
+    // A fresh stare is the user showing her something: damp it half as hard.
+    if (t.rule === "stare" && !String(why.join(" ")).includes("noticed one recently")) mod *= 0.5;
     for (const d of REFLEX_DECISIONS) if (d !== "IGNORE") l[d] += mod;
     const jitter = whim(t.id) * 0.5;
     l.IGNORE += jitter;
@@ -451,7 +466,7 @@ export function createJev(opts: JevOptions = {}): JevDecider {
         intent: local.intent,
       });
       // Hard cases never wait on the network.
-      const hard = local.stopSpeech || local.reason.includes("not born") || local.reason.includes("agency owns") || local.reason.includes("own escalation") || local.reason.includes("outfit request") || local.reason.includes("poked") || local.reason === "not talking to her";
+      const hard = local.stopSpeech || local.reason.includes("not born") || local.reason.includes("agency owns") || local.reason.includes("own escalation") || local.reason.includes("outfit request") || local.reason.includes("poked") || local.reason.includes("looking where you look") || local.reason === "not talking to her";
       if (!opts.apiKey || hard) return localVerdict("");
       if (clock() < openUntil) return localVerdict("jev breaker open");
       try {
