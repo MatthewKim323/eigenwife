@@ -35,7 +35,7 @@ async function waitFor(cond: () => boolean, ms = 1500) {
   }
 }
 
-async function rig(o: { home?: FakeHome; json?: (sys: string, user: string) => unknown; silenceMs?: number; giveUpMs?: number; reflex?: boolean } = {}) {
+async function rig(o: { home?: FakeHome; json?: (sys: string, user: string) => unknown; silenceMs?: number; giveUpMs?: number; reflex?: boolean; spoken?: boolean } = {}) {
   const clock = new FakeClock(Date.now());
   const ctx = fakeContext();
   ctx.config.demo = false;
@@ -58,7 +58,7 @@ async function rig(o: { home?: FakeHome; json?: (sys: string, user: string) => u
   ctx.bus.on("onboarding.state", (e) => void states.push(e.data));
   ctx.bus.on("companion.rename", (e) => void renames.push(e.data.name));
   ctx.bus.on("reflex.decision", (e) => void decisions.push(`${e.data.decision}:${e.data.reason ?? ""}`));
-  const mods = [onboardingModule({ startDelayMs: 0, silenceMs: o.silenceMs ?? 60_000, giveUpMs: o.giveUpMs ?? 60_000, extractTimeoutMs: 200 })];
+  const mods = [onboardingModule({ spoken: o.spoken ?? true, startDelayMs: 0, silenceMs: o.silenceMs ?? 60_000, giveUpMs: o.giveUpMs ?? 60_000, extractTimeoutMs: 200 })];
   if (o.reflex !== false) mods.push(reflexModule({ now: clock.now, jev: createJev({}) }));
   const stop = await startModules(ctx, mods);
   const emit = <K extends EventType>(type: K, data: EventMap[K]) => emitAt(ctx, clock, type, data);
@@ -242,7 +242,7 @@ describe("onboarding flow", () => {
     expect(r.last().endsWith(Q.name)).toBe(true);
     await r.answer("the thing is that it depends honestly");
     expect(r.last()).toBe(Q.herName);
-    expect(r.ctx.use("user").profile().callMe).toBeUndefined();
+    expect(r.ctx.use("user").profile().sources.callMe).toBe("default");
     await r.stop();
   });
 
@@ -263,6 +263,121 @@ describe("onboarding flow", () => {
     expect((await call("/api/user")).profile.callMe).toBe("matt");
     expect((await call("/api/user", { interests: ["climbing"] })).profile.interests).toEqual(["climbing"]);
     await r.stop();
+  });
+});
+
+async function api(ctx: ReturnType<typeof fakeContext>, method: string, path: string, body?: unknown): Promise<{ status: number; json: Record<string, any> }> {
+  const routes = (ctx as unknown as { routes: Map<string, (req: Request, url: URL) => Promise<Response | null>> }).routes;
+  const url = new URL(`http://x${path}`);
+  const req = new Request(url, { method, ...(body !== undefined ? { body: typeof body === "string" ? body : JSON.stringify(body) } : {}) });
+  const h = [...routes.keys()].filter((p) => url.pathname.startsWith(p)).sort((a, b) => b.length - a.length)[0]!;
+  const res = (await routes.get(h)!(req, url))!;
+  return { status: res.status, json: (await res.json()) as Record<string, any> };
+}
+
+describe("profile without spoken onboarding (the default)", () => {
+  test("off by default: seeds matt, never asks, the reflex greets as usual", async () => {
+    delete process.env.EVE_ONBOARDING;
+    const ctx = fakeContext();
+    ctx.config.demo = false;
+    const home = new FakeHome();
+    const speech = new FakeSpeech(ctx);
+    ctx.provide("home", home);
+    ctx.provide("speech", speech);
+    ctx.provide("brains", new FakeBrains((r) => `(${r.behavior}) hi`));
+    const stop = await startModules(ctx, [onboardingModule({ startDelayMs: 0 }), reflexModule({ jev: createJev({}) })]);
+    const u = ctx.use("user").profile();
+    expect([u.name, u.callMe, u.herName]).toEqual(["matt", "matt", undefined]);
+    expect(u.sources).toEqual({ name: "default", callMe: "default" });
+    expect((home.files.get("user") as UserProfile).callMe).toBe("matt");
+    expect(ctx.use("onboarding").pending()).toBe(false);
+    expect(ctx.use("onboarding").claims("redo onboarding")).toBe(false);
+    ctx.bus.emit("companion.born", { persona, woken: true });
+    await waitFor(() => speech.said.length > 0);
+    await settle(10);
+    expect(speech.said.map((s) => s.text)).toEqual([WAKE_LINE]);
+    expect((await api(ctx, "POST", "/api/onboarding/start", {})).status).toBe(409);
+    await stop();
+  });
+
+  test("seeding never overwrites what's there", async () => {
+    const ctx = fakeContext();
+    const home = new FakeHome(new Map<string, unknown>([["user", { name: "Matthew Kim", herName: "Nova", work: "eigenwife" }]]));
+    ctx.provide("home", home);
+    const stop = await startModules(ctx, [onboardingModule()]);
+    const u = ctx.use("user").profile();
+    expect([u.name, u.callMe, u.herName, u.work]).toEqual(["Matthew Kim", "matt", "Nova", "eigenwife"]);
+    expect(u.sources.name).toBeUndefined();
+    await stop();
+  });
+
+  test("PUT/PATCH /api/user: validated, persisted, renamed, remembered, beats gbrain", async () => {
+    const ctx = fakeContext();
+    const home = new FakeHome();
+    const memory = new RecMemory(ctx);
+    const renames: EventMap["companion.rename"][] = [];
+    ctx.bus.on("companion.rename", (e) => void renames.push(e.data));
+    ctx.provide("home", home);
+    ctx.provide("memory", memory);
+    const stop = await startModules(ctx, [onboardingModule()]);
+    ctx.bus.emit("companion.born", { persona, woken: true });
+
+    // Bad input: nothing applied.
+    let r = await api(ctx, "PUT", "/api/user", { callMe: 3, birthday: "someday", shoeSize: 11, interests: "anime" });
+    expect(r.status).toBe(400);
+    expect(r.json.errors).toEqual(['unknown field "shoeSize"', "callMe must be a string or null", 'birthday "someday" isn\'t a date (use MM-DD or YYYY-MM-DD)', "interests must be an array of strings"]);
+    expect((await api(ctx, "PUT", "/api/user", "{nope")).status).toBe(400);
+    expect(ctx.use("user").profile().sources.callMe).toBe("default");
+
+    r = await api(ctx, "PUT", "/api/user", {
+      name: "Matthew Kim",
+      callMe: "matt",
+      herName: "Nova",
+      pronouns: "he/him",
+      birthday: "march 14",
+      work: "building eigenwife",
+      interests: ["climbing", "anime", "climbing"],
+      people: [{ name: "Katie", relation: "girlfriend" }, "Sean"],
+      boundaries: ["my ex"],
+    });
+    expect(r.status).toBe(200);
+    expect(r.json.changed).toEqual(["name", "herName", "pronouns", "birthday", "work", "interests", "boundaries", "people"]);
+    const u = r.json.profile as UserProfile;
+    expect(u.birthday).toBe("03-14");
+    expect(u.interests).toEqual(["climbing", "anime"]);
+    expect(u.people).toEqual([{ name: "Katie", relation: "girlfriend" }, { name: "Sean", relation: "" }]);
+    expect(u.sources.callMe).toBe("onboarding");
+    expect((home.files.get("user") as UserProfile).herName).toBe("Nova");
+    expect(renames.at(-1)).toEqual({ name: "Nova", by: "user" });
+    expect(ctx.world().companion.persona?.name).toBe("Nova");
+    const facts = memory.writes.map((w) => w.rec.content);
+    expect(facts).toContain("Their name is Matthew Kim; they go by matt");
+    expect(facts).toContain("They named the companion Nova");
+    expect(facts).toContain("Their birthday is march 14");
+    expect(memory.writes.every((w) => w.rec.importance === 0.9 && w.rec.tags?.includes("website"))).toBe(true);
+    expect(memory.writes.find((w) => w.rec.content === "Never bring up or do: my ex")!.rec.tags).toContain("private");
+
+    // gbrain can't overwrite what he said; it can only add list items.
+    await ctx.use("user").merge({ work: "cs student", interests: ["music"] }, "gbrain");
+    expect(ctx.use("user").profile().work).toBe("building eigenwife");
+    expect(ctx.use("user").profile().interests).toEqual(["climbing", "anime", "music"]);
+
+    // PATCH: only the given fields; null clears; lists replace. Clearing her name renames her back.
+    const n = memory.writes.length;
+    r = await api(ctx, "PATCH", "/api/user", { herName: null, interests: ["climbing"] });
+    expect(r.json.changed).toEqual(["herName", "interests"]);
+    expect(r.json.profile.herName).toBeUndefined();
+    expect(r.json.profile.work).toBe("building eigenwife");
+    expect(r.json.profile.interests).toEqual(["climbing"]);
+    expect(renames.at(-1)).toEqual({ name: "Eve", by: "user" });
+    expect(memory.writes.length).toBe(n + 1); // the new interests fact only
+
+    // No-op edit: nothing changes, nothing written.
+    r = await api(ctx, "PATCH", "/api/user", { work: "building eigenwife" });
+    expect(r.json.changed).toEqual([]);
+    expect(memory.writes.length).toBe(n + 1);
+    expect((await api(ctx, "GET", "/api/user")).json.herName).toBe("Eve");
+    await stop();
   });
 });
 

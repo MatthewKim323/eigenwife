@@ -179,7 +179,7 @@ export interface WardrobeService {
 }
 
 /** Where a user-profile field came from. Onboarding answers beat gbrain-derived values. */
-export type ProfileSource = "onboarding" | "gbrain" | "conversation" | "api";
+export type ProfileSource = "onboarding" | "gbrain" | "conversation" | "api" | "default";
 
 /** The semantic model of matt (~/.eve/user.json, docs/KNOW_ME.md). */
 export interface UserProfile {

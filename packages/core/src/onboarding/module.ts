@@ -5,14 +5,21 @@ import { json } from "../hub";
 import type { HomeService, OnboardingService, ProfileSource, UserProfile, UserService } from "../services";
 import { ONBOARDING_LINES, type OnboardingStepId } from "../speech/lines";
 import { extractAnswer, REDO, RESUME } from "./extract";
-import { mergeProfile, normalizeProfile, prettyBirthday, type ProfilePatch } from "./profile";
+import { secret } from "../config";
+import { applyEdit, mergeProfile, normalizeProfile, prettyBirthday, seedDefaults, validateEdit, type ProfileEdit, type ProfilePatch } from "./profile";
+import { birthdayFrom } from "./extract";
 
 /**
  * Getting to know him (docs/KNOW_ME.md).
  *
  *  - Owns ~/.eve/user.json and provides the `user` service (profile, merge, herName).
- *  - Runs a short spoken onboarding once: the first time she's born or woken
- *    with no name on file, or on "redo onboarding" / "let's start over".
+ *    Seeds { name: "matt", callMe: "matt" } when those are empty (never overwrites).
+ *  - GET / PUT / PATCH /api/user: the website onboarding writes the profile here
+ *    (validated, persisted, rename event, high-importance memories).
+ *  - Spoken onboarding is OFF by default (the website does onboarding). With
+ *    EVE_ONBOARDING=1 (or `spoken: true`) she runs a short spoken flow once: the
+ *    first time she's born or woken with no name he gave her, or on "redo
+ *    onboarding" / "let's start over".
  *    One question at a time, each skippable, answers confirmed briefly and
  *    stored in user.json plus high-importance memories.
  *  - While a question is out, the reflex routes every utterance here
@@ -34,6 +41,8 @@ export interface OnboardingState {
 }
 
 export interface OnboardingOptions {
+  /** Run the spoken flow. Default: EVE_ONBOARDING=1. Off = profile + API only. */
+  spoken?: boolean;
   /** Silence after a question before the nudge. */
   silenceMs?: number;
   /** Silence after the nudge before she pauses the flow. */
@@ -122,7 +131,10 @@ export function onboardingModule(opts: OnboardingOptions = {}): Module {
         },
       };
 
-      let profile: UserProfile = normalizeProfile(await home.read<unknown>("user", null));
+      const spoken = opts.spoken ?? secret("EVE_ONBOARDING") === "1";
+      const loaded = normalizeProfile(await home.read<unknown>("user", null));
+      let profile: UserProfile = seedDefaults(loaded, now());
+      if (profile.updatedAt !== loaded.updatedAt) await home.write("user", profile);
       let state: OnboardingState = { status: "idle", index: 0, answered: [], skipped: [], updatedAt: 0, ...(await home.read<Partial<OnboardingState>>("onboarding", {})) };
       if (state.index < 0 || state.index > STEPS.length) state.index = 0;
       /** Restored after a restart mid-onboarding: resume when a client shows up or he speaks. */
@@ -145,8 +157,9 @@ export function onboardingModule(opts: OnboardingOptions = {}): Module {
           answered: state.answered.length,
         });
 
-      const hasName = () => !!(profile.callMe || profile.name);
-      const wants = () => state.status === "active" || state.status === "paused" || (state.status === "idle" && !hasName());
+      /** A name he gave (not the seeded default). */
+      const hasName = () => (!!profile.callMe && profile.sources.callMe !== "default") || (!!profile.name && profile.sources.name !== "default");
+      const wants = () => spoken && (state.status === "active" || state.status === "paused" || (state.status === "idle" && !hasName()));
 
       const say = async (text: string, mood?: Mood, parent?: string) => {
         const speech = ctx.tryUse("speech");
@@ -182,6 +195,46 @@ export function onboardingModule(opts: OnboardingOptions = {}): Module {
       };
       const user: UserService = { profile: () => profile, merge, herName };
       ctx.provide("user", user);
+
+      /** Which memory fact an edited field becomes. */
+      const FIELD_STEP: Partial<Record<keyof ProfileEdit, OnboardingStepId>> = {
+        name: "name",
+        callMe: "name",
+        herName: "herName",
+        work: "work",
+        interests: "interests",
+        birthday: "birthday",
+        boundaries: "boundaries",
+      };
+      /** The website / API edit: replace given fields, clear nulls, rename, remember. */
+      const edit = async (e: ProfileEdit, source: ProfileSource) => {
+        const beforeHer = herName();
+        const { profile: next, changed } = applyEdit(profile, e, source, now());
+        if (JSON.stringify(next) !== JSON.stringify(profile)) {
+          profile = next;
+          await saveProfile();
+        }
+        const afterHer = herName();
+        if (afterHer !== beforeHer) {
+          let base = "Eve";
+          try {
+            base = ctx.tryUse("preference")?.persona()?.name ?? "Eve";
+          } catch {}
+          rename(afterHer ?? base, "user");
+        }
+        const steps = new Set(changed.map((k) => FIELD_STEP[k]).filter((s): s is OnboardingStepId => !!s));
+        const memory = ctx.tryUse("memory");
+        for (const step of steps)
+          for (const f of answerFacts(step, profile)) {
+            try {
+              await memory?.write({ kind: "fact", content: f.content, importance: 0.9, confidence: 0.95, source: "onboarding", tags: [...f.tags, "website"] }, "STORE_LONG_TERM");
+            } catch (err) {
+              log("memory write failed:", err);
+            }
+          }
+        if (changed.length) log(`profile edit (${source}): ${changed.join(", ")}`);
+        return { profile, changed };
+      };
 
       // --- the flow ----------------------------------------------------------------------
       const armSilence = (parent?: string) => {
@@ -294,9 +347,9 @@ export function onboardingModule(opts: OnboardingOptions = {}): Module {
       };
 
       const service: OnboardingService = {
-        active: () => armed || state.status === "active",
+        active: () => spoken && (armed || state.status === "active"),
         pending: () => wants(),
-        claims: (text) => REDO.test(text) || (state.status === "paused" && RESUME.test(text)),
+        claims: (text) => spoken && (REDO.test(text) || (state.status === "paused" && RESUME.test(text))),
         hear: (text, parent) =>
           serial(async () => {
             if (REDO.test(text)) return begin({ redo: true, parent });
@@ -330,8 +383,9 @@ export function onboardingModule(opts: OnboardingOptions = {}): Module {
       // --- routes -------------------------------------------------------------------------
       ctx.route("/api/onboarding", async (req, url) => {
         const sub = url.pathname.replace(/^\/api\/onboarding\/?/, "");
-        if (req.method === "GET" && !sub) return json({ ok: true, state, active: service.active(), pending: service.pending(), steps: STEPS, profile });
+        if (req.method === "GET" && !sub) return json({ ok: true, spoken, state, active: service.active(), pending: service.pending(), steps: STEPS, profile });
         if (req.method !== "POST") return null;
+        if (!spoken) return json({ ok: false, error: "spoken onboarding is off (EVE_ONBOARDING=1 to enable); the website writes PUT /api/user" }, 409);
         const body = (await req.json().catch(() => ({}))) as { redo?: boolean; text?: string };
         if (sub === "start") {
           void service.begin({ redo: !!body.redo });
@@ -346,11 +400,19 @@ export function onboardingModule(opts: OnboardingOptions = {}): Module {
       });
       ctx.route("/api/user", async (req, url) => {
         if (url.pathname !== "/api/user" && url.pathname !== "/api/user/") return null;
-        if (req.method === "POST") {
-          const body = (await req.json().catch(() => ({}))) as ProfilePatch;
-          return json({ ok: true, profile: await merge(body, "api") });
+        if (req.method === "GET") return json({ ok: true, profile, herName: herName() ?? ctx.world().companion.persona?.name ?? "Eve" });
+        if (req.method !== "PUT" && req.method !== "PATCH" && req.method !== "POST") return null;
+        let body: unknown;
+        try {
+          body = await req.json();
+        } catch {
+          return json({ ok: false, errors: ["body must be JSON"] }, 400);
         }
-        return json({ ok: true, profile });
+        const { edit: e, errors } = validateEdit(body, birthdayFrom);
+        if (errors.length) return json({ ok: false, errors }, 400);
+        // The website onboarding is matt telling her himself: it outranks anything gbrain inferred.
+        const r = await edit(e, "onboarding");
+        return json({ ok: true, profile: r.profile, changed: r.changed });
       });
 
       if (ctx.world().companion.born && herName()) rename(herName()!, "restore");

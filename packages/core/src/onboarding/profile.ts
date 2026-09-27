@@ -11,7 +11,7 @@ import type { ProfileSource, UserProfile } from "../services";
 
 export type ProfilePatch = Partial<Omit<UserProfile, "sources" | "updatedAt">>;
 
-const RANK: Record<ProfileSource, number> = { gbrain: 0, conversation: 1, api: 1, onboarding: 2 };
+const RANK: Record<ProfileSource, number> = { default: -1, gbrain: 0, conversation: 1, api: 1, onboarding: 2 };
 const SCALARS = ["name", "callMe", "herName", "pronouns", "birthday", "work"] as const;
 const LIMITS = { interests: 12, people: 16, boundaries: 12, vibe: 6 } as const;
 
@@ -88,7 +88,7 @@ export function mergeProfile(cur: UserProfile, patch: ProfilePatch, source: Prof
   for (const k of SCALARS) {
     const v = clean[k];
     if (!v || !(k in patch)) continue;
-    if (!wins(k) || next[k] === v) continue;
+    if (!wins(k) || (next[k] === v && next.sources[k] === source)) continue;
     next[k] = v;
     next.sources[k] = source;
     changed = true;
@@ -122,6 +122,117 @@ export function mergeProfile(cur: UserProfile, patch: ProfilePatch, source: Prof
   }
   if (changed) next.updatedAt = now;
   return next;
+}
+
+/** Who she assumes she's talking to until told otherwise. Only fills empty fields. */
+export const DEFAULT_USER: ProfilePatch = { name: "matt", callMe: "matt" };
+
+export function seedDefaults(cur: UserProfile, now = Date.now()): UserProfile {
+  const next: UserProfile = structuredClone(cur);
+  let changed = false;
+  for (const k of ["name", "callMe"] as const) {
+    if (next[k] || !DEFAULT_USER[k]) continue;
+    next[k] = DEFAULT_USER[k];
+    next.sources[k] = "default";
+    changed = true;
+  }
+  if (changed) next.updatedAt = now;
+  return next;
+}
+
+/** An edit from the website / API: set, replace, or clear (null) fields. */
+export type ProfileEdit = { [K in (typeof SCALARS)[number]]?: string | null } & {
+  interests?: string[];
+  boundaries?: string[];
+  vibe?: string[];
+  people?: { name: string; relation: string }[];
+};
+
+export const EDITABLE = [...SCALARS, "interests", "people", "boundaries", "vibe"] as const;
+
+/**
+ * Validate a PUT/PATCH /api/user body. Unknown keys and wrong types are
+ * errors (nothing is applied). Birthdays accept "MM-DD", "YYYY-MM-DD", or
+ * words ("march 14"), normalized by the caller-supplied parser.
+ */
+export function validateEdit(body: unknown, parseBirthday: (s: string) => string | null): { edit: ProfileEdit; errors: string[] } {
+  const errors: string[] = [];
+  const edit: ProfileEdit = {};
+  if (!body || typeof body !== "object" || Array.isArray(body)) return { edit, errors: ["body must be a JSON object"] };
+  const o = body as Record<string, unknown>;
+  for (const k of Object.keys(o)) if (!(EDITABLE as readonly string[]).includes(k)) errors.push(`unknown field "${k}"`);
+  for (const k of SCALARS) {
+    if (!(k in o)) continue;
+    const v = o[k];
+    if (v === null || v === "") {
+      edit[k] = null;
+      continue;
+    }
+    if (typeof v !== "string") {
+      errors.push(`${k} must be a string or null`);
+      continue;
+    }
+    const s = str(v, k === "work" ? 200 : 60);
+    if (!s) {
+      edit[k] = null;
+      continue;
+    }
+    if (k === "birthday") {
+      const b = parseBirthday(s);
+      if (!b) errors.push(`birthday "${s}" isn't a date (use MM-DD or YYYY-MM-DD)`);
+      else edit.birthday = b;
+      continue;
+    }
+    edit[k] = s;
+  }
+  for (const k of ["interests", "boundaries", "vibe"] as const) {
+    if (!(k in o)) continue;
+    const v = o[k];
+    if (!Array.isArray(v) || v.some((x) => typeof x !== "string")) {
+      errors.push(`${k} must be an array of strings`);
+      continue;
+    }
+    edit[k] = uniq(strList(v, k === "interests" ? 80 : 140)).slice(0, LIMITS[k]);
+  }
+  if ("people" in o) {
+    const v = o.people;
+    if (!Array.isArray(v) || v.some((x) => typeof x !== "string" && (!x || typeof x !== "object" || typeof (x as Record<string, unknown>).name !== "string"))) {
+      errors.push("people must be an array of { name, relation? } (or names)");
+    } else edit.people = uniqBy(people(v), (x) => x.name).slice(0, LIMITS.people);
+  }
+  return { edit, errors };
+}
+
+/** Apply a validated edit: given fields are set, replaced (lists) or cleared (null). */
+export function applyEdit(cur: UserProfile, edit: ProfileEdit, source: ProfileSource, now = Date.now()): { profile: UserProfile; changed: (keyof ProfileEdit)[] } {
+  const next: UserProfile = structuredClone(cur);
+  const changed: (keyof ProfileEdit)[] = [];
+  for (const k of SCALARS) {
+    if (!(k in edit)) continue;
+    const v = edit[k];
+    if (v === null || v === undefined) {
+      if (next[k] === undefined) continue;
+      delete next[k];
+      delete next.sources[k];
+    } else {
+      if (next[k] === v && next.sources[k] === source) continue;
+      const same = next[k] === v;
+      next[k] = v;
+      next.sources[k] = source;
+      if (same) continue;
+    }
+    changed.push(k);
+  }
+  for (const k of ["interests", "boundaries", "vibe", "people"] as const) {
+    const v = edit[k];
+    if (!v) continue;
+    const same = JSON.stringify(next[k]) === JSON.stringify(v);
+    (next as unknown as Record<string, unknown>)[k] = structuredClone(v);
+    next.sources[k] = source;
+    if (!same) changed.push(k);
+  }
+  if (changed.length || JSON.stringify(next.sources) !== JSON.stringify(cur.sources)) next.updatedAt = now;
+  return { profile: next, changed };
 }
 
 /** "03-14" / "2003-03-14" -> "march 14". */
