@@ -24,6 +24,8 @@ export interface BrainsDeps {
   relationship(): RelationshipState | null;
   /** World context block (includes the user's gaze target). */
   world(): string;
+  /** The conversation so far (summary + recent turns), for every persona prompt. */
+  conversation?(): string;
   log?(...args: unknown[]): void;
   /** Override the backend lists (tests). */
   personaBackends?: ChatBackend[];
@@ -146,7 +148,7 @@ export function createBrains(deps: BrainsDeps): Brains {
 
   async function* persona(req: PersonaRequest): AsyncGenerator<string> {
     const card = deps.persona() ?? DEFAULT_EVE;
-    const msg = buildPersonaPrompt({ persona: card, relationship: deps.relationship(), world: deps.world(), req });
+    const msg = buildPersonaPrompt({ persona: card, relationship: deps.relationship(), world: deps.world(), req, conversation: deps.conversation?.() });
     const maxTokens = personaMaxTokens(req.maxWords);
     const errors: string[] = [];
     const t0 = io.now();

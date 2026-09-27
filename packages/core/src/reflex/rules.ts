@@ -108,8 +108,8 @@ const str = (x: unknown) => (typeof x === "string" ? x : "");
 export const DEFAULT_RULES: Rule[] = [
   {
     id: "utterance",
-    doc: "user said something (voice.final). Always a trigger.",
-    on: "voice.final",
+    doc: "user said something (voice.turn: voice.final pieces merged across short pauses). Always a trigger.",
+    on: "voice.turn",
     urgency: "immediate",
     ambient: false,
     when: (e) => str((e.data as { text?: unknown }).text).trim().length > 0,
@@ -313,7 +313,8 @@ export class PerceptionEngine {
         description: r.describe(e, rc, count),
         urgency: r.urgency,
         data: r.data?.(e, rc, count) ?? {},
-        parent: e.id,
+        // A merged voice.turn points back at the voice.final that closed it.
+        parent: e.type === "voice.turn" && e.parent ? e.parent : e.id,
         at: now,
         ambient: r.ambient ?? true,
       });

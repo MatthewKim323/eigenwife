@@ -27,12 +27,13 @@ const ramen: GazeTarget = { key: "menu_ramen", label: "Garlic Knockout Ramen, $2
 
 test("every utterance is an immediate trigger", () => {
   const h = harness();
-  const [t] = h.feed("voice.final", { text: "thoughts?" });
+  // voice.turn is the merged turn (reflex/module.ts coalesces voice.final pieces into it)
+  const [t] = h.feed("voice.turn", { text: "thoughts?", parts: 1 });
   expect(t!.rule).toBe("utterance");
   expect(t!.urgency).toBe("immediate");
   expect(t!.ambient).toBe(false);
   expect(t!.data.text).toBe("thoughts?");
-  expect(h.feed("voice.final", { text: "   " })).toEqual([]);
+  expect(h.feed("voice.turn", { text: "   ", parts: 1 })).toEqual([]);
 });
 
 test("repeat media: same track 3x inside 30 minutes, keyed per track, cooldown", () => {

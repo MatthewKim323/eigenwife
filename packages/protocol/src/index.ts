@@ -142,6 +142,10 @@ export interface EventMap {
   // --- perception: ears, desktop, pages --------------------------------------
   "voice.partial": { text: string };
   "voice.final": { text: string; confidence?: number };
+  /** One conversational turn: voice.final pieces merged across short pauses ("talk, pause, keep talking"). */
+  "voice.turn": { text: string; parts: number };
+  /** A line of the conversation she's having with him (his addressed turns, her spoken lines). */
+  "conversation.turn": { role: "user" | "eve"; text: string };
   "app.opened": { app: string; bundleId?: string };
   "app.focused": { app: string; bundleId?: string; title?: string };
   "page.context": { url: string; title: string; targets: GazeTarget[]; markdown?: string };

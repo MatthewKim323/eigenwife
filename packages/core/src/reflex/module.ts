@@ -1,4 +1,4 @@
-import { describeOutfit, DEFAULT_RELATIONSHIP, WARDROBE_ITEMS, type AnyEnvelope, type Mood, type ReflexDecision, type RelationshipState, type Urgency } from "@eigenwife/protocol";
+import { describeOutfit, DEFAULT_RELATIONSHIP, envelope, WARDROBE_ITEMS, type AnyEnvelope, type Mood, type ReflexDecision, type RelationshipState, type Urgency } from "@eigenwife/protocol";
 import type { CoreContext, Module } from "../context";
 import { json } from "../hub";
 import { jevEndpoint, secret } from "../config";
@@ -25,6 +25,8 @@ export interface ReflexOptions {
   queueMax?: number;
   /** Treat gaze targets younger than this as "what they're looking at". */
   gazeFreshMs?: number;
+  /** Wait this long after a voice.final for him to keep talking before it's a turn (0 = immediate). */
+  turnMs?: number;
 }
 
 const URGENCY_RANK: Record<Urgency, number> = { immediate: 0, soon: 1, later: 2 };
@@ -246,6 +248,9 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
     }
     // A silent glance is not chatter; only verbal or acting reactions start the quiet period.
     if (v.decision !== "IGNORE" && v.decision !== "GLANCE") lastReactionAt = now();
+    // What he says TO her becomes part of the conversation she remembers (room chatter doesn't).
+    if (t.rule === "utterance" && v.decision !== "IGNORE" && typeof t.data.text === "string")
+      ctx.bus.emit("conversation.turn", { role: "user", text: t.data.text }, "core", t.parent);
     recent.push({ at: now(), trigger: t.id, rule: t.rule, decision: v.decision, by: v.by, latencyMs: v.latencyMs, reason: v.reason });
     if (recent.length > 50) recent.shift();
     ctx.bus.emit(
@@ -682,6 +687,56 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
         trigger: (x) =>
           enqueue({ id: `${x.id}#ext${now().toString(36)}`, rule: x.id, description: x.description, urgency: x.urgency, data: x.data ?? {}, parent: x.parent, at: now(), ambient: true }),
       });
+
+      // --- turns: "talk, pause, keep talking" is one turn ------------------------------
+      // voice.final pieces merge until he's quiet for turnMs. If he keeps talking right
+      // after she started answering, her half-answer is dropped and she hears it all.
+      const turnMs = opts.turnMs ?? (process.env.NODE_ENV === "test" ? 0 : Number(process.env.EVE_TURN_MS || 800));
+      const MERGE_MS = 3500;
+      let pend: { texts: string[]; timer?: ReturnType<typeof setTimeout>; parent?: string } | null = null;
+      let lastTurn: { text: string; at: number } | null = null;
+      const flushTurn = () => {
+        if (!pend) return;
+        if (pend.timer) clearTimeout(pend.timer);
+        const text = pend.texts.join(" ").replace(/\s+/g, " ").trim();
+        const parts = pend.texts.length;
+        const parent = pend.parent;
+        pend = null;
+        if (!text) return;
+        lastTurn = { text, at: now() };
+        // Stamped on the module clock: the rules engine replays by event time.
+        ctx.bus.publish({ ...envelope("voice.turn", { text, parts }, "core", parent), ts: now() } as AnyEnvelope);
+      };
+      offs.push(
+        ctx.bus.on("voice.final", (e) => {
+          const text = String(e.data.text ?? "").trim();
+          if (!text) return;
+          const it = readIntent(text);
+          if (it.stop) {
+            // Stop words never wait.
+            flushTurn();
+            pend = { texts: [text], parent: e.id };
+            flushTurn();
+            return;
+          }
+          const speech = ctx.tryUse("speech");
+          const answering = busy || (speech?.speaking() ?? false);
+          if (!pend && lastTurn && now() - lastTurn.at < MERGE_MS && answering && !(it.approval && pendingApprovals.size)) {
+            // He wasn't done: cancel her reply to the first half and take the whole thing.
+            gen += 1;
+            speech?.stop("he kept talking");
+            pend = { texts: [lastTurn.text] };
+          }
+          pend ??= { texts: [] };
+          pend.texts.push(text);
+          pend.parent = e.id;
+          if (turnMs <= 0) return flushTurn();
+          if (pend.timer) clearTimeout(pend.timer);
+          // A finished-sounding sentence waits a little less.
+          const wait = /[?!.]$/.test(text) && text.split(/\s+/).length >= 3 ? Math.round(turnMs * 0.6) : turnMs;
+          pend.timer = setTimeout(flushTurn, wait);
+        }),
+      );
 
       offs.push(
         ctx.bus.on("*", (e: AnyEnvelope) => {

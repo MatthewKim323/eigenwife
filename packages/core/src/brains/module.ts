@@ -3,6 +3,7 @@ import { secret } from "../config";
 import type { CoreContext, Module } from "../context";
 import { json } from "../hub";
 import type { FrontierRequest } from "../services";
+import { Conversation, type Turn } from "./conversation";
 import { bunSpawn, whichBin, type BrainIO } from "./io";
 import { createBrains, type Brains, type BrainsDeps, type HaremBrain, type StructuredRequest } from "./service";
 
@@ -17,6 +18,14 @@ import { createBrains, type Brains, type BrainsDeps, type HaremBrain, type Struc
  */
 
 const instances = new WeakMap<CoreContext, Brains>();
+const conversations = new WeakMap<CoreContext, Conversation>();
+
+/** The session conversation for ctx (shared by the module and the persona prompts). */
+export function conversationFor(ctx: CoreContext): Conversation {
+  let c = conversations.get(ctx);
+  if (!c) conversations.set(ctx, (c = new Conversation()));
+  return c;
+}
 
 export function defaultIO(ctx: CoreContext): BrainIO {
   return {
@@ -48,6 +57,7 @@ function build(ctx: CoreContext, overrides: Partial<BrainsDeps> = {}): Brains {
       }
     },
     world: () => ctx.contextBlock(),
+    conversation: () => conversationFor(ctx).block(ctx.world().companion.persona?.name ?? "eve"),
     log: (...a) => ctx.log("brains", ...a),
     ...overrides,
   });
@@ -75,6 +85,7 @@ export function haremBrain(ctx: CoreContext): HaremBrain {
 
 export function brainsModule(overrides: Partial<BrainsDeps> = {}): Module {
   let timer: ReturnType<typeof setInterval> | undefined;
+  const offs: (() => void)[] = [];
   return {
     name: "brains",
     async start(ctx) {
@@ -85,6 +96,36 @@ export function brainsModule(overrides: Partial<BrainsDeps> = {}): Module {
       void Promise.all([brains.refresh(), overrides.personaBackends ? null : brains.probe()]).then(() => ctx.log("brains", "live:", liveList(brains)));
       timer = setInterval(() => void brains.refresh(), 15_000);
       (timer as { unref?: () => void }).unref?.();
+
+      // The whole conversation, across the session and restarts (~/.eve/conversation.json).
+      const convo = conversationFor(ctx);
+      const home = ctx.tryUse("home");
+      if (home) convo.load(await home.read<{ summary?: string; turns?: Turn[] } | null>("conversation", null).catch(() => null));
+      let saveTimer: ReturnType<typeof setTimeout> | undefined;
+      const save = () => {
+        if (!home) return;
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(() => void home.write("conversation", convo.toJSON()).catch(() => {}), 1500);
+      };
+      const summarize = async (previous: string, turns: Turn[]) => {
+        const text = turns.map((t) => `${t.role === "user" ? "him" : "her"}: ${t.text}`).join("\n");
+        const out = await brains.quickJson<{ summary?: string }>(
+          'Summarize this conversation between a user ("him") and his AI companion ("her") for her long-term context. Keep names, facts about him, plans, promises, running jokes, and what she agreed to do. Max 120 words. Reply as JSON {"summary": "..."}.',
+          `${previous ? `summary so far: ${previous}\n\n` : ""}new turns:\n${text}`,
+          { timeoutMs: 20_000 },
+        );
+        return out?.summary ?? null;
+      };
+      const record = (role: Turn["role"], text: string) => {
+        if (!convo.add(role, text)) return;
+        save();
+        if (convo.needsFold()) void convo.fold(summarize).then((ok) => ok && save());
+      };
+      offs.push(
+        ctx.bus.on("conversation.turn", (e) => record(e.data.role, e.data.text)),
+        ctx.bus.on("speech.begin", (e) => record("eve", e.data.text)),
+      );
+      ctx.route("/api/conversation", (req) => (req.method === "GET" ? json(convo.toJSON()) : null));
 
       ctx.route("/api/brains/status", async (req) => {
         if (req.method !== "GET") return null;
@@ -128,6 +169,7 @@ export function brainsModule(overrides: Partial<BrainsDeps> = {}): Module {
     },
     stop() {
       if (timer) clearInterval(timer);
+      offs.forEach((o) => o());
     },
   };
 }

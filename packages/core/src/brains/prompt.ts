@@ -59,6 +59,8 @@ export interface PersonaPromptInput {
   relationship?: RelationshipState | null;
   world: string;
   req: PersonaRequest;
+  /** The whole conversation so far (rolling summary + recent turns). */
+  conversation?: string;
 }
 
 /**
@@ -66,7 +68,7 @@ export interface PersonaPromptInput {
  * (including what the user is LOOKING AT) + extra. User = the moment: what
  * happened, the social intent, what they said, and the word cap.
  */
-export function buildPersonaPrompt({ persona, relationship, world, req }: PersonaPromptInput): ChatMessage {
+export function buildPersonaPrompt({ persona, relationship, world, req, conversation }: PersonaPromptInput): ChatMessage {
   const maxWords = req.maxWords ?? 14;
   const marks = req.marks !== false;
   const system = [
@@ -78,6 +80,9 @@ export function buildPersonaPrompt({ persona, relationship, world, req }: Person
     ...VOICE_RULES,
     ...(marks ? markRules() : ["do not use any [bracket] marks."]),
     "",
+    ...(conversation?.trim()
+      ? ["[this conversation]", conversation.trim(), "stay consistent with it: remember what was said, follow up naturally, don't repeat yourself.", ""]
+      : []),
     "[right now]",
     world.trim() || "- nothing notable",
     ...(req.extra?.trim() ? ["", "[also relevant]", req.extra.trim()] : []),
