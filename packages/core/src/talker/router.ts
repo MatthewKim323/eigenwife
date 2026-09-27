@@ -287,22 +287,33 @@ export class VoiceRouter {
     let ok = false;
     try {
       if (!brains) throw new Error("no brains service");
-      const r = await brains.frontier({
-        goal: [
-          `he asked you, out loud: "${t.text}"`,
-          `task: ${task}`,
-          "find the real answer with your tools and memory. reply in plain text, facts first, no markdown, no preamble. if you can't find it, say what you tried.",
-        ].join("\n"),
-        tools: "read",
-        timeoutMs: 150_000,
-        signal: job.abort.signal,
-        onEvent: (e) => {
-          if (e.kind === "tool") this.progress({ kind: "tool", tool: e.name });
-        },
-      });
-      ok = r.ok && !!r.text.trim();
-      text = r.ok ? r.text.trim() : "";
-      if (!r.ok) this.d.log(`thinker failed: ${r.error ?? "?"}`);
+      // Personal questions go to jabby (it has his life); fresh/world facts to claude with web search.
+      // A "can't access that" non-answer falls through to the next engine instead of being read out.
+      for (const engine of thinkerEngines(`${t.text} ${task}`)) {
+        if (job.cancelled) break;
+        const r = await brains.frontier({
+          goal: [
+            `he asked you, out loud: "${t.text}"`,
+            `task: ${task}`,
+            "find the real answer with your tools and memory (search the web for anything current). reply in plain text, facts first, no markdown, no preamble. if you can't find it, say what you tried.",
+          ].join("\n"),
+          engine,
+          tools: "read",
+          timeoutMs: 150_000,
+          signal: job.abort.signal,
+          onEvent: (e) => {
+            if (e.kind === "tool") this.progress({ kind: "tool", tool: e.name });
+          },
+        });
+        const got = r.ok ? r.text.trim() : "";
+        if (!r.ok) this.d.log(`thinker ${engine} failed: ${r.error ?? "?"}`);
+        if (got && !isNonAnswer(got)) {
+          ok = true;
+          text = got;
+          break;
+        }
+        if (got) this.d.log(`thinker ${engine} gave a non-answer, trying the next engine: ${clip(got, 120)}`);
+      }
     } catch (err) {
       this.d.log("thinker threw:", err);
     }
@@ -387,4 +398,19 @@ export class VoiceRouter {
     this.stats.narrations++;
     void speech.say(phrase, { priority: "low", brain: "narration", mood: "thinking" });
   }
+}
+
+/** His own life (jabby knows it) vs the world (claude + web search knows it). */
+const PERSONAL = /\b(?:my|mine|me|i|i'?m|i'?ve|we|our)\b.*\b(?:email|inbox|mail|class(?:es)?|course|homework|assignment|due|deadline|syla|discord|dm|friend|calendar|schedule|job|internship|remember|said|told|last (?:week|time|night)|gbrain)\b|\b(?:who is|who's)\s+[A-Z]/i;
+
+export function thinkerEngines(text: string): ("jabby" | "claude" | "codex")[] {
+  return PERSONAL.test(text) ? ["jabby", "claude", "codex"] : ["claude", "jabby", "codex"];
+}
+
+/** "no weather tool available", "i can't browse": a non-answer that should never be spoken. */
+const NON_ANSWER =
+  /\b(?:no (?:weather|web|internet|browsing|search|live|real-?time) (?:tool|access|data)|(?:can'?t|cannot|unable to|not able to) (?:pull|access|browse|look (?:that )?up|search|get|fetch|check)|(?:don'?t|do not) have (?:access|live|real-?time|a (?:weather|web|search))|not available in this session|without (?:web|internet) access)\b/i;
+
+export function isNonAnswer(text: string): boolean {
+  return text.length < 400 && NON_ANSWER.test(text);
 }
