@@ -20,3 +20,22 @@ test("greeting by time of day and time away; quick reloads stay quiet", () => {
 test("every greeting is prerendered", () => {
   for (const l of Object.values(GREET_LINES).flat()) expect(scriptedTexts()).toContain(l);
 });
+
+test("every core boot says hi once when a face connects, even right after a restart", async () => {
+  const { fakeContext, FakeSpeech, FakeClock, startModules, settle } = await import("../src/reflex/testing");
+  const { greetModule } = await import("../src/greet/module");
+  const clock = new FakeClock(Date.now());
+  const ctx = fakeContext();
+  const speech = new FakeSpeech(ctx, clock);
+  ctx.provide("speech", speech);
+  ctx.bus.emit("companion.born", { persona: { name: "Eve" } as any });
+  await startModules(ctx, [greetModule({ now: clock.now, random: () => 0 })]);
+  ctx.bus.emit("bus.hello", { client: "shell", role: "shell", version: "x" });
+  await settle(10);
+  expect(speech.said.length).toBe(1);
+  // the overlay's own "opened" right after is not a second hello
+  ctx.bus.emit("overlay.opened", { at: clock.now() });
+  ctx.bus.emit("bus.hello", { client: "shell", role: "shell", version: "x" });
+  await settle(10);
+  expect(speech.said.length).toBe(1);
+});

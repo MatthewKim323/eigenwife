@@ -19,3 +19,11 @@ test("terminal phrasing: 'open terminal and run X' runs X", async () => {
   const { readWorkIntent } = await import("../src/work/intent");
   expect(readWorkIntent("open terminal and run git log")).toMatchObject({ kind: "shell.run", command: "git log" });
 });
+
+test("several actions in one breath split into ordered actions; same-kind lists stay one", async () => {
+  const { splitActions } = await import("../src/reflex/intent");
+  expect(splitActions("put some pajamas on and lets listen to music").map((p) => p.kind)).toEqual(["outfit", "music"]);
+  expect(splitActions("yo put your hoodie on, play ggez and close spotify").map((p) => p.kind)).toEqual(["outfit", "music", "command"]);
+  expect(splitActions("play frank ocean and kendrick")).toEqual([]);
+  expect(splitActions("what's up and how are you")).toEqual([]);
+});

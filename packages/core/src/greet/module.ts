@@ -36,9 +36,25 @@ export function greetModule(opts: { now?: () => number; random?: () => number } 
         lastSeenAt = now();
         void home?.write("last_seen", lastSeenAt).catch(() => {});
       };
+      // Every fresh core start (bun run dev) says hi once, as soon as a face connects,
+      // even if he was just here: a restart is a new session.
+      let bootGreetPending = true;
+      offs.push(
+        ctx.bus.on("bus.hello", (e) => {
+          if (!bootGreetPending || e.data.role !== "shell") return;
+          bootGreetPending = false;
+          ctx.bus.emit("overlay.opened", { at: now() }, "greet", e.id);
+        }),
+      );
       offs.push(
         ctx.bus.on("overlay.opened", (e) => {
-          const kind = greetKind(new Date(now()), lastSeenAt);
+          const boot = e.source === "greet";
+          if (!boot && !bootGreetPending && lastSeenAt !== null && now() - lastSeenAt < GREET_QUIET_MS) {
+            touch();
+            return;
+          }
+          bootGreetPending = false;
+          const kind = boot && lastSeenAt !== null && now() - lastSeenAt < GREET_QUIET_MS ? "soon" : greetKind(new Date(now()), lastSeenAt);
           touch();
           if (!kind) return;
           const speech = ctx.tryUse("speech");

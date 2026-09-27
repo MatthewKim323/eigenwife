@@ -143,3 +143,31 @@ export function goalFrom(text: string): string {
   g = g.replace(/^(?:eve[, ]+)?(?:can you|could you|would you|will you|please|pls|i need you to|help me|i want you to)\s+/i, "");
   return g.charAt(0).toUpperCase() + g.slice(1);
 }
+
+/** What kind of single action a clause is, for multi-action utterances. */
+export type ActionKind = "outfit" | "music" | "command" | "browse";
+
+export function actionKind(it: UtteranceIntent): ActionKind | null {
+  return it.outfit ? "outfit" : it.music ? "music" : it.command ? "command" : it.browse ? "browse" : null;
+}
+
+/**
+ * "put your pajamas on and let's listen to music": several actions in one breath.
+ * Splits on and / then / also / plus / commas and returns one clause per action,
+ * in order, only when there are 2+ DIFFERENT action kinds ("play frank ocean and
+ * kendrick" stays one music request). Otherwise [].
+ */
+export function splitActions(text: string): { text: string; intent: UtteranceIntent; kind: ActionKind }[] {
+  const clauses = stripOpeners(text)
+    .split(/\s*(?:,|;|\band then\b|\bthen\b|\band also\b|\balso\b|\bplus\b|\band\b)\s*/i)
+    .map((c) => c.trim())
+    .filter((c) => c.split(/\s+/).length >= 2);
+  if (clauses.length < 2) return [];
+  const out: { text: string; intent: UtteranceIntent; kind: ActionKind }[] = [];
+  for (const c of clauses) {
+    const intent = readIntent(c);
+    const kind = actionKind(intent);
+    if (kind) out.push({ text: c, intent, kind });
+  }
+  return new Set(out.map((o) => o.kind)).size >= 2 ? out : [];
+}

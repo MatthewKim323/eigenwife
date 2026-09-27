@@ -3,7 +3,7 @@ import type { CoreContext, Module } from "../context";
 import type { OnboardingService } from "../services";
 import { json } from "../hub";
 import { jevEndpoint, secret } from "../config";
-import { goalFrom, readIntent, type UtteranceIntent } from "./intent";
+import { goalFrom, readIntent, splitActions, type UtteranceIntent } from "./intent";
 import type { OutfitIntent } from "./outfit";
 import { createJev, type JevDecider, type JevVerdict } from "./jev";
 import { DEFAULT_RULES, PerceptionEngine, type Rule, type Trigger } from "./rules";
@@ -529,6 +529,17 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
   }
 
   async function act(t: Trigger, v: JevVerdict) {
+    // Several actions in one breath ("pajamas on and play some music"): do each, in order.
+    if (t.rule === "utterance" && !t.data.multiPart) {
+      const parts = splitActions(String(t.data.text ?? ""));
+      if (parts.length >= 2) {
+        log(`multi-action: ${parts.map((p) => p.kind).join(" + ")}`);
+        for (const p of parts) {
+          await act({ ...t, data: { ...t.data, text: p.text, multiPart: true } }, { ...v, intent: p.intent });
+        }
+        return;
+      }
+    }
     const agency = ctx.tryUse("agency");
     let kind = "shell.close_app";
     let args: Record<string, unknown> = {};
