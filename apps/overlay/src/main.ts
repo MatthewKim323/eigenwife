@@ -63,6 +63,8 @@ const log = (...a: unknown[]) => console.log(`[overlay ${new Date().toLocaleTime
 let state: OverlayState = loadState(STATE_PATH, fsio);
 // For recording a demo: EVE_OVERLAY_CAPTURABLE=1 lets screenshots see her this run.
 const capturableEnv = process.env.EVE_OVERLAY_CAPTURABLE === "1";
+/** EVE_OVERLAY_CAPTURABLE=0 forces her hidden from screenshots and screen shares. */
+const hiddenEnv = process.env.EVE_OVERLAY_CAPTURABLE === "0";
 let win: BrowserWindow | null = null;
 let tray: Tray | null = null;
 // Eve's own cursor over every display (docs/AGENT_CURSOR.md). EVE_CURSOR_LAYER=0 turns it off.
@@ -128,7 +130,7 @@ function createWindow() {
   if (process.platform === "darwin") win.setHiddenInMissionControl?.(true);
   // Space swipes briefly blur/occlude her; re-assert the floor so she never drops behind.
   win.on("blur", () => win?.setAlwaysOnTop(true, "screen-saver"));
-  win.setContentProtection(!(state.capturable || capturableEnv));
+  win.setContentProtection(hiddenEnv || !(state.capturable || capturableEnv));
   win.setIgnoreMouseEvents(true, { forward: true });
   interactive = false;
 
@@ -195,7 +197,7 @@ let lookTarget: { p: { x: number; y: number }; at: number } | null = null;
 function cursorLayerOpts() {
   return {
     coreHost: CORE_HOST,
-    capturable: () => state.capturable || capturableEnv,
+    capturable: () => !hiddenEnv && (state.capturable || capturableEnv),
     log,
     avatar: () => (win && !win.isDestroyed() && win.isVisible() ? win.getBounds() : null),
     // Cursor-only (no avatar window): shown follows the tray setting alone.

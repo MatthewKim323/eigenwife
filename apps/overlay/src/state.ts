@@ -41,9 +41,13 @@ export const DEFAULT_STATE: OverlayState = {
   muted: false,
   attentionPaused: false,
   openAtLogin: false,
-  capturable: false,
+  // Visible in screenshots and recordings by default (demos, clips). Tray "Hide from screen capture" opts out.
+  capturable: true,
   cursorVisible: true,
 };
+
+/** v2: capture visibility defaults on. Older files stored the old default (hidden), so that value is dropped once. */
+export const STATE_VERSION = 2;
 
 const isNum = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n);
 
@@ -70,13 +74,13 @@ export function parseState(raw: string | null | undefined): OverlayState {
     muted: bool("muted"),
     attentionPaused: bool("attentionPaused"),
     openAtLogin: bool("openAtLogin"),
-    capturable: bool("capturable"),
+    capturable: typeof o.v === "number" && o.v >= STATE_VERSION ? bool("capturable") : DEFAULT_STATE.capturable,
     cursorVisible: bool("cursorVisible"),
   };
 }
 
 export function serializeState(s: OverlayState): string {
-  return JSON.stringify(s, null, 2) + "\n";
+  return JSON.stringify({ v: STATE_VERSION, ...s }, null, 2) + "\n";
 }
 
 /** A rect of the given size tucked into a corner of a work area. */

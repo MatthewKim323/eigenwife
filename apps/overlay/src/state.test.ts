@@ -85,8 +85,11 @@ describe("persistence", () => {
     expect(parseState(serializeState(DEFAULT_STATE))).toEqual(DEFAULT_STATE);
   });
 
-  test("private by default: hidden from screen capture, no login item", () => {
-    expect(DEFAULT_STATE.capturable).toBe(false);
+  test("visible to screen capture by default (demos), no login item", () => {
+    expect(DEFAULT_STATE.capturable).toBe(true);
+    // old files stored the old hidden default: dropped once, re-read after v2 saves it
+    expect(parseState(JSON.stringify({ capturable: false })).capturable).toBe(true);
+    expect(parseState(JSON.stringify({ v: 2, capturable: false })).capturable).toBe(false);
     expect(DEFAULT_STATE.openAtLogin).toBe(false);
   });
 });
