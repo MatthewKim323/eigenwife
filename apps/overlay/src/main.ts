@@ -26,6 +26,7 @@ import {
 } from "electron";
 import { startCursorLayer, type CursorLayer } from "./cursor/layer";
 import { heartBitmap } from "./icon";
+import { liveEngineBody, liveMenuInfo, liveMenuLabel, parseLiveStatus, type LiveTray } from "./live";
 import {
   attentionEnvelope,
   parseScreenStatus,
@@ -295,6 +296,34 @@ async function toggleOutfit(id: string, on: boolean) {
 }
 
 // ---------------------------------------------------------------------------
+// voice engine (docs/LIVE.md): classic cascade vs Eve Live; the core owns ~/.eve/voice.json
+// ---------------------------------------------------------------------------
+
+let liveTray: LiveTray | null = null;
+
+async function refreshLive() {
+  let next: LiveTray | null = null;
+  try {
+    const r = await fetch(`${CORE_HTTP}/api/live`, { signal: AbortSignal.timeout(1500) });
+    next = r.ok ? parseLiveStatus(await r.json()) : null;
+  } catch {}
+  if (JSON.stringify(next) !== JSON.stringify(liveTray)) {
+    liveTray = next;
+    refreshTray();
+  }
+}
+
+async function setVoiceEngine(engine: "classic" | "live") {
+  try {
+    const r = await fetch(`${CORE_HTTP}/api/live/engine`, { method: "POST", body: liveEngineBody(engine), signal: AbortSignal.timeout(4000) });
+    log(`voice engine -> ${engine} (core ${r.status})`);
+  } catch {
+    log("voice engine: core offline");
+  }
+  await refreshLive();
+}
+
+// ---------------------------------------------------------------------------
 // global cursor: she looks where the mouse is, anywhere on screen (look.ts)
 // ---------------------------------------------------------------------------
 
@@ -426,6 +455,15 @@ function refreshTray() {
       click: (i) => void setScreenPaused(i.checked),
     },
     {
+      label: liveMenuLabel(liveTray),
+      enabled: !!liveTray,
+      submenu: [
+        { label: "Classic", type: "radio", checked: liveTray?.engine !== "live", click: () => void setVoiceEngine("classic") },
+        { label: "Live (gpt-live-1)", type: "radio", checked: liveTray?.engine === "live", click: () => void setVoiceEngine("live") },
+        ...liveMenuInfo(liveTray).map((l): MenuItemConstructorOptions => ({ label: l, enabled: false })),
+      ],
+    },
+    {
       label: "Outfit",
       enabled: outfit.length > 0,
       submenu: outfit.length
@@ -527,6 +565,9 @@ if (!app.requestSingleInstanceLock()) {
     // The tray's "Pause screen" mirrors the core too.
     void refreshScreen();
     setInterval(() => void refreshScreen(), 4000);
+    // "Voice engine: Classic / Live" mirrors the core (the spoken switch shows up here too).
+    void refreshLive();
+    setInterval(() => void refreshLive(), 4000);
     // ~30Hz, only while she's visible, only when it moved.
     setInterval(pollCursor, 33);
 

@@ -8,6 +8,7 @@ import { unlockAudio, wireAudioUnlock } from "./audio";
 import { EarsClient } from "./ears";
 import { Recognizer, type MicStatus } from "./recognition";
 import { chooseStt, earsAvailable, earsUrl, sttPref } from "./stt";
+import { wireLive, type LiveWiring } from "../live/wire";
 
 export interface SubtitleState {
   utteranceId: string;
@@ -44,6 +45,8 @@ const beginListeners = new Set<(utteranceId: string) => void>();
 let player: SpeechPlayer | null = null;
 let ears: { setMuted(on: boolean): void } | null = null;
 let mutedWanted = false;
+/** Eve Live (docs/LIVE.md): while it owns the mic, the classic ears and player stand down. */
+let live: LiveWiring | null = null;
 
 /** Imperative handle for scenes (emergence gates her first line until she's out of the card). */
 export const voice = {
@@ -65,6 +68,7 @@ export const voice = {
   mute(on: boolean) {
     mutedWanted = on;
     ears?.setMuted(on);
+    live?.setMuted(on);
     if (!ears) voiceUi.set({ mic: { ...voiceUi.get().mic, muted: on } });
   },
   muted() {
@@ -115,6 +119,8 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
           else voiceUi.set({ subtitle: s });
         },
         mouth: (value, hold, speaking) => {
+          // Live drives her mouth from its own output analyser.
+          if (live?.active()) return;
           avatarRuntime.mouth = value;
           avatarRuntime.mouthHold = hold;
           avatarRuntime.speaking = speaking;
@@ -128,11 +134,27 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
 
     const offs = [
       client.on("speech.begin", (e) => {
+        // Live lines play from the gpt-live-1 stream, not the segment player.
+        if (e.data.brain === "live") return beginListeners.forEach((fn) => fn(e.data.utteranceId));
         p.begin(e.data.utteranceId);
         beginListeners.forEach((fn) => fn(e.data.utteranceId));
       }),
       client.on("speech.segment", (e) => p.segment(e.data)),
-      client.on("speech.end", (e) => (e.data.interrupted ? p.stop("interrupted") : p.end(e.data.utteranceId))),
+      client.on("speech.end", (e) => {
+        if (e.source === "live") {
+          voiceUi.set({ subtitleEndedAt: performance.now() });
+          return doneListeners.forEach((fn) => fn(e.data.utteranceId, e.data.interrupted));
+        }
+        if (e.data.interrupted) p.stop("interrupted");
+        else p.end(e.data.utteranceId);
+      }),
+      // What he's saying, as the live session hears it (the core publishes voice.* for live).
+      client.on("voice.partial", (e) => {
+        if (e.source === "live" && live?.active()) voiceUi.set({ heard: e.data.text });
+      }),
+      client.on("voice.final", (e) => {
+        if (e.source === "live" && live?.active()) voiceUi.set({ heard: "" });
+      }),
       client.on("speech.stop", (e) => p.stop(e.data.reason)),
     ];
 
@@ -174,26 +196,49 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
         earsUrl(CORE_HTTP, OVERLAY ? "overlay" : "shell"),
       );
     const attach = (r: Ears, startNow: boolean) => {
-      if (disposed) return r.dispose();
+      // Disposed, or Eve Live took the mic while the stt probe was in flight.
+      if (disposed || live?.active()) return r.dispose();
       rec = r;
       ears = r;
       if (mutedWanted) r.setMuted(true);
       if (startNow) void r.start();
     };
 
-    if (MIC) {
-      const pref = sttPref(location.search, OVERLAY);
-      const browserOk = !!((globalThis as any).SpeechRecognition ?? (globalThis as any).webkitSpeechRecognition);
-      if (pref === "auto") {
-        void earsAvailable(CORE_HTTP).then((avail) => {
-          const src = chooseStt(pref, avail, browserOk);
-          attach(src === "deepgram" ? useDeepgram() : useBrowser(), src === "deepgram");
-        });
-      } else if (pref === "deepgram") attach(useDeepgram(), true);
-      else attach(useBrowser(), false);
-    } else {
-      voiceUi.set({ mic: { supported: false, listening: false, ptt: false, error: "mic off (?mic=0)" } });
-    }
+    const startEars = () => {
+      if (rec || disposed) return;
+      if (MIC) {
+        const pref = sttPref(location.search, OVERLAY);
+        const browserOk = !!((globalThis as any).SpeechRecognition ?? (globalThis as any).webkitSpeechRecognition);
+        if (pref === "auto") {
+          void earsAvailable(CORE_HTTP).then((avail) => {
+            const src = chooseStt(pref, avail, browserOk);
+            attach(src === "deepgram" ? useDeepgram() : useBrowser(), src === "deepgram");
+          });
+        } else if (pref === "deepgram") attach(useDeepgram(), true);
+        else attach(useBrowser(), false);
+      } else {
+        voiceUi.set({ mic: { supported: false, listening: false, ptt: false, error: "mic off (?mic=0)" } });
+      }
+    };
+    startEars();
+
+    // Eve Live: one STT path at a time. On live the classic ears are disposed (mic released),
+    // on classic they come back exactly as at boot.
+    const lw = MIC
+      ? wireLive(client, CORE_HTTP, OVERLAY ? "overlay" : "shell", {
+          stop: () => {
+            p.stop("voice engine: live");
+            rec?.dispose();
+            if (ears === rec) ears = null;
+            rec = null;
+            voiceUi.set({ heard: "" });
+          },
+          start: startEars,
+          mic: (m) => voiceUi.set({ mic: m }),
+          speaking: (on) => voiceUi.set({ speaking: on }),
+        })
+      : null;
+    live = lw;
 
     // Audio + mic both need a gesture in a browser: the first click anywhere does both.
     // Electron's overlay runs with autoplay allowed, so it unlocks right away.
@@ -216,6 +261,8 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
       removeEventListener("keydown", onDown);
       removeEventListener("keyup", onUp);
       disposed = true;
+      lw?.dispose();
+      if (live === lw) live = null;
       rec?.dispose();
       if (ears === rec) ears = null;
       p.dispose();

@@ -5,7 +5,7 @@ export interface MicStatus {
   listening: boolean;
   ptt: boolean;
   muted?: boolean;
-  source?: "browser" | "deepgram";
+  source?: "browser" | "deepgram" | "live";
   error?: string;
 }
 
