@@ -9,6 +9,12 @@ import { MossAdapter, type MossLike } from "./moss";
 import { decide, type Exchange } from "./policy";
 import { isDuplicate, nearest, reinforce, search, type RecordVecs, type Space } from "./retrieval";
 import { seedMemories } from "./seed";
+import { homedir } from "os";
+import { join } from "path";
+import { bunRunner, filterHits, GbrainClient, gbrainInstalled, type GbrainRunner } from "./gbrain";
+import { buildDigest, DIGEST_MAX_AGE_MS, type Digest } from "./gbrain-digest";
+import { liveCue } from "./gbrain-live";
+import { GbrainWriteback } from "./gbrain-writeback";
 
 /**
  * Memory (hippocampus). Three layers:
@@ -30,6 +36,29 @@ export interface MemoryModuleOptions {
   shortTermTtlMs?: number;
   persistDebounceMs?: number;
   now?: () => number;
+  /** gbrain (matt's knowledge brain, docs/KNOW_ME.md). null disables; undefined = env defaults. */
+  gbrain?: GbrainMemoryOptions | null;
+}
+
+export interface GbrainMemoryOptions {
+  /** Injected CLI runner (tests). Default: the real `gbrain` binary. */
+  runner?: GbrainRunner;
+  /** Digest + live lookups. Default: on for the real ~/.eve (or EVE_GBRAIN=1) when gbrain is installed; EVE_GBRAIN=0 off. */
+  enabled?: boolean;
+  /** Write-back. Default: on for the real ~/.eve (or EVE_GBRAIN_WRITE=1); EVE_GBRAIN_WRITE=0 off. */
+  write?: boolean;
+  /** Wait after boot before a (stale) digest runs, so it never competes with her first words. */
+  digestDelayMs?: number;
+  /** Skip the digest entirely (live + write-back only). */
+  digest?: boolean;
+  queryTimeoutMs?: number;
+  /** Budget for one live lookup (keyword search, p50 355ms). */
+  liveTimeoutMs?: number;
+  /** How long a lookup's world slot stays up. */
+  liveSlotMs?: number;
+  /** Same lookup isn't repeated within this window. */
+  liveCooldownMs?: number;
+  writeDebounceMs?: number;
 }
 
 export type MemoryServiceImpl = MemoryService & {
@@ -37,6 +66,8 @@ export type MemoryServiceImpl = MemoryService & {
   vectors(id: string): RecordVecs | undefined;
   flush(): Promise<void>;
   backend(): { embeddings: "openai" | "local"; moss: boolean };
+  /** gbrain status (docs/KNOW_ME.md), set once the module is up. */
+  gbrain?: () => Record<string, unknown>;
 };
 
 const BREAKER_MS = 10 * 60_000;
@@ -46,6 +77,8 @@ export function memoryModule(opts: MemoryModuleOptions = {}): Module {
   let flushNow: (() => Promise<void>) | null = null;
   let moss: MossLike | null = null;
   const offs: (() => void)[] = [];
+  const gbrainTimers = new Set<ReturnType<typeof setTimeout>>();
+  let writeback: GbrainWriteback | null = null;
 
   return {
     name: "memory",
@@ -344,6 +377,153 @@ export function memoryModule(opts: MemoryModuleOptions = {}): Module {
         }),
       );
 
+      // --- gbrain: matt's knowledge brain, never on the reply path (docs/KNOW_ME.md) -------
+      const g = opts.gbrain === null ? null : (opts.gbrain ?? {});
+      const realHome = ctx.config.eveHome === join(homedir(), ".eve");
+      const testing = process.env.NODE_ENV === "test" && !g?.runner;
+      const envOn = secret("EVE_GBRAIN");
+      const gbrainOn = !!g && !testing && (g.enabled ?? (!!g.runner || envOn === "1" || (envOn !== "0" && realHome))) && (!!g.runner || gbrainInstalled());
+      const envWrite = secret("EVE_GBRAIN_WRITE");
+      const writeOn = gbrainOn && (g!.write ?? (envWrite === "1" || (envWrite !== "0" && realHome)));
+      const client = gbrainOn ? new GbrainClient(g!.runner ?? bunRunner()) : null;
+      let digest: Digest | null = null;
+      let digesting: Promise<Digest | null> | null = null;
+      const live = { lookups: 0, hits: 0, inflight: 0, lastQuery: "", lastMs: 0, lastAt: 0 };
+      const recentCues = new Map<string, number>();
+      const gTimer = (ms: number, fn: () => void) => {
+        const t = setTimeout(() => {
+          gbrainTimers.delete(t);
+          fn();
+        }, ms);
+        (t as { unref?: () => void }).unref?.();
+        gbrainTimers.add(t);
+      };
+      const who = () => {
+        const u = ctx.tryUse("user")?.profile();
+        return u?.callMe || u?.name?.split(/\s+/)[0]?.toLowerCase() || "matt";
+      };
+
+      /** Fold a digest into the profile (onboarding wins) and the long-term store (replacing the last digest's facts). */
+      const applyDigest = async (d: Digest, replaceFacts: boolean) => {
+        try {
+          if (Object.keys(d.profile).length) await ctx.tryUse("user")?.merge(d.profile, "gbrain");
+        } catch (err) {
+          log("gbrain profile merge failed:", err);
+        }
+        if (!replaceFacts || !d.facts.length) return;
+        const keep = new Set(d.facts.map((f) => f.content.toLowerCase()));
+        for (const r of [...records.values()])
+          if (r.source === "gbrain" && r.tags?.includes("digest") && !keep.has(r.content.toLowerCase())) {
+            records.delete(r.id);
+            vecs.delete(r.id);
+          }
+        for (const f of d.facts)
+          await write({ kind: "fact", content: f.content, importance: f.importance, confidence: 0.7, source: "gbrain", tags: ["gbrain", "digest"] }, "STORE_LONG_TERM");
+        schedulePersist();
+      };
+
+      const runDigest = (): Promise<Digest | null> => {
+        if (!client) return Promise.resolve(null);
+        if (digesting) return digesting;
+        digesting = (async () => {
+          log("gbrain digest: querying");
+          const d = await buildDigest({ client, brains: ctx.tryUse("brains"), who: who(), now, log, queryTimeoutMs: g!.queryTimeoutMs });
+          if (d.by === "none") {
+            log(`gbrain digest: nothing (${d.error})`);
+            if (digest) digest = { ...digest, error: d.error };
+            return null;
+          }
+          digest = d;
+          await home.write("gbrain", d);
+          await applyDigest(d, true);
+          log(`gbrain digest: ${d.facts.length} facts, profile ${Object.keys(d.profile).join(",") || "-"} by ${d.by} in ${Math.round(d.ms / 1000)}s`);
+          return d;
+        })().finally(() => (digesting = null));
+        return digesting;
+      };
+
+      if (client) {
+        digest = await home.read<Digest | null>("gbrain", null);
+        if (digest) void applyDigest(digest, false);
+        if (g!.digest !== false) {
+          const check = () => {
+            if (!digest || now() - digest.at > DIGEST_MAX_AGE_MS) void runDigest();
+            gTimer(3600_000, check);
+          };
+          gTimer(g!.digestDelayMs ?? 20_000, check);
+        }
+        if (writeOn) writeback = new GbrainWriteback({ client, debounceMs: g!.writeDebounceMs, now, who, log });
+      }
+
+      /** Fire-and-forget: search gbrain for what he just mentioned; results are for her NEXT turn. */
+      const lookup = async (text: string) => {
+        if (!client || live.inflight >= 2) return;
+        const known = (ctx.tryUse("user")?.profile().people ?? []).map((p) => p.name);
+        const cue = liveCue(text, known);
+        if (!cue) return;
+        const key = cue.query.toLowerCase();
+        const coolMs = g!.liveCooldownMs ?? 10 * 60_000;
+        if (now() - (recentCues.get(key) ?? -Infinity) < coolMs) return;
+        recentCues.set(key, now());
+        live.inflight += 1;
+        live.lookups += 1;
+        live.lastQuery = cue.query;
+        try {
+          const hits = await client.search(cue.query, { timeoutMs: g!.liveTimeoutMs ?? 2500, limit: 6 });
+          live.lastMs = client.stats.lastMs ?? 0;
+          live.lastAt = now();
+          const top = filterHits(hits ?? [], { relative: 0.7, perPrefix: 2 }).slice(0, 3);
+          if (!top.length) return;
+          live.hits += top.length;
+          for (const h of top)
+            await write(
+              { kind: "fact", content: `from ${who()}'s notes (${h.slug}): ${h.text.slice(0, 220)}`, importance: 0.5, confidence: 0.6, source: "gbrain", tags: ["gbrain", "live"] },
+              "STORE_SHORT_TERM",
+            );
+          ctx.setSlot("gbrain", "recall", `his notes on "${cue.query}": ${top.map((h) => h.text.slice(0, 160)).join(" | ")}`);
+          const setAt = now();
+          gTimer(g!.liveSlotMs ?? 5 * 60_000, () => {
+            if (live.lastAt <= setAt) ctx.setSlot("gbrain", "recall", null);
+          });
+        } catch (err) {
+          log("gbrain lookup failed:", err);
+        } finally {
+          live.inflight -= 1;
+        }
+      };
+      if (client)
+        offs.push(
+          ctx.bus.on("voice.final", (e) => {
+            // Never awaited: the reply path only reads local memory.
+            void lookup(e.data.text ?? "");
+          }),
+        );
+      if (writeback) offs.push(ctx.bus.on("memory.write", (e) => void writeback?.offer(e.data.record, e.data.policy)));
+
+      const gbrainStatus = () => ({
+        live: !!client,
+        write: !!writeback,
+        realHome,
+        digest: digest ? { at: digest.at, ageMin: Math.round((now() - digest.at) / 60_000), ms: digest.ms, by: digest.by, facts: digest.facts.length, queries: digest.queries, hits: digest.hits, error: digest.error } : null,
+        digesting: !!digesting,
+        lookups: { ...live },
+        pendingWrites: writeback?.pending() ?? 0,
+        written: writeback?.written ?? 0,
+        writeFailures: writeback?.failed ?? 0,
+        lastWriteAt: writeback?.lastWriteAt,
+        cli: client ? { ...client.stats } : null,
+      });
+      service.gbrain = gbrainStatus;
+      ctx.route("/api/memory/status", async (req) => {
+        if (req.method === "POST") {
+          // POST { digest: true } forces a digest now (background; poll status).
+          const body = (await req.json().catch(() => ({}))) as { digest?: boolean; flush?: boolean };
+          if (body.digest) void runDigest();
+          if (body.flush) await writeback?.flush();
+        }
+        return json({ ok: true, count: records.size, shortTerm: service.shortTerm().length, backend: service.backend(), gbrain: gbrainStatus() });
+      });
+
       // --- routes ---------------------------------------------------------------------
       ctx.route("/api/memory/recall", async (req) => {
         if (req.method !== "POST") return null;
@@ -375,6 +555,13 @@ export function memoryModule(opts: MemoryModuleOptions = {}): Module {
     },
     async stop() {
       for (const off of offs.splice(0)) off();
+      for (const t of gbrainTimers) clearTimeout(t);
+      gbrainTimers.clear();
+      if (writeback) {
+        writeback.stop();
+        await Promise.race([writeback.flush().catch(() => {}), Bun.sleep(3000)]);
+        writeback = null;
+      }
       await flushNow?.().catch(() => {});
       flushNow = null;
       await moss?.close();
