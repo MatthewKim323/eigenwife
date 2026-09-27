@@ -85,7 +85,7 @@ say(text | stream)
   -> MarkSplitter      holds back incomplete "[..." tails across chunks, marks -> SpeechMark{at}
   -> SentenceChunker   . ! ? ; ; first 2 segments also on "," or ":" once >= 4 words; cap 12 words (9 for the first)
   -> TTS               up to 4 in parallel, content-hash disk cache
-  -> speech.segment    strictly in seq order { utteranceId, seq, text, marks, audioUrl? }
+  -> speech.segment    strictly in seq order { utteranceId, seq, text, marks, audioUrl?, stream? }
 ```
 
 Events per utterance: `speech.begin` (text is the full clean text for strings, `""` for streams), `avatar.state speaking` at the first real segment, `speech.segment` x N, `speech.end`. `avatar.state idle` when the shell reports the last `speech.played`, or after an estimated duration if it doesn't.
@@ -133,6 +133,7 @@ It prints one row per line with the backend and time per segment, and skips grac
 | `POST /api/speech/say` | `{ text, priority?, interrupt? }` |
 | `POST /api/speech/stop` | `{ reason? }` |
 | `GET /api/audio/<sha>.mp3` | cached audio |
+| `GET /api/audio/live/<id>.<mp3\|wav>` | a segment's audio while it's synthesized (docs/VOICE.md) |
 
 ## Env vars
 
