@@ -4,7 +4,12 @@
  * with endOfTurn (what Flux sends), then waits for her reply's first audio
  * segment. Reports p50/p95 of:
  *   sound  first audio of any kind (filler "hm." included)
- *   reply  first audio of her actual reply
+ *   reply  first audio of her actual reply (the speech.segment event)
+ *   play   when the player can start her reply, fetched like the shell does:
+ *          a live stream (stream: true) at its first body chunk, a whole
+ *          file once it's fully downloaded (the old decode-whole-buffer path)
+ *
+ * EVE_TTS_LIVE=0 measures the old whole-file path for comparison.
  *
  *   bun --env-file=../../.env run scripts/voice-bench.ts [talker backends, e.g. gateway | claude-cli | off] [turns]
  *
@@ -77,6 +82,20 @@ await waitFor((e) => e.type === "speech.end", 30_000, 0);
 await Bun.sleep(3000); // boot probes, clip prerender, socket prewarm
 const sound: number[] = [];
 const reply: number[] = [];
+const play: number[] = [];
+/** Fetch a segment's audio the way the shell does; resolves at the moment playback could start. */
+const playable = async (url: string, stream: boolean): Promise<number> => {
+  const res = await fetch(`http://127.0.0.1:${port}${url}`);
+  if (!stream) {
+    await res.arrayBuffer();
+    return Date.now();
+  }
+  const r = res.body!.getReader();
+  const first = await r.read();
+  const at = Date.now();
+  if (!first.done) while (!(await r.read()).done) {}
+  return at;
+}
 const fillers = new Set<string>(FILLERS);
 for (let i = 0; i < turns; i++) {
   const text = PHRASES[i % PHRASES.length]!;
@@ -89,12 +108,15 @@ for (let i = 0; i < turns; i++) {
   const real = await waitFor((e) => e.type === "speech.segment" && !!(e.data as { audioUrl?: string }).audioUrl && !fillers.has((e.data as { text: string }).text), 20_000, since);
   if (first) sound.push(first.ts - fin.ts);
   if (real) reply.push(real.ts - fin.ts);
+  const rd = real?.data as { audioUrl?: string; stream?: boolean } | undefined;
+  const playAt = rd?.audioUrl ? await playable(rd.audioUrl, !!rd.stream).catch(() => null) : null;
+  if (playAt) play.push(playAt - fin.ts);
   const said = events
     .slice(since)
     .filter((e) => e.type === "speech.segment")
     .map((e) => (e.data as { text: string }).text)
     .join(" ");
-  console.log(`  ${real ? real.ts - fin.ts : "--"}ms reply (${first ? first.ts - fin.ts : "--"}ms first sound)  "${text}" -> ${said.slice(0, 110)}`);
+  console.log(`  ${real ? real.ts - fin.ts : "--"}ms reply, ${playAt ? playAt - fin.ts : "--"}ms play${rd?.stream ? " (live)" : ""} (${first ? first.ts - fin.ts : "--"}ms first sound)  "${text}" -> ${said.slice(0, 110)}`);
   await waitFor((e) => e.type === "speech.end", 20_000, since);
   await Bun.sleep(1500);
 }
@@ -115,7 +137,7 @@ if (process.argv.includes("--delegate")) {
 }
 const f = (xs: number[]) => `p50 ${Math.round(percentile(xs, 50) ?? NaN)}ms p95 ${Math.round(percentile(xs, 95) ?? NaN)}ms`;
 const status = (await (await fetch(`http://127.0.0.1:${port}/api/talker/status`)).json().catch(() => ({}))) as { latency?: unknown };
-console.log(`\n${which} (tts ${process.env.EVE_TTS}): reply ${f(reply)}, first sound ${f(sound)}  (n=${reply.length})`);
+console.log(`\n${which} (tts ${process.env.EVE_TTS}, live ${process.env.EVE_TTS_LIVE === "0" ? "off" : "on"}): reply ${f(reply)}, play ${f(play)}, first sound ${f(sound)}  (n=${reply.length})`);
 console.log(`talker status latency: ${JSON.stringify(status.latency ?? {})}`);
 await core.stop();
 rmSync(home, { recursive: true, force: true });
