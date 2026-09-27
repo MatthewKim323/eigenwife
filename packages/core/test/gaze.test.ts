@@ -116,6 +116,9 @@ describe("targets", () => {
     expect(ramen.target.meta).toMatchObject({ source: "desktop", app: "Google Chrome", host: "menshotokyo.com", point: { x: 500, y: 350 } });
     expect(targetKey(hit())).toBe(targetKey(hit({ frame: { x: 405, y: 302, w: 358, h: 139 } })));
     expect(targetKey(hit())).not.toBe(targetKey(hit({ label: "Gyoza $9" })));
+    // animated titles (spinners, unread counts) don't restart a stare
+    expect(targetKey(hit({ label: "", title: "◑ Eigenwife" }))).toBe(targetKey(hit({ label: "", title: "◐ Eigenwife" })));
+    expect(targetKey(hit({ label: "", title: "(3) Inbox" }))).toBe(targetKey(hit({ label: "", title: "(4) Inbox" })));
   });
 
   test("label junk (bullets, asterisks, repeats) is dropped", () => {

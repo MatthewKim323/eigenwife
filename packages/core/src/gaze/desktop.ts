@@ -249,7 +249,9 @@ function hash(s: string): string {
  */
 export function targetKey(hit: Pick<AxHit, "app" | "bundleId" | "role" | "label" | "title" | "frame">): string {
   const app = (hit.bundleId || hit.app || "app").toLowerCase().replace(/[^a-z0-9.]+/g, "-");
-  const content = hit.label || hit.title ? `${hit.label}|${hit.title ?? ""}` : hit.frame ? `@${Math.round((hit.frame.x + hit.frame.w / 2) / 150)}.${Math.round((hit.frame.y + hit.frame.h / 2) / 150)}` : "?";
+  // Titles animate (Ghostty's ◑◐ spinner, unread badges "(3)"): key on the words only.
+  const title = (hit.title ?? "").replace(/\(\d+\)/g, "").replace(/[^\p{L}\p{N}\s._-]+/gu, "").replace(/\s+/g, " ").trim();
+  const content = hit.label || title ? `${hit.label}|${title}` : hit.frame ? `@${Math.round((hit.frame.x + hit.frame.w / 2) / 150)}.${Math.round((hit.frame.y + hit.frame.h / 2) / 150)}` : "?";
   return `desk:${app}:${(hit.role ?? "").replace(/^AX/, "").toLowerCase()}:${hash(content)}`;
 }
 

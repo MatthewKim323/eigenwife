@@ -193,7 +193,7 @@ if cmd == "at" {
   var coarse = false
   if !lineUnder.isEmpty {
     label = lineUnder
-  } else if pickRole == "AXTextArea", let f = frame(pick), f.width * f.height > minW * minH * 6 {
+  } else if pickRole == "AXTextArea", let f = frame(pick), f.width * f.height > 60_000 {
     // A big text area that can't say what's under the point (e.g. a terminal): its value
     // starts wherever the scrollback does, which is not what you're looking at.
     label = ""
