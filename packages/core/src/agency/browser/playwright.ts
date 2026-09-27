@@ -23,6 +23,38 @@ const TITLE_SCRIPT = `(() => {
   setInterval(fix, 800);
 })();`;
 
+/**
+ * Listing tiles on her page, for "which one?": Google Maps result articles
+ * (aria-label is the place name), else list items / articles with a heading.
+ * Names and visible text only, capped; it's her own page.
+ */
+const CARDS_SCRIPT = `(() => {
+  const out = [];
+  const txt = (el) => (el.innerText || "").replace(/[ \\t]+/g, " ").trim().slice(0, 600);
+  const feed = document.querySelector('div[role=feed]');
+  if (feed) {
+    for (const a of feed.querySelectorAll('div[role=article], a[aria-label][href*="/maps/place"]')) {
+      const art = a.getAttribute('role') === 'article' ? a : a.closest('div[role=article]') || a.parentElement;
+      const name = a.getAttribute('aria-label') || art.getAttribute('aria-label') || '';
+      const link = art.querySelector('a[href*="/maps/place"]');
+      if (name && !out.some((c) => c.name === name)) out.push({ name, text: txt(art), url: link ? link.href : undefined });
+      if (out.length >= 12) break;
+    }
+    if (out.length) return out;
+  }
+  for (const el of document.querySelectorAll('article, [role=article], li, [data-testid*="card" i], [class*="card" i]')) {
+    const h = el.querySelector('h1, h2, h3, h4, [role=heading]');
+    if (!h) continue;
+    const name = (h.innerText || '').trim().split('\\n')[0].slice(0, 80);
+    const text = txt(el);
+    if (!name || text.length < 12 || out.some((c) => c.name === name)) continue;
+    const link = h.querySelector('a[href]') || el.querySelector('a[href]');
+    out.push({ name, text, url: link ? link.href : undefined });
+    if (out.length >= 12) break;
+  }
+  return out;
+})()`;
+
 /** Evaluate once more if a navigation swapped the page out from under us. */
 async function settled<T>(fn: () => Promise<T>): Promise<T> {
   try {
@@ -150,7 +182,9 @@ export function playwrightBackend(opts: { dir?: string; executablePath?: string 
     async read(maxChars) {
       const p = current();
       const r = await p.evaluate(() => ({ title: document.title, url: location.href, text: (document.body?.innerText ?? "").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim() }));
-      return { title: r.title.replace(TITLE_PREFIX, ""), url: r.url, text: r.text.slice(0, maxChars) };
+      const raw = (await p.evaluate(CARDS_SCRIPT).catch(() => [])) as unknown;
+      const cards = Array.isArray(raw) ? (raw as { name: string; text: string; url?: string }[]).filter((c) => c && typeof c.name === "string" && typeof c.text === "string") : [];
+      return { title: r.title.replace(TITLE_PREFIX, ""), url: r.url, text: r.text.slice(0, maxChars), ...(cards.length ? { cards } : {}) };
     },
     async screenshot() {
       return new Uint8Array(await current().screenshot({ type: "png" }));

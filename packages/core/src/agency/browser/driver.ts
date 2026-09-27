@@ -13,6 +13,13 @@ import { addressBarPoint, aimPoint, inViewport, leftHalf, pageToScreen, viewport
  * The Playwright bits live behind BrowserBackend so tests drive a fake.
  */
 
+export interface PageRead {
+  title: string;
+  url: string;
+  text: string;
+  cards?: { name: string; text: string; url?: string }[];
+}
+
 export interface Target {
   selector?: string;
   text?: string;
@@ -38,7 +45,8 @@ export interface BrowserPage {
   type(t: Target, text: string, opts: { delayMs: number; enter?: boolean; timeoutMs: number }): Promise<void>;
   /** Wheel at a viewport point (scrolls whatever is under it). */
   wheel(at: CursorPt, dy: number): Promise<void>;
-  read(maxChars: number): Promise<{ title: string; url: string; text: string }>;
+  /** cards: listing tiles on her page (Maps results, list items with a heading), for option extraction. */
+  read(maxChars: number): Promise<PageRead>;
   screenshot(): Promise<Uint8Array>;
   /** Would pressing Enter in this field submit a consequential form? */
   enterSubmits(t: Target, timeoutMs: number): Promise<boolean>;
@@ -78,7 +86,7 @@ export interface StepTrace {
 export interface BrowserRun {
   ok: boolean;
   trace: StepTrace[];
-  reads: { title: string; url: string; text: string }[];
+  reads: PageRead[];
   shots: Uint8Array[];
   /** Stopped before a consequential step: which one and the steps from there on. */
   needsSubmit?: { index: number; why: string; remaining: BrowserStep[] };

@@ -128,7 +128,8 @@ export function createAgency(ctx: CoreContext, opts: AgencyOptions = {}) {
   };
   function show(args: Record<string, unknown>, taskId?: string, parent?: string) {
     if (!showOn()) return;
-    void gate.request("browser.task", { budget: 10, ...args }, { taskId, parent }).catch(() => {});
+    // followup:false: the show runs beside a task whose summary is the answer, not a menu to pick from.
+    void gate.request("browser.task", { budget: 10, ...args, followup: false }, { taskId, parent }).catch(() => {});
   }
   function startShow(taskId: string, goal: string, context: string, parent?: string): () => void {
     if (!showOn()) return () => {};
@@ -246,7 +247,7 @@ export function createAgency(ctx: CoreContext, opts: AgencyOptions = {}) {
   const service: AgencyService = {
     runTask,
     act: async (kind, args, o = {}) => {
-      const r = await gate.request(kind, args, { taskId: o.taskId, description: o.description, parent: o.parent });
+      const r = await gate.request(kind, args, { taskId: o.taskId, description: o.description, parent: o.parent, preApproved: o.approved });
       return { ok: r.ok, observation: r.observation, ...(r.data !== undefined ? { data: r.data } : {}) };
     },
   };

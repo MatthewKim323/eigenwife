@@ -12,6 +12,7 @@ import { speechModule } from "../speech/module";
 import { talkerModule } from "../talker/module";
 import { wardrobeModule } from "../wardrobe/module";
 import { workModule } from "../work/module";
+import { followupModule } from "../followup/module";
 import { screenModule } from "../screen/module";
 import { clock } from "./clock";
 import { touchModule } from "../touch/module";
@@ -42,6 +43,8 @@ export function allModules(): Module[] {
     agencyModule(),
     touchModule(),
     workModule(),
+    // The next step after anything she did (docs/FOLLOW_THROUGH.md).
+    followupModule(),
     screenModule(),
   ];
 }

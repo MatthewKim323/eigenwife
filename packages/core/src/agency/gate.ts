@@ -23,6 +23,12 @@ export interface RequestOpts {
   claimed?: PermissionClass;
   claimedNeedsApproval?: boolean;
   progress?: (text: string) => void;
+  /**
+   * He already answered yes out loud to exactly this question (the follow-up's
+   * "they have 7:30, want it?"). Recorded as a voice approval, no second ask.
+   * Ignored for SENSITIVE_ACTION: sends and payments always get their own question.
+   */
+  preApproved?: { text: string; question: string };
 }
 
 type Decision = { approved: boolean; by: "voice" | "key" | "policy"; reason?: string };
@@ -87,6 +93,9 @@ export class Gate {
     if (!verdict.allowed) {
       decision = { approved: false, by: "policy", reason: verdict.reason };
       bus.emit("action.approval", { actionId, approved: false, by: "policy" }, SRC);
+    } else if (ask && opts.preApproved && permission !== "SENSITIVE_ACTION") {
+      decision = { approved: true, by: "voice", reason: `said "${opts.preApproved.text.slice(0, 80)}" to "${opts.preApproved.question.slice(0, 120)}"` };
+      bus.emit("action.approval", { actionId, approved: true, by: "voice" }, SRC);
     } else if (ask) {
       decision = await this.approve(actionId, description, opts.parent, def.confirmLine?.(args), def.voiceOnly);
     } else {

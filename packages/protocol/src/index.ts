@@ -373,6 +373,25 @@ export interface EventMap {
     capMin?: number;
     sessionId?: string;
   };
+  // --- follow-through: the next step after anything she did (docs/FOLLOW_THROUGH.md) ---
+  /**
+   * She finished something and is waiting on his next step: "which one?" over
+   * options, a yes/no on a concrete next step, or a silent context ("opened your
+   * resume") that "read it" / "the other one" can resolve against.
+   */
+  "followup.pending": {
+    id: string;
+    domain: "places" | "files" | "code" | "web";
+    expect: "choice" | "confirm" | "none";
+    question: string;
+    options: { n: number; name: string; detail?: string }[];
+    next?: string;
+    expiresAt: number;
+  };
+  /** His answer resolved the pending follow-up. */
+  "followup.resolved": { id: string; utterance: string; step: string; choice?: string; by: "ordinal" | "name" | "attribute" | "yes" | "no" | "step" };
+  /** The pending follow-up went away: done, declined, expired (about 2 min), or he changed topic. */
+  "followup.cleared": { id: string; reason: "done" | "declined" | "expired" | "topic" | "replaced" };
 }
 
 export type VoiceEngine = "classic" | "live";

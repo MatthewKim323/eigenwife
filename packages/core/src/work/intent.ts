@@ -8,7 +8,10 @@ export type WorkAsk =
   | { kind: "code.task"; task: string }
   | { kind: "code.status"; tests: boolean }
   | { kind: "context" }
-  | { kind: "files.search"; query: string; content: boolean }
+  /** mode: open = "find my resume" (open the best match), locate = "where's my resume" (say where, offer to open). */
+  | { kind: "files.search"; query: string; content: boolean; mode: "open" | "locate" }
+  /** "find me ramen places in sf": browse in her browser, pick from the options with him (docs/FOLLOW_THROUGH.md). */
+  | { kind: "browse.options"; query: string }
   | { kind: "files.read"; target: string }
   | { kind: "files.open"; target: string }
   | { kind: "jabby"; mode: "read" | "act" | "send"; request: string }
@@ -43,6 +46,12 @@ const CONTEXT = /\bwhat\s+am\s+i\s+working\s+on\b|\bwhat\s+(?:repo|project|branc
 const FIND = new RegExp(`^(?:find|locate|search\\s+for|look\\s+for|pull\\s+up|dig\\s+up|where(?:'s|\\s+is|\\s+are|\\s+did\\s+i\\s+(?:put|save))|get\\s+me)\\s+(.+)$`, "i");
 const FIND_MINE = new RegExp(`\\b(?:my|the|that)\\b.*\\b(?:${FILE_NOUN})s?\\b|\\.[a-z0-9]{1,5}\\b|\\bmy\\s+\\w+`, "i");
 const CONTENT = /\b(?:about|mentions?|mentioning|that says|containing|with the words?|talks? about)\b\s+(.+)$/i;
+const PLACE_NOUN =
+  "restaurants?|places?|spots?|cafes?|caf\\u00e9s?|coffee(?:\\s+shops?)?|bars?|food|eats|ramen|sushi|tacos?|pizza|burgers?|brunch|boba|dim sum|pho|bbq|thai|korean|italian|mexican|indian|chinese|japanese|bakery|bakeries|dessert|ice cream";
+const PLACES = new RegExp(
+  `^(?:find|look\\s+for|search\\s+for|look\\s+up|get|pull\\s+up|show)\\s+(?:me\\s+|us\\s+)?(?:some\\s+|a\\s+few\\s+|a\\s+|any\\s+|the\\s+best\\s+|good\\s+|really\\s+good\\s+)*((?:[\\w'&-]+\\s+){0,4}?(?:${PLACE_NOUN})\\b.*)$`,
+  "i",
+);
 const READ = new RegExp(`^(?:what(?:'s| is)\\s+in|read(?:\\s+me)?|summari[sz]e|tl;?dr|skim)\\s+(?:my\\s+|the\\s+|that\\s+)?(.+?)(?:\\s+(?:${FILE_NOUN}))?$`, "i");
 const OPEN = /^(?:open(?:\s+up)?|launch|bring\s+up|show\s+me)\s+(?:my\s+|the\s+)?(.+)$/i;
 
@@ -93,6 +102,12 @@ export function readWorkIntent(raw: string): WorkAsk | null {
     if (target && !/^(?:my\s+)?(?:inbox|e-?mail|mail)$/i.test(target)) return { kind: "files.read", target };
   }
 
+  // "find me ramen places in sf", "look for sushi spots near me": options to pick from, not a plan.
+  const places = PLACES.exec(text);
+  const fileish = new RegExp(`\\b(?:${FILE_NOUN})s?\\b`, "i").test(text) || /\.[a-z0-9]{1,5}\b/i.test(text) || CODE_NOUN.test(text);
+  if (places && !fileish && !/\b(?:book|reserve|reservation|figure out|plan)\b/i.test(text) && !/\bmy\b/i.test(places[1]!))
+    return { kind: "browse.options", query: places[1]!.trim() };
+
   const find = FIND.exec(text);
   if (find && FIND_MINE.test(text) && !/\b(?:restaurant|place|spot|food|dinner|flight|hotel)\b/i.test(text)) {
     const phrase = find[1]!.trim();
@@ -103,7 +118,8 @@ export function readWorkIntent(raw: string): WorkAsk | null {
       .replace(/\s+/g, " ")
       .trim();
     if (!query) return { kind: "clarify", question: "which file? give me a word from the name.", partial: text };
-    return { kind: "files.search", query, content: !!content };
+    const locate = /^(?:where|locate|search\s+for)\b/i.test(text);
+    return { kind: "files.search", query, content: !!content, mode: locate ? "locate" : "open" };
   }
 
   const open = OPEN.exec(text);

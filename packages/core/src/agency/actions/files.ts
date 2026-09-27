@@ -3,6 +3,7 @@ import { homedir } from "os";
 import { basename, dirname, extname, isAbsolute, join } from "path";
 import type { ActionDef, ActionEnv, Exec } from "../types";
 import { deniedPath, expandHome, redactSecrets } from "../../work/safety";
+import { findFiles, type RankedFile } from "../../work/find";
 import { safeUrl } from "./apps";
 
 /**
@@ -11,14 +12,7 @@ import { safeUrl } from "./apps";
  * anything runs, and again after a search resolves a name to a path.
  */
 
-export interface FileHit {
-  path: string;
-  name: string;
-  modified: number;
-  size: number;
-}
-
-const NOISE = /\/(?:Library|node_modules|\.git|\.cache|\.Trash|\.npm|\.bun|\.cargo|\.rustup|\.venv|venv|__pycache__|dist|build|DerivedData|\.next|\.turbo)\//;
+export type { FileHit } from "../../work/find";
 
 export function ago(ms: number, now = Date.now()): string {
   const s = Math.max(0, Math.round((now - ms) / 1000));
@@ -37,37 +31,31 @@ export function tildify(p: string, home = homedir()): string {
   return p.startsWith(home + "/") ? `~${p.slice(home.length)}` : p;
 }
 
-/** Spotlight: name matches first, then content matches, minus noise and denylisted paths, newest first within each group. */
-export async function spotlight(exec: Exec, query: string, opts: { dir?: string; content?: boolean; limit?: number } = {}): Promise<FileHit[]> {
-  const dir = opts.dir ?? homedir();
-  const q = query.replace(/[\u0000-\u001f]/g, " ").trim().slice(0, 120);
-  if (!q) return [];
-  // "OVERLAY.md" is a file name, not a topic: content matches would only add noise.
-  const nameOnly = /\.[a-z0-9]{1,5}$/i.test(q) && !/\s/.test(q);
-  const runs = opts.content ? [["mdfind", "-onlyin", dir, q]] : nameOnly ? [["mdfind", "-onlyin", dir, "-name", q]] : [["mdfind", "-onlyin", dir, "-name", q], ["mdfind", "-onlyin", dir, q]];
-  const groups: string[][] = [];
-  for (const argv of runs) {
-    const r = await exec(argv, { timeoutMs: 10_000, maxBytes: 400_000 });
-    groups.push(r.code === 0 ? r.stdout.split("\n").map((l) => l.trim()).filter(Boolean) : []);
-  }
-  const seen = new Set<string>();
-  const out: FileHit[] = [];
-  const limit = opts.limit ?? 8;
-  for (const g of groups) {
-    const hits: FileHit[] = [];
-    for (const p of g.slice(0, 400)) {
-      if (seen.has(p) || NOISE.test(p) || /\/\.[^/]+\//.test(p.slice(homedir().length)) || deniedPath(p)) continue;
-      seen.add(p);
-      try {
-        const st = statSync(p);
-        hits.push({ path: p, name: basename(p), modified: st.mtimeMs, size: st.size });
-      } catch {}
-    }
-    hits.sort((a, b) => b.modified - a.modified);
-    out.push(...hits);
-    if (out.length >= limit) break;
-  }
-  return out.slice(0, limit);
+/** matt's name words ("matt", "kim"), so a file named after him ranks higher. */
+export function ownerWords(env: Pick<ActionEnv, "ctx">): string[] {
+  const p = env.ctx.tryUse("user")?.profile();
+  return [p?.name, p?.callMe]
+    .filter((x): x is string => typeof x === "string")
+    .flatMap((x) => x.toLowerCase().split(/[^a-z]+/))
+    .filter((w) => w.length >= 3);
+}
+
+/** Spotlight, ranked like a person looks (work/find.ts): Documents, Downloads, Desktop, iCloud, then home; code trees out. */
+export async function spotlight(
+  exec: Exec,
+  query: string,
+  opts: { dir?: string; content?: boolean; limit?: number; owner?: string[]; repoPath?: string | null; now?: number; home?: string } = {},
+): Promise<RankedFile[]> {
+  const home = opts.home ?? homedir();
+  return findFiles(exec, query, {
+    home,
+    now: opts.now ?? Date.now(),
+    dir: opts.dir && opts.dir !== home ? opts.dir : undefined,
+    content: opts.content,
+    limit: opts.limit ?? 8,
+    owner: opts.owner,
+    repoPath: opts.repoPath ?? null,
+  });
 }
 
 export const filesSearch: ActionDef = {
@@ -78,12 +66,14 @@ export const filesSearch: ActionDef = {
   async run(args, env) {
     const query = String(args.query ?? "").trim();
     if (!query) return { ok: false, observation: "search for what?" };
-    const dir = args.dir ? expandHome(String(args.dir)) : homedir();
+    const home = env.deps.env("EVE_FILES_HOME") || homedir();
+    const dir = args.dir ? expandHome(String(args.dir)) : home;
     env.progress?.(`spotlight: ${query}`);
-    const hits = await spotlight(env.deps.exec, query, { dir, content: args.content === true, limit: Number(args.limit) || 8 });
+    const repoPath = typeof args.repo === "string" && args.repo ? expandHome(args.repo) : null;
+    const hits = await spotlight(env.deps.exec, query, { dir, home, content: args.content === true, limit: Number(args.limit) || 8, owner: ownerWords(env), repoPath, now: env.deps.now() });
     if (!hits.length) return { ok: true, observation: `no files matching "${query}"`, data: { hits } };
     const now = env.deps.now();
-    const top = hits.slice(0, 3).map((h) => `${h.name} in ${tildify(dirname(h.path))}, ${ago(h.modified, now)}`);
+    const top = hits.slice(0, 3).map((h) => `${h.name} in ${h.where}, ${ago(h.modified, now)}`);
     return { ok: true, observation: `found ${hits.length}${hits.length >= 8 ? "+" : ""}: ${top.join("; ")}`, data: { hits } };
   },
 };
@@ -145,7 +135,7 @@ export async function resolveFile(env: ActionEnv, target: string): Promise<{ pat
     const why = deniedPath(expandHome(t));
     return { error: why ?? `${tildify(expandHome(t))} doesn't exist` };
   }
-  const hits = await spotlight(env.deps.exec, t.replace(/\s+(?:file|doc)$/i, ""), { limit: 1 });
+  const hits = await spotlight(env.deps.exec, t.replace(/\s+(?:file|doc)$/i, ""), { limit: 1, owner: ownerWords(env), now: env.deps.now(), home: env.deps.env("EVE_FILES_HOME") || undefined });
   if (!hits.length) return { error: `couldn't find a file called ${t}` };
   return { path: hits[0]!.path };
 }
@@ -236,7 +226,9 @@ export const filesOpen: ActionDef = {
   async run(args, env) {
     const target = String(args.target ?? args.path ?? "").trim();
     if (!target) return { ok: false, observation: "open what?" };
-    const url = safeUrl(target) ?? (/^[\w-]+(?:\.[\w-]+)+(?:\/\S*)?$/.test(target) && !existsSync(expandHome(target)) ? safeUrl(`https://${target}`) : null);
+    // "resume.pdf" is a file, not a website.
+    const looksLikeFile = /\.(?:pdf|docx?|pages|key|md|txt|rtf|pptx?|xlsx?|numbers|csv|png|jpe?g|heic)$/i.test(target);
+    const url = safeUrl(target) ?? (/^[\w-]+(?:\.[\w-]+)+(?:\/\S*)?$/.test(target) && !looksLikeFile && !existsSync(expandHome(target)) ? safeUrl(`https://${target}`) : null);
     if (url) {
       const ok = await env.deps.openUrl(url);
       return { ok, observation: ok ? `opened ${url}` : `couldn't open ${url}` };
@@ -248,6 +240,11 @@ export const filesOpen: ActionDef = {
     }
     const found = await resolveFile(env, target);
     if ("error" in found) return { ok: false, observation: found.error };
+    // "show it in finder": select it in a Finder window, never run it.
+    if (args.reveal === true) {
+      const r = await env.deps.exec(["open", "-R", found.path], { timeoutMs: 10_000 });
+      return { ok: r.code === 0, observation: r.code === 0 ? `showed ${basename(found.path)} in finder` : `couldn't show ${basename(found.path)} in finder`, data: { path: found.path } };
+    }
     if (EXECUTABLE_EXT.test(found.path)) return { ok: false, observation: `refused: opening ${basename(found.path)} would run it` };
     const r = await env.deps.exec(["open", found.path], { timeoutMs: 10_000 });
     return { ok: r.code === 0, observation: r.code === 0 ? `opened ${basename(found.path)}` : `couldn't open ${basename(found.path)}`, data: { path: found.path } };

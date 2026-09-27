@@ -17,6 +17,9 @@ import { codeRoots, listRepos, repoFromText, type KnownRepo } from "./repo";
 import { deniedPath, expandHome } from "./safety";
 import { speakable } from "./jabby";
 import { createMessagesFlow } from "../agency/actions/messages";
+import { ambiguity, monthOf, type RankedFile } from "./find";
+import { reported } from "../followup/report";
+import type { FollowupOption } from "../services";
 
 /**
  * Eve as a coworker. Watches what matt is working on (app + repo, never the
@@ -199,8 +202,9 @@ export function createWork(ctx: CoreContext, opts: WorkOptions = {}) {
     return !!pending;
   }
 
+  /** An answer to her question, an answer to a pending follow-up ("the second one"), or a work ask. */
   function claims(text: string): boolean {
-    return awaiting() || readWorkIntent(text) !== null;
+    return awaiting() || !!ctx.tryUse("followup")?.claims(text) || readWorkIntent(text) !== null;
   }
 
   const agencyOrThrow = () => {
@@ -285,7 +289,52 @@ export function createWork(ctx: CoreContext, opts: WorkOptions = {}) {
     return { ok: false, summary: sent.observation.startsWith("not done:") ? "okay, not sending it." : `didn't send: ${sent.observation}` };
   }
 
+  /**
+   * "find my resume": rank, then open the clear winner with one line, or ask
+   * which when the top two are close. "where's my resume": say where, offer to
+   * open. Never reads contents aloud (that's "read it").
+   */
+  async function findFile(ask: WorkAsk & { kind: "files.search" }, parent?: string): Promise<{ ok: boolean; summary: string }> {
+    const agency = agencyOrThrow();
+    const fu = ctx.tryUse("followup");
+    const r = await agency.act("files.search", { query: ask.query, content: ask.content, limit: 6 }, { parent });
+    const hits = ((r.data as { hits?: RankedFile[] } | undefined)?.hits ?? []).slice(0, 4);
+    if (!r.ok) return { ok: false, summary: `couldn't search: ${r.observation}` };
+    if (!hits.length) return { ok: true, summary: `couldn't find a ${ask.query} in documents, downloads, desktop or icloud.` };
+    const options: FollowupOption[] = hits.map((h, i) => ({ n: i + 1, name: h.name, path: h.path, modified: h.modified, where: h.where, detail: `${h.name} ${h.where} ${monthOf(h.modified)}`.toLowerCase() }));
+    const top = options[0]!;
+    if (ask.mode === "locate") {
+      const q = "want me to open it?";
+      fu?.offer({ domain: "files", expect: "confirm", question: q, options, chosen: top, next: "open" });
+      return { ok: true, summary: `${top.name}, in ${top.where}. ${q}` };
+    }
+    const amb = ambiguity(hits, deps.now());
+    if (amb && fu) {
+      fu.offer({ domain: "files", expect: "choice", question: amb.question, options: options.slice(0, 2), query: ask.query });
+      return { ok: true, summary: `found two. ${amb.question}` };
+    }
+    const open = await agency.act("files.open", { target: top.path }, { parent });
+    if (!open.ok) {
+      const q = "want me to show it in finder?";
+      fu?.offer({ domain: "files", expect: "confirm", question: q, options, chosen: top, next: "reveal" });
+      return { ok: false, summary: `found ${top.name} in ${top.where} but couldn't open it. ${q}` };
+    }
+    fu?.offer({ domain: "files", expect: "none", question: `opened ${top.name}`, options, chosen: top });
+    return { ok: true, summary: `found ${top.name} in ${top.where}, opening it.` };
+  }
+
   async function handle(text: string, o: { parent?: string; goal?: string } = {}): Promise<{ ok: boolean; summary: string }> {
+    // Every outcome line comes back to the caller (the reflex says it): the follow-up stays quiet.
+    return reported(() => handleNow(text, o));
+  }
+
+  async function handleNow(text: string, o: { parent?: string; goal?: string } = {}): Promise<{ ok: boolean; summary: string }> {
+    // His answer to a pending follow-up ("the second one", "yeah", "read it") comes first.
+    const fu = ctx.tryUse("followup");
+    if (fu && !awaiting() && fu.claims(text)) {
+      const r = await fu.resolve(text, { parent: o.parent });
+      if (r.handled) return { ok: r.ok, summary: r.summary };
+    }
     let utterance = text;
     // She asked "stephen hung or stephen lee?" / "what do you wanna say?": this is the answer (unless it's a new text ask).
     if (messages.awaiting() && readWorkIntent(text)?.kind !== "messages.send") {
@@ -322,9 +371,13 @@ export function createWork(ctx: CoreContext, opts: WorkOptions = {}) {
           const r = await agencyOrThrow().act("code.status", { repo: repo.path, tests: ask.tests }, { parent });
           return { ok: r.ok, summary: r.observation };
         }
-        case "files.search": {
-          const r = await agencyOrThrow().act("files.search", { query: ask.query, content: ask.content }, { parent });
-          return { ok: r.ok, summary: r.observation };
+        case "files.search":
+          return await findFile(ask, parent);
+        case "browse.options": {
+          const f = ctx.tryUse("followup");
+          if (f) return await f.browse(ask.query, { parent });
+          const r = await agencyOrThrow().act("browser.task", { query: ask.query, maps: true, goal: `look up ${ask.query}` }, { parent });
+          return { ok: r.ok, summary: r.ok ? "it's up in my browser." : speakable(r.observation, 160) };
         }
         case "files.read": {
           const r = await agencyOrThrow().act("files.read", { target: ask.target }, { parent });
@@ -332,7 +385,14 @@ export function createWork(ctx: CoreContext, opts: WorkOptions = {}) {
         }
         case "files.open": {
           const r = await agencyOrThrow().act("files.open", { target: ask.target }, { parent });
-          return { ok: r.ok, summary: r.ok ? "opened." : r.observation.replace(/^not done: /, "") };
+          const path = (r.data as { path?: string } | undefined)?.path;
+          if (r.ok && path) {
+            const name = path.split("/").pop()!;
+            ctx.tryUse("followup")?.offer({ domain: "files", expect: "none", question: `opened ${name}`, options: [{ n: 1, name, path, detail: name.toLowerCase() }], chosen: { n: 1, name, path, detail: name.toLowerCase() } });
+            return { ok: true, summary: `opening ${name}.` };
+          }
+          if (r.ok) return { ok: true, summary: `${r.observation}.` };
+          return { ok: false, summary: `couldn't open it: ${r.observation.replace(/^not done: /, "")}` };
         }
         case "shell.run": {
           const cwd = ask.dir ? (resolveRepo(ask.dir)?.path ?? ask.dir) : (resolveRepo()?.path ?? deps.home);

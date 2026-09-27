@@ -115,7 +115,21 @@ export interface AgencyService {
   /** Run a multi-step real-world task (planning, swarm, actions). */
   runTask(goal: string, opts?: { parent?: string }): Promise<{ ok: boolean; summary: string }>;
   /** Ask permission (voice) when needed, then execute a registered action. */
-  act(kind: string, args: Record<string, unknown>, opts?: { taskId?: string; description?: string; parent?: string }): Promise<{ ok: boolean; observation: string; data?: unknown }>;
+  act(
+    kind: string,
+    args: Record<string, unknown>,
+    opts?: {
+      taskId?: string;
+      description?: string;
+      parent?: string;
+      /**
+       * He already said yes out loud to exactly this ("they have 7:30, want it?" "yeah").
+       * The gate records it as his spoken approval instead of asking twice. Never covers
+       * SENSITIVE_ACTION (sends, payments): those always get the gate's own question.
+       */
+      approved?: { text: string; question: string };
+    },
+  ): Promise<{ ok: boolean; observation: string; data?: unknown }>;
 }
 
 /** Eve as a coworker (packages/core/src/work, docs/WORK.md). */
@@ -269,9 +283,65 @@ export interface TalkerService {
   start(req: { userText: string; event?: string; behavior?: string; extra?: string; maxWords?: number; parent?: string }): TalkerRunHandle;
 }
 
+/** One option she offered (a place from her browser page, a file). */
+export interface FollowupOption {
+  n: number;
+  name: string;
+  rating?: number;
+  reviews?: number;
+  price?: string;
+  kind?: string;
+  hours?: string;
+  address?: string;
+  url?: string;
+  detail: string;
+  path?: string;
+  modified?: number;
+  where?: string;
+}
+
+/** What she's waiting on after acting (packages/core/src/followup, docs/FOLLOW_THROUGH.md). */
+export interface FollowupPending {
+  id: string;
+  domain: "places" | "files" | "code" | "web";
+  /** choice: "which one?"; confirm: a yes/no on `next`; none: silent context ("read it", "the other one"). */
+  expect: "choice" | "confirm" | "none";
+  question: string;
+  options: FollowupOption[];
+  /** The option in play (the place he picked, the file she opened). */
+  chosen?: FollowupOption;
+  /** What "yeah" does: open, hours, availability, book, calendar, reveal, read, open-other. */
+  next?: string;
+  /** Booking times she read off the page ("7:30 pm"). */
+  times?: string[];
+  time?: string;
+  /** The search that produced the options ("ramen places in san francisco"). */
+  query?: string;
+  at: number;
+  expiresAt: number;
+}
+
+export interface FollowupService {
+  /** The live pending follow-up (null when none or expired). */
+  pending(): FollowupPending | null;
+  /** Would this utterance answer her pending follow-up? Pure: no state changes. */
+  claims(text: string): boolean;
+  /** Act on his answer: pick, confirm, decline, or a next step. handled:false = not an answer (nothing changed). */
+  resolve(text: string, opts?: { parent?: string }): Promise<{ handled: boolean; ok: boolean; summary: string }>;
+  /** Set what she's waiting on (replaces any older one). */
+  offer(p: Omit<FollowupPending, "id" | "at" | "expiresAt"> & { ttlMs?: number }): FollowupPending;
+  clear(reason?: "done" | "declined" | "expired" | "topic" | "replaced"): void;
+  /** "find me ramen places in sf": browse in her browser, pull the options, pick one with an opinion, ask which. */
+  browse(query: string, opts?: { parent?: string; maps?: boolean }): Promise<{ ok: boolean; summary: string }>;
+  /** browser.task tells the follow-up what it just read (options from her page). */
+  noteBrowse(run: { query?: string; place?: string; url?: string; options: FollowupOption[]; text?: string }): void;
+}
+
 export interface ServiceMap {
   /** The talker (packages/core/src/talker). */
   talker: TalkerService;
+  /** The next step after anything she did (packages/core/src/followup). */
+  followup: FollowupService;
   /** matt's profile (packages/core/src/onboarding). */
   user: UserService;
   onboarding: OnboardingService;

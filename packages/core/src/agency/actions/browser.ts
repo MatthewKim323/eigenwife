@@ -3,6 +3,7 @@ import { join } from "path";
 import { BROWSER_LIMITS, httpUrl, shortUrl, type BrowserRun, type BrowserStep } from "../browser/driver";
 import type { ActionDef, ActionEnv, ActionOutcome } from "../types";
 import type { Place } from "./places";
+import { extractOptions, type Option } from "../../followup/options";
 
 /**
  * browser.task / browser.submit: Eve does it herself in her own visible
@@ -171,11 +172,28 @@ function summarize(run: BrowserRun, what: string): string {
 
 function outcome(run: BrowserRun, what: string, env: ActionEnv): ActionOutcome {
   const shots = saveShots(run, env);
+  // Listing pages ("ramen near sf"): the options a person would pick from, off HER page.
+  const last = run.reads.at(-1);
+  const options = extractOptions(last);
   return {
     ok: run.ok,
     observation: summarize(run, what),
-    data: { trace: run.trace, url: run.url, reads: run.reads.map((r) => ({ ...r, text: r.text.slice(0, 4000) })), shots, truncated: run.truncated ?? 0 },
+    data: { trace: run.trace, url: run.url, reads: run.reads.map((r) => ({ ...r, text: r.text.slice(0, 4000) })), shots, truncated: run.truncated ?? 0, options },
   };
+}
+
+/** Tell the follow-up what she just saw, so "which one?" / "the second one" have something to stand on. */
+function note(args: Record<string, unknown>, env: ActionEnv, out: ActionOutcome): void {
+  if (args.followup === false || !out.ok) return;
+  const d = out.data as { options?: Option[]; url?: string; reads?: { text: string }[] } | undefined;
+  const place = args.place as { name?: string } | undefined;
+  env.ctx.tryUse("followup")?.noteBrowse({
+    query: typeof args.query === "string" ? args.query : undefined,
+    place: typeof place?.name === "string" ? place.name : undefined,
+    url: d?.url,
+    options: place?.name ? [] : (d?.options ?? []),
+    text: d?.reads?.at(-1)?.text?.slice(0, 4000),
+  });
 }
 
 const budgetOf = (args: Record<string, unknown>) => Math.max(1, Math.min(BROWSER_LIMITS.maxBudget, Number(args.budget) || BROWSER_LIMITS.defaultBudget));
@@ -206,7 +224,9 @@ export const browserTask: ActionDef = {
       const first = outcome(run, what, env);
       return { ok: sub.ok, observation: `${first.observation}. ${sub.ok ? sub.observation : `didn't submit: ${sub.observation.replace(/^not done: /, "")}`}`, data: { first: first.data, submit: sub.data } };
     }
-    return outcome(run, what, env);
+    const out = outcome(run, what, env);
+    note(args, env, out);
+    return out;
   },
 };
 

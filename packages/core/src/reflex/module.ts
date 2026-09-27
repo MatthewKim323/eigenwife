@@ -221,6 +221,8 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
     if (it.approval && pendingApprovals.size) return true;
     if (it.outfit || it.music || it.browse || it.command || it.task || it.work) return true;
     if (screenOffer || ctx.tryUse("work")?.awaiting()) return true;
+    // An answer to her pending follow-up ("the second one", "yeah") goes to followup, not a fresh reply.
+    if (ctx.tryUse("followup")?.claims(text)) return true;
     // Screen questions need a look first (speak() does it, then starts the talker).
     if (ctx.tryUse("screen") && screenDeictic(text)) return true;
     return false;
@@ -306,6 +308,9 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
     // She asked a work question ("which repo?"): the next thing he says is the answer.
     if (t.rule === "utterance" && !v.stopSpeech && pendingApprovals.size === 0 && v.decision !== "ESCALATE" && ctx.tryUse("work")?.awaiting())
       v = { ...v, decision: "ESCALATE", reason: `${v.reason}; answering her work question` };
+    // She's waiting on a next step ("which one?", "want 7:30?"): his answer goes through work -> followup (docs/FOLLOW_THROUGH.md).
+    if (t.rule === "utterance" && !v.stopSpeech && pendingApprovals.size === 0 && v.decision !== "ESCALATE" && ctx.tryUse("followup")?.claims(text))
+      v = { ...v, decision: "ESCALATE", reason: `${v.reason}; answering her follow-up` };
     // She offered to look at a stuck error: "yeah" hands it to work mode, "nah" drops it.
     if (t.rule === "utterance" && !v.stopSpeech && screenOffer) {
       if (now() > screenOffer.until) screenOffer = null;
