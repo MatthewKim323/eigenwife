@@ -75,7 +75,34 @@ Bus: `talker.delegate { runId, kind, task, stall?, backend? }` on every delegati
 | Jev in parallel | Talker starts at trigger time (or at EagerEndOfTurn), Jev's 100-400ms is hidden. | `talker/router.ts` |
 | First clause | The chunker cuts the first two segments at a comma or colon once they have 4 words, and caps the first segment at 9 words, so TTS starts on the first clause. | `speech/chunker.ts` |
 | Prewarmed TTS sockets | ElevenLabs `multi-stream-input` (one context per segment, many in flight on one socket, `eleven_flash_v2_5`, mp3) and Deepgram Aura-2 `/v1/speak` websocket (Speak + Flush, linear16 wrapped as wav). Opened at boot and again whenever he starts talking (`voice.partial`, `voice.eager`); HTTP fallback on any socket trouble. `EVE_TTS_STREAM=0` turns them off. | `speech/sockets.ts`, `speech/tts.ts` |
+| Live audio | A streaming backend's segment goes out at its first bytes with a live url (`/api/audio/live/<id>.<mp3\|wav>`, `stream: true`); the shell plays it while it's synthesized. See Streaming audio. `EVE_TTS_LIVE=0` turns it off. | `speech/live.ts`, `shell/voice/engine.ts` |
 | Instant clips | Fillers, stall/ack lines and cancel lines are prerendered in her current voice at boot (`EVE_PRERENDER_CLIPS=0` to skip), so a delegation's first sound is a cache hit. | `speech/lines.ts`, `speech/module.ts` |
+
+## Streaming audio
+
+Before, a segment's `speech.segment` went out only when its whole file was synthesized and cached, and the shell then fetched and decoded the whole file. Now:
+
+```
+ TTS socket / chunked HTTP ─ chunks ─► LiveStreams (core, in memory) ──► GET /api/audio/live/<id>.<ext>  (chunked, follows the stream)
+        │  first chunk ─► speech.segment { audioUrl: live url, stream: true }   (still strictly in seq order)
+        └─ done ───────► AudioCache.put(<sha256 content hash>)  (replays, prerendered lines, plain /api/audio/<sha> urls)
+```
+
+- **Core** (`speech/live.ts`, `speech/tts.ts`, `speech/service.ts`): backends take an optional `onChunk`. ElevenLabs multi-context hands out each socket audio message; Aura sends a streaming wav header (sizes `0xFFFFFFFF`) then PCM as it comes, while the cached file keeps a real header; OpenAI / Deepgram / ElevenLabs HTTP read their chunked bodies. `Tts.render(text, signal, { onLive })` opens a live stream at the first chunk and tees every byte into the cache under the normal content hash. The speech service emits a segment at whichever comes first, the live start or the finished (or cached) file, and still waits for the segment before it. Cached lines keep plain file urls. A socket that dies after it already streamed part of a segment doesn't restart it over HTTP (no second format mid-segment); the live stream just ends. A finished live url stays readable for 60s, then serves the cached file by its hash.
+- **Shell** (`voice/engine.ts`, `voice/stream.ts`, `voice/player.ts`): every segment is prepared the moment it arrives, so the next one is already downloading (and, for mp3, already appended to its MediaSource) while the current one plays. Live mp3 plays through `MediaSource("audio/mpeg")` in an `<audio>` routed into the shared AudioContext with `createMediaElementSource`; live Aura wav is parsed and scheduled as back-to-back PCM buffers. Both feed the same `AnalyserNode`, so lipsync is unchanged. Cached files take the old fetch + `decodeAudioData` path. A stream that can't start (no MediaSource, `play()` refused, a bad header) decodes the whole file once it's in; no audio at all falls back to speechSynthesis. Strict FIFO, `speech.played`, and barge-in are unchanged (stop also stops prepared-but-unplayed streams and aborts their downloads). Marks fire by playback position (`TimedMarks`, polled every 25ms), against the real duration once known, else text length at a speaking rate learned from earlier segments (`SpeechRate`); a stalled stream holds its marks; leftovers fire at the end.
+
+**Measured** (2026-09-26, matt's Mac, real network, prewarmed sockets, every line new text; `say()` of a two-clause line -> her first segment):
+
+| TTS | Stage | whole files (before) p50 / p95 | live stream (after) p50 / p95 | n |
+|---|---|---|---|---|
+| ElevenLabs flash (ws) | playable at the player (`stream-bench`) | 341 / 443ms | **203 / 385ms** | 18 |
+| ElevenLabs flash (ws) | **first audible sample in Chromium** (`stream-browser-bench`, shell engine) | 276 / 474ms | **202 / 646ms** | 12 |
+| Deepgram Aura-2 (ws) | playable at the player | 950 / 1441ms | **209 / 480ms** | 18 |
+| Deepgram Aura-2 (ws) | **first audible sample in Chromium** | 910 / 1294ms | **140 / 174ms** | 12 |
+
+So Aura saves **~770ms p50** (the whole ~1s segment used to be synthesized before a sample played; now it's the ~130ms first byte), and ElevenLabs saves **~75 to 140ms** (flash returns a short segment nearly all at once, so there was less to win). With streaming, Aura goes from the slowest voice to the fastest at first sound.
+
+End to end (`voice-bench gateway 8`, end of his speech -> her reply's first segment, now the first-byte moment when live): ElevenLabs 1195ms p50 before / 1430ms after, Deepgram 1567 / 1216ms. These runs are dominated by the gateway talker's first-token jitter (the same phrase swings 1.0 to 1.9s between runs, and Deepgram had two ~12s talker stalls in each run), so they don't resolve a 100ms TTS change; the isolated benches above are the real before/after. Expect roughly: ElevenLabs reply ~1.0 to 1.1s p50, Aura reply ~1.2s p50 (was ~1.7s in the table below).
 
 ## Measured
 
@@ -138,14 +165,19 @@ bun --env-file=../../.env run scripts/voice-bench.ts claude-cli 4
 bun --env-file=../../.env run scripts/voice-bench.ts off 4                        # old persona path, for comparison
 bun --env-file=../../.env run scripts/tts-bench.ts deepgram 3                     # tts http vs ws
 bun run scripts/stt-bench.ts 2                                                    # flux eager/EndOfTurn vs nova-3 speech_final
+bun --env-file=../../.env run scripts/stream-bench.ts deepgram 3                  # live stream vs whole files: tts + route, no talker
+PLAYWRIGHT_CORE=<path>/playwright-core bun --env-file=../../.env run scripts/stream-browser-bench.ts elevenlabs 2   # first audible sample in headless chromium
+EVE_TTS_LIVE=0 bun --env-file=../../.env run scripts/voice-bench.ts gateway 8     # whole-file path, for comparison ("play" column = when the player can start)
 ```
 
 ## Tests
 
 `bun test packages/core/test/talker.test.ts packages/core/test/ears.test.ts packages/core/test/speech.sockets.test.ts packages/core/test/speech.text.test.ts`. Hermetic: fake backends, fake sockets, fake clock. Covered: delegate parsing for Anthropic SSE (partial JSON stall first), OpenAI/gateway `tool_calls` deltas, the inline protocol, keyword routing without spawning; backend fallthrough, stall as text, no double opener, error text never spoken, replay for late readers, abort; parallel Jev abort (IGNORE kills the run), delegate answer (stall first, frontier with tools, result through the persona), ack clip when there's no stall, delegate do through agency with no second ack, result held while she talks, chatting during a job and "never mind" cancelling it, narration rate limits (grace, 6s, no repeats), gap waiting, cancel phrases, latency percentiles; Flux URL, eager/resume/EndOfTurn state machine, dangling turns, the session on the Flux protocol, fallback to nova; eager speculation adopted by the same final, dropped by TurnResumed or a different final; clause chunking; ElevenLabs multi-context and Aura sockets, socket failure falling back to HTTP.
 
+Streaming audio: `bun test packages/core/test/speech.live.test.ts apps/shell/src/voice/stream.test.ts`. Live route pipes chunks in order while synthesizing and tees them to the cache (then serves the cached file), late readers, expiry, early emission with strict order, cached lines on plain urls, `EVE_TTS_LIVE=0`, stop mid-stream, no HTTP restart after a partial socket stream, chunked HTTP bodies, the Aura streaming wav header; shell: chunk buffer following a download, wav parsing and split samples, mixed streamed/cached queue order with the next segment prepared early, abort mid-stream stopping prepared streams, fallback to speechSynthesis when audio can't be prepared or refuses to play, marks by playback position, learned speaking rate.
+
 ## Next
 
-- **Stream audio into the shell.** Today a segment's audio is a whole file the shell fetches and decodes, so the measured TTS cost is "segment ready", not first byte. Over the prewarmed Aura socket the first byte arrives ~120ms after the request but the segment is ready ~600ms after; playing chunks as they arrive (shell player, not in this module) would cut another ~300-500ms off the first audio.
+- Emit the first segment at request time instead of first byte (the shell's fetch would already be waiting): a few ms locally, more if the shell ever runs on another machine.
 - Prompt caching on the Anthropic path once the stable prefix passes Haiku's minimum cacheable size.
 - ElevenLabs alignment data for vowel lipsync (the socket already carries it with `sync_alignment=true`).
