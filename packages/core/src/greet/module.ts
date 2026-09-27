@@ -6,7 +6,7 @@ import { GREET_LINES, type GreetKind } from "../speech/lines";
  * she's been gone. Reloads inside a few minutes stay quiet. Lines are
  * pre-rendered, so the hello is instant.
  */
-export const GREET_QUIET_MS = 5 * 60_000;
+export const GREET_QUIET_MS = 90_000;
 const SOON_MS = 60 * 60_000;
 const LONG_MS = 24 * 60 * 60_000;
 
