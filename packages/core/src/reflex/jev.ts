@@ -1,6 +1,6 @@
 import { REFLEX_DECISIONS, type ReflexDecision, type RelationshipState, type WorldSnapshot } from "@eigenwife/protocol";
 import { screenDeictic } from "../screen/intent";
-import { readIntent, type UtteranceIntent } from "./intent";
+import { readIntent, stripOpeners, type UtteranceIntent } from "./intent";
 import type { Trigger } from "./rules";
 
 /**
@@ -128,6 +128,14 @@ export function addressed(input: JevInput, text: string, it: ReturnType<typeof r
   if ((it.deictic && it.question) || screenDeictic(text)) return { yes: true, why: "asking about what he's looking at" };
   if (/^(?:(?:yo|hey|ok(?:ay)?|bro)[, ]+)?(?:look(?: at)?|check(?: out)?|peep|see|rate|read) (?:this|that|it)\b|\b(?:check this out|look at this|can you see (?:this|that|my screen))\b/i.test(text))
     return { yes: true, why: "asking her to look" };
+  // A request aimed at an assistant: "can you...", "show me...", "what's on my calendar".
+  const req = stripOpeners(text);
+  if (
+    /^(?:can|could|would|will|do) (?:you|u|ya)\b|^(?:please |pls )?(?:show|find|open|play|tell|give|get|check|look up|search|pull up|book|text|send|remind|put|set|make|help|read|draft|write|schedule|add|cancel|summarize|explain)\b/i.test(req) ||
+    /\bmy (?:calendar|schedule|email|emails|inbox|files?|screen|notes|texts|messages|resume|classes|assignments|meetings?)\b/i.test(req) ||
+    /^(?:what'?s|what is|whats) (?:on|in) (?:my|the)\b/i.test(req)
+  )
+    return { yes: true, why: "a request to her" };
   return { yes: false, why: "not talking to her" };
 }
 

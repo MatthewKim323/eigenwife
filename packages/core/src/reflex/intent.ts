@@ -81,8 +81,13 @@ export function readBrowse(text: string): UtteranceIntent["browse"] {
   return null;
 }
 
+/** "Yo.", "hey,", "ok so", "eve," in front of a request: drop them so the request itself parses. */
+export function stripOpeners(text: string): string {
+  return text.trim().replace(/^(?:(?:yo+|hey+|hi|ok(?:ay)?|so|um+|uh+|bro|dude|eve|babe|alright|aight)[\s,.!?]+)+/i, "").trim() || text.trim();
+}
+
 export function readIntent(text: string): UtteranceIntent {
-  const t = text.trim();
+  const t = stripOpeners(text);
   const words = t ? t.split(/\s+/).length : 0;
   const stop = STOP.test(t) && words <= 6;
   const cmd = COMMAND.exec(t);

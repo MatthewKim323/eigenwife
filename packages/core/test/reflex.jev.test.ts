@@ -36,6 +36,11 @@ test("addressing gate: the mic hears the room, she only answers when it's for he
   expect(say("let's listen to music", cold).decision).toBe("ACT");
   expect(say("thoughts?", cold).decision).not.toBe("IGNORE");
   expect(say("look at this", cold).decision).not.toBe("IGNORE");
+  // what matt actually said, cold, no name: requests to her are never ignored
+  expect(say("Yo. Can you see what is on my calendar for the next few weeks?", cold).decision).not.toBe("IGNORE");
+  expect(say("Yo. Show me some ramen places in SF.", cold).decision).not.toBe("IGNORE");
+  expect(say("whats on my calendar", cold).decision).not.toBe("IGNORE");
+  expect(say("find my resume", cold).decision).not.toBe("IGNORE");
   expect(say("yo check this out", cold).decision).not.toBe("IGNORE");
   expect(say("wait", cold).stopSpeech).toBe(true);
   expect(say("hella beef").decision).not.toBe("IGNORE");
