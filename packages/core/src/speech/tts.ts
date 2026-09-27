@@ -3,7 +3,8 @@ import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { HealthBook } from "../brains/health";
 import { drainText, HttpError, type Fetcher, type Spawner } from "../brains/io";
-import { auraStream, elevenStream, type SocketFactory, type StreamingSynth } from "./sockets";
+import { LiveStreams, type LiveWriter } from "./live";
+import { auraStream, elevenStream, type ChunkSink, type SocketFactory, type StreamingSynth } from "./sockets";
 
 /**
  * Text to speech with a content-hash disk cache.
@@ -40,7 +41,11 @@ export interface TtsBackend {
   /** Stable id of the voice this backend renders with; part of the cache key. */
   voiceKey(): string;
   configured(): boolean;
-  synth(text: string, signal?: AbortSignal): Promise<{ bytes: Uint8Array; ext: AudioExt }>;
+  /**
+   * The whole segment's audio. onChunk (optional) sees playable bytes as they
+   * arrive, in order, all of the same ext; backends that can't stream never call it.
+   */
+  synth(text: string, signal?: AbortSignal, onChunk?: ChunkSink): Promise<{ bytes: Uint8Array; ext: AudioExt }>;
   /** Open the streaming socket ahead of time (no-op without one). */
   warm?(): void;
   /** How the last synth went: "ws" or "http", and ms to the first audio byte over ws. */
@@ -59,7 +64,7 @@ export function openAiTts(io: TtsIO): TtsBackend {
     name: "openai",
     voiceKey: () => `openai:${OPENAI_TTS_MODEL}:${voice()}:v1`,
     configured: () => !!io.secret("OPENAI_API_KEY"),
-    async synth(text, signal) {
+    async synth(text, signal, onChunk) {
       const res = await io.fetch("https://api.openai.com/v1/audio/speech", {
         method: "POST",
         headers: { Authorization: `Bearer ${io.secret("OPENAI_API_KEY")}`, "content-type": "application/json" },
@@ -67,7 +72,7 @@ export function openAiTts(io: TtsIO): TtsBackend {
         signal,
       });
       if (!res.ok) throw new HttpError(res.status, await res.text().catch(() => ""), "openai tts");
-      const bytes = new Uint8Array(await res.arrayBuffer());
+      const bytes = await readAudio(res, "mp3", onChunk);
       if (bytes.length < 64) throw new Error("openai tts: empty audio");
       return { bytes, ext: "mp3" };
     },
@@ -80,22 +85,55 @@ export const DEEPGRAM_DEFAULT_VOICE = "aura-2-andromeda-en";
 /** Streaming sockets are on when a factory exists and EVE_TTS_STREAM isn't "0". */
 const streaming = (io: TtsIO) => !!io.socket && io.secret("EVE_TTS_STREAM") !== "0";
 
-/** Try the prewarmed socket, fall back to HTTP on any socket trouble. */
+/**
+ * Try the prewarmed socket, fall back to HTTP on any socket trouble, unless
+ * the socket already streamed part of the segment out (then it's too late to
+ * restart in another format, and the error surfaces).
+ */
 async function viaSocket(
   ws: StreamingSynth | null,
   text: string,
   signal: AbortSignal | undefined,
   set: (p: { via: "ws" | "http"; firstChunkMs?: number }) => void,
+  onChunk?: ChunkSink,
 ): Promise<{ bytes: Uint8Array; ext: AudioExt } | null> {
   if (!ws) return null;
+  let sent = false;
+  const sink: ChunkSink | undefined = onChunk
+    ? (c, ext) => {
+        sent = true;
+        onChunk(c, ext);
+      }
+    : undefined;
   try {
-    const r = await ws.synth(text, signal);
+    const r = await ws.synth(text, signal, sink);
     set({ via: "ws", firstChunkMs: r.firstChunkMs });
     return { bytes: r.bytes, ext: r.ext };
   } catch (err) {
-    if (signal?.aborted) throw err;
+    if (signal?.aborted || sent) throw err;
     return null;
   }
+}
+
+/** Read an HTTP audio body, handing chunks to onChunk as they arrive (chunked responses stream). */
+export async function readAudio(res: Response, ext: "mp3" | "wav", onChunk?: ChunkSink): Promise<Uint8Array> {
+  if (!onChunk || !res.body) return new Uint8Array(await res.arrayBuffer());
+  const parts: Uint8Array[] = [];
+  const reader = res.body.getReader();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value?.byteLength) continue;
+    parts.push(value);
+    onChunk(value, ext);
+  }
+  const out = new Uint8Array(parts.reduce((n, p) => n + p.byteLength, 0));
+  let o = 0;
+  for (const p of parts) {
+    out.set(p, o);
+    o += p.byteLength;
+  }
+  return out;
 }
 
 export function deepgramTts(io: TtsIO): TtsBackend {
@@ -108,8 +146,8 @@ export function deepgramTts(io: TtsIO): TtsBackend {
     configured: () => !!io.secret("DEEPGRAM_API_KEY"),
     warm: () => ws?.warm(),
     lastPath: () => path,
-    async synth(text, signal) {
-      const streamed = await viaSocket(ws, text, signal, (p) => (path = p));
+    async synth(text, signal, onChunk) {
+      const streamed = await viaSocket(ws, text, signal, (p) => (path = p), onChunk);
       if (streamed) return streamed;
       path = { via: "http" };
       const res = await io.fetch(`https://api.deepgram.com/v1/speak?model=${encodeURIComponent(voice())}&encoding=mp3`, {
@@ -119,7 +157,7 @@ export function deepgramTts(io: TtsIO): TtsBackend {
         signal,
       });
       if (!res.ok) throw new HttpError(res.status, await res.text().catch(() => ""), "deepgram tts");
-      const bytes = new Uint8Array(await res.arrayBuffer());
+      const bytes = await readAudio(res, "mp3", onChunk);
       if (bytes.length < 64) throw new Error("deepgram tts: empty audio");
       return { bytes, ext: "mp3" };
     },
@@ -181,11 +219,11 @@ export function elevenLabsTts(io: TtsIO): TtsBackend & { quota(): { used: number
       refresh();
       return !underReserve();
     },
-    async synth(text, signal) {
+    async synth(text, signal, onChunk) {
       const m = model();
       if (quota) quota = { ...quota, used: quota.used + text.length };
       if (m !== "eleven_v3") {
-        const streamed = await viaSocket(ws, text, signal, (p) => (path = p));
+        const streamed = await viaSocket(ws, text, signal, (p) => (path = p), onChunk);
         if (streamed) return streamed;
       }
       path = { via: "http" };
@@ -199,7 +237,7 @@ export function elevenLabsTts(io: TtsIO): TtsBackend & { quota(): { used: number
         signal,
       });
       if (!res.ok) throw new HttpError(res.status, await res.text().catch(() => ""), "elevenlabs");
-      const bytes = new Uint8Array(await res.arrayBuffer());
+      const bytes = await readAudio(res, "mp3", onChunk);
       if (bytes.length < 64) throw new Error("elevenlabs: empty audio");
       return { bytes, ext: "mp3" };
     },
@@ -310,17 +348,33 @@ export interface Rendered {
   backend: string;
   cached: boolean;
   ms: number;
+  /** url is a live stream (/api/audio/live/...) still being synthesized. */
+  stream?: boolean;
+}
+
+export interface RenderOpts {
+  only?: string;
+  /**
+   * Called once, the moment a streaming backend's first bytes arrive, with a
+   * live url the shell can start playing. The bytes are still cached under the
+   * normal content hash when synthesis finishes.
+   */
+  onLive?(r: Rendered): void;
 }
 
 export class Tts {
   health: HealthBook;
+  /** Live streams for segments still being synthesized (GET /api/audio/live/<id>). null = streaming off. */
+  streams: LiveStreams | null;
   constructor(
     public backends: TtsBackend[],
     public cache: AudioCache,
     private now: () => number = Date.now,
     health?: HealthBook,
+    opts: { live?: boolean } = {},
   ) {
     this.health = health ?? new HealthBook(now);
+    this.streams = opts.live === false ? null : new LiveStreams(now);
   }
 
   /** Cached audio for this text from any backend's voice, best voice first. */
@@ -348,7 +402,7 @@ export class Tts {
    * beats a better backend that is live right now, while a line prerendered
    * with a backend that is down at demo time still keeps its good voice.
    */
-  async render(text: string, signal?: AbortSignal, opts: { only?: string } = {}): Promise<Rendered | null> {
+  async render(text: string, signal?: AbortSignal, opts: RenderOpts = {}): Promise<Rendered | null> {
     if (!/[\p{L}\p{N}]/u.test(text)) return null;
     for (const b of this.backends) {
       if (opts.only && b.name !== opts.only) continue;
@@ -360,14 +414,30 @@ export class Tts {
       if (!b.configured() || this.health.cooling(b.name)) continue;
       if (signal?.aborted) return null;
       const t0 = this.now();
+      let live: LiveWriter | null = null;
+      const streams = this.streams;
+      const onChunk: ChunkSink | undefined =
+        opts.onLive && streams
+          ? (chunk, ext) => {
+              if (!live) {
+                live = streams.open(sha, ext);
+                opts.onLive!({ ...this.rendered(sha, ext, b.name, false, this.now() - t0), url: live.url, stream: true });
+              }
+              live.push(chunk);
+            }
+          : undefined;
       try {
-        const { bytes, ext } = await b.synth(normalizeForCache(text), signal);
+        const { bytes, ext } = await b.synth(normalizeForCache(text), signal, onChunk);
         this.cache.put(sha, ext, bytes);
+        (live as LiveWriter | null)?.end();
         this.health.ok(b.name, this.now() - t0);
         return this.rendered(sha, ext, b.name, false, this.now() - t0);
       } catch (err) {
+        (live as LiveWriter | null)?.end(true);
         if (signal?.aborted) return null;
         this.health.fail(b.name, err);
+        // Part of this segment already went out live: no second voice for the rest.
+        if (live) return null;
       }
     }
     return null;

@@ -5,6 +5,7 @@ import { json } from "../hub";
 import type { SayOptions } from "../services";
 import { bunSpawn, whichBin } from "../brains/io";
 import { CANCEL_LINES, FILLERS, STALL_LINES } from "./lines";
+import { LIVE_NAME_RE } from "./live";
 import { bunSocket } from "./sockets";
 import { createSpeech, type Speech, type SpeechDeps } from "./service";
 import { AUDIO_NAME_RE, AUDIO_TYPES, AudioCache, deepgramTts, elevenLabsTts, openAiTts, sayTts, Tts, type AudioExt, type TtsBackend, type TtsIO } from "./tts";
@@ -15,13 +16,14 @@ import { AUDIO_NAME_RE, AUDIO_TYPES, AudioCache, deepgramTts, elevenLabsTts, ope
  *
  * Routes:
  *   GET  /api/audio/<sha>.<mp3|m4a|wav>   cached audio (immutable)
+ *   GET  /api/audio/live/<id>.<ext>       a segment's audio while it's synthesized (chunked; the cached file once expired)
  *   GET  /api/speech/status               queue + TTS backend health
  *   POST /api/speech/say   { text, priority?, interrupt? }
  *   POST /api/speech/stop  { reason? }
  *
  * Env: EVE_TTS=deepgram|openai|elevenlabs|say|none pins the backend order (first) or
  * turns synthesis off (segments go out without audioUrl; the shell falls back
- * to speechSynthesis). EVE_DEEPGRAM_VOICE, EVE_TTS_VOICE, ELEVENLABS_VOICE_ID, EVE_SAY_VOICE.
+ * to speechSynthesis). EVE_TTS_LIVE=0 turns live streaming off (segments wait for whole files). EVE_DEEPGRAM_VOICE, EVE_TTS_VOICE, ELEVENLABS_VOICE_ID, EVE_SAY_VOICE.
  */
 
 export function ttsIO(ctx: { config: { eveHome: string } }): TtsIO {
@@ -41,7 +43,7 @@ export function buildTts(eveHome: string, io: TtsIO, pin = io.secret("EVE_TTS"))
   if (pin === "none" || pin === "off") return null;
   const all: TtsBackend[] = [deepgramTts(io), openAiTts(io), elevenLabsTts(io), sayTts(io)];
   const ordered = pin ? [...all.filter((b) => b.name === pin), ...all.filter((b) => b.name !== pin)] : all;
-  return new Tts(ordered, new AudioCache(join(eveHome, "audio")), io.now);
+  return new Tts(ordered, new AudioCache(join(eveHome, "audio")), io.now, undefined, { live: io.secret("EVE_TTS_LIVE") !== "0" });
 }
 
 const instances = new WeakMap<CoreContext, { speech: Speech; tts: Tts | null }>();
@@ -88,6 +90,21 @@ export function speechModule(overrides: Partial<SpeechDeps> & { tts?: Tts | null
       ctx.route("/api/audio/", async (req, url) => {
         if (req.method !== "GET" && req.method !== "HEAD") return null;
         const name = url.pathname.slice("/api/audio/".length);
+        const lm = name.match(LIVE_NAME_RE);
+        if (lm) {
+          const info = tts?.streams?.info(lm[1]!);
+          if (!info || info.ext !== lm[2]) return json({ ok: false, error: "not found" }, 404);
+          const body = info.live ? tts!.streams!.body(lm[1]!, req.signal) : null;
+          if (body) {
+            return new Response(req.method === "HEAD" ? null : body, {
+              headers: { "content-type": AUDIO_TYPES[info.ext], "cache-control": "no-store", "x-eve-live": info.done ? "done" : "live" },
+            });
+          }
+          // Expired: the same audio from the cache, by its content hash.
+          if (tts!.cache.get(info.sha) !== info.ext) return json({ ok: false, error: "not found" }, 404);
+          const file = Bun.file(tts!.cache.path(info.sha, info.ext));
+          return new Response(req.method === "HEAD" ? null : file, { headers: { "content-type": AUDIO_TYPES[info.ext], "content-length": String(file.size), "cache-control": "no-store" } });
+        }
         const m = name.match(AUDIO_NAME_RE);
         if (!m || !tts) return json({ ok: false, error: "not found" }, 404);
         const ext = m[2] as AudioExt;

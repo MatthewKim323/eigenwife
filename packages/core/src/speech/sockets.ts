@@ -1,8 +1,9 @@
 /**
  * Streaming TTS over prewarmed websockets. One socket per backend, opened
  * before she needs it (at boot and whenever he starts talking), so a line's
- * first audio skips the TLS + HTTP setup. Each call still resolves with the
- * whole segment's bytes: segments are the unit the shell plays and caches.
+ * first audio skips the TLS + HTTP setup. Each call resolves with the whole
+ * segment's bytes (the unit the cache keeps), and an optional onChunk sees
+ * the audio as it arrives (the live route streams it to the shell).
  *
  *   ElevenLabs  wss://api.elevenlabs.io/v1/text-to-speech/{voice}/multi-stream-input
  *               one context per segment, many in flight on one socket, mp3
@@ -46,10 +47,15 @@ function concat(parts: Uint8Array[]): Uint8Array {
 
 /** 16-bit mono PCM -> a WAV file. */
 export function wav(pcm: Uint8Array, sampleRate: number): Uint8Array {
+  return concat([wavHeader(sampleRate, pcm.byteLength), pcm]);
+}
+
+/** A 44-byte WAV header. No length (streaming): both sizes are 0xFFFFFFFF. */
+export function wavHeader(sampleRate: number, dataBytes?: number): Uint8Array {
   const h = new DataView(new ArrayBuffer(44));
   const w = (o: number, s: string) => [...s].forEach((c, i) => h.setUint8(o + i, c.charCodeAt(0)));
   w(0, "RIFF");
-  h.setUint32(4, 36 + pcm.byteLength, true);
+  h.setUint32(4, dataBytes === undefined ? 0xffffffff : 36 + dataBytes, true);
   w(8, "WAVE");
   w(12, "fmt ");
   h.setUint32(16, 16, true);
@@ -60,8 +66,8 @@ export function wav(pcm: Uint8Array, sampleRate: number): Uint8Array {
   h.setUint16(32, 2, true);
   h.setUint16(34, 16, true);
   w(36, "data");
-  h.setUint32(40, pcm.byteLength, true);
-  return concat([new Uint8Array(h.buffer), pcm]);
+  h.setUint32(40, dataBytes === undefined ? 0xffffffff : dataBytes, true);
+  return new Uint8Array(h.buffer);
 }
 
 /** A lazily (re)opened socket with an open() that resolves when usable. */
@@ -144,10 +150,13 @@ class Lazy {
   }
 }
 
+export type ChunkSink = (chunk: Uint8Array, ext: "mp3" | "wav") => void;
+
 export interface StreamingSynth {
   /** Open the socket now if it isn't (cheap when already open). */
   warm(): void;
-  synth(text: string, signal?: AbortSignal): Promise<{ bytes: Uint8Array; ext: "mp3" | "wav"; firstChunkMs: number }>;
+  /** onChunk: playable bytes as they arrive (wav: a streaming header first, then pcm). */
+  synth(text: string, signal?: AbortSignal, onChunk?: ChunkSink): Promise<{ bytes: Uint8Array; ext: "mp3" | "wav"; firstChunkMs: number }>;
   close(): void;
   ready(): boolean;
 }
@@ -171,7 +180,7 @@ export function elevenStream(o: ElevenSocketOpts): StreamingSynth {
   const url = () =>
     `wss://api.elevenlabs.io/v1/text-to-speech/${o.voice()}/multi-stream-input?model_id=${encodeURIComponent(o.model())}&output_format=mp3_44100_128&inactivity_timeout=180`;
   const lazy = new Lazy(url, () => ({ "xi-api-key": o.key() }), o.factory ?? bunSocket);
-  const pending = new Map<string, { parts: Uint8Array[]; resolve: (b: Uint8Array) => void; reject: (e: Error) => void; first: number }>();
+  const pending = new Map<string, { parts: Uint8Array[]; resolve: (b: Uint8Array) => void; reject: (e: Error) => void; first: number; sink?: ChunkSink }>();
   let seq = 0;
   lazy.onMessage = (data) => {
     let m: { audio?: string | null; isFinal?: boolean; is_final?: boolean; contextId?: string; context_id?: string; error?: string; message?: string };
@@ -189,7 +198,9 @@ export function elevenStream(o: ElevenSocketOpts): StreamingSynth {
     if (!p) return;
     if (m.audio) {
       if (p.first < 0) p.first = now();
-      p.parts.push(b64(m.audio));
+      const chunk = b64(m.audio);
+      p.parts.push(chunk);
+      p.sink?.(chunk, "mp3");
     }
     if (m.isFinal || m.is_final) {
       pending.delete(id);
@@ -206,11 +217,11 @@ export function elevenStream(o: ElevenSocketOpts): StreamingSynth {
     warm: () => void lazy.open().catch(() => {}),
     ready: () => lazy.ready,
     close: () => lazy.close(),
-    async synth(text, signal) {
+    async synth(text, signal, onChunk) {
       const t0 = now();
       await lazy.open();
       const id = `c${++seq}_${Math.random().toString(36).slice(2, 7)}`;
-      const entry = { parts: [] as Uint8Array[], resolve: (_: Uint8Array) => {}, reject: (_: Error) => {}, first: -1 };
+      const entry = { parts: [] as Uint8Array[], resolve: (_: Uint8Array) => {}, reject: (_: Error) => {}, first: -1, sink: onChunk };
       const done = new Promise<Uint8Array>((resolve, reject) => {
         entry.resolve = resolve;
         entry.reject = reject;
@@ -255,12 +266,18 @@ export function auraStream(o: AuraSocketOpts): StreamingSynth {
   const lazy = new Lazy(url, () => ({ Authorization: `Token ${o.key()}` }), o.factory ?? bunSocket);
   // Aura speaks one flush at a time per socket: segments queue.
   let chain: Promise<unknown> = Promise.resolve();
-  let cur: { parts: Uint8Array[]; resolve: (b: Uint8Array) => void; reject: (e: Error) => void; first: number } | null = null;
+  let cur: { parts: Uint8Array[]; resolve: (b: Uint8Array) => void; reject: (e: Error) => void; first: number; sink?: ChunkSink; sent?: boolean } | null = null;
   lazy.onMessage = (data) => {
     if (!cur) return;
     if (typeof data !== "string") {
+      const chunk = new Uint8Array(data as ArrayBuffer);
       if (cur.first < 0) cur.first = now();
-      cur.parts.push(new Uint8Array(data as ArrayBuffer));
+      if (cur.sink && chunk.byteLength) {
+        // The live stream is a wav with no length yet: header first, then pcm as it comes.
+        cur.sink(cur.sent ? chunk : concat([wavHeader(rate), chunk]), "wav");
+        cur.sent = true;
+      }
+      cur.parts.push(chunk);
       return;
     }
     let m: { type?: string; description?: string; err_msg?: string };
@@ -281,11 +298,11 @@ export function auraStream(o: AuraSocketOpts): StreamingSynth {
     cur?.reject(new Error(`deepgram ws closed: ${why}`));
     cur = null;
   };
-  const one = async (text: string, signal?: AbortSignal) => {
+  const one = async (text: string, signal?: AbortSignal, sink?: ChunkSink) => {
     const t0 = now();
     await lazy.open();
     if (signal?.aborted) throw new Error("aborted");
-    const entry = { parts: [] as Uint8Array[], resolve: (_: Uint8Array) => {}, reject: (_: Error) => {}, first: -1 };
+    const entry = { parts: [] as Uint8Array[], resolve: (_: Uint8Array) => {}, reject: (_: Error) => {}, first: -1, sink };
     const done = new Promise<Uint8Array>((resolve, reject) => {
       entry.resolve = resolve;
       entry.reject = reject;
@@ -311,8 +328,8 @@ export function auraStream(o: AuraSocketOpts): StreamingSynth {
     warm: () => void lazy.open().catch(() => {}),
     ready: () => lazy.ready,
     close: () => lazy.close(),
-    synth(text, signal) {
-      const run = chain.then(() => one(text, signal));
+    synth(text, signal, onChunk) {
+      const run = chain.then(() => one(text, signal, onChunk));
       chain = run.catch(() => {});
       return run;
     },

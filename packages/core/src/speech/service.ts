@@ -13,6 +13,11 @@ import type { Rendered, Tts } from "./tts";
  *   chunks -> MarkSplitter -> SentenceChunker -> TTS (<= 4 in parallel)
  *          -> speech.segment in strict seq order -> shell plays them
  *
+ * A streaming backend's segment goes out the moment its first audio bytes
+ * arrive, with a live url (stream: true) the shell plays while synthesis
+ * runs; everything else goes out when its file is ready. Either way a segment
+ * waits for the one before it.
+ *
  * Utterances are serialized through a priority queue. A higher-priority say()
  * (or interrupt: true) cuts off whatever she's saying; a low-priority line
  * that arrives while she's busy is dropped (ambient chatter goes stale fast).
@@ -130,7 +135,7 @@ export function createSpeech(deps: SpeechDeps): Speech {
     const seq = job.seq++;
     bus.emit(
       "speech.segment",
-      { utteranceId: job.id, seq, text: seg.text, marks: seg.marks, ...(audio ? { audioUrl: audio.url } : {}) },
+      { utteranceId: job.id, seq, text: seg.text, marks: seg.marks, ...(audio ? { audioUrl: audio.url } : {}), ...(audio?.stream ? { stream: true } : {}) },
       src,
       job.opts.parent,
     );
@@ -170,7 +175,11 @@ export function createSpeech(deps: SpeechDeps): Speech {
           first = false;
           if (job.opts.mood && !seg.marks.some((m) => m.at === 0 && m.mood)) seg.marks.unshift({ at: 0, mood: job.opts.mood as Mood, intensity: 0.6 } as SpeechMark);
         }
-        const audio = deps.tts ? limit(() => deps.tts!.render(seg.text, signal)).catch(() => null) : Promise.resolve(null);
+        // Whichever comes first: the live stream starting, or the finished (or cached) file.
+        let started: (r: Rendered) => void = () => {};
+        const live = new Promise<Rendered>((r) => (started = r));
+        const done = deps.tts ? limit(() => deps.tts!.render(seg.text, signal, { onLive: started })).catch(() => null) : Promise.resolve(null);
+        const audio = Promise.race([done, live]);
         chain = chain.then(async () => emitSegment(job, seg, await audio));
       }
     };

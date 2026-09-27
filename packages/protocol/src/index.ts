@@ -207,7 +207,8 @@ export interface EventMap {
   };
   "speech.begin": { utteranceId: string; text: string; brain: string };
   /** One speakable chunk. audioUrl is fetched from core over http, marks fire as it plays. */
-  "speech.segment": { utteranceId: string; seq: number; text: string; marks: SpeechMark[]; audioUrl?: string };
+  /** stream: audioUrl is a live stream still being synthesized (play progressively; length unknown). */
+  "speech.segment": { utteranceId: string; seq: number; text: string; marks: SpeechMark[]; audioUrl?: string; stream?: boolean };
   "speech.end": { utteranceId: string; interrupted: boolean };
   "speech.stop": { reason: string };
   "speech.played": { utteranceId: string; seq: number };
