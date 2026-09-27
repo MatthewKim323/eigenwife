@@ -189,6 +189,16 @@ describe("talker run", () => {
     expect(await run.delegation).toBeNull();
   });
 
+  test("a backend that's silent past the first-token deadline is abandoned for the next", async () => {
+    const slow = scripted("gateway", [{ type: "text", text: "finally." }], { delayMs: 200 });
+    const fast = scripted("claude-cli", [{ type: "text", text: "canberra." }], { tools: "inline" });
+    const t = createTalker({ io: ioStub, backends: [slow, fast], prompt: (r) => ({ system: "s", user: r.userText }), maxTokens: () => 200, firstTokenMs: { native: 30 } });
+    const run = t.start({ userText: "capital?" });
+    await run.finished;
+    expect(run.said).toBe("canberra.");
+    expect(slow.calls[0]!.signal!.aborted).toBe(true);
+  });
+
   test("error chatter from a backend is never spoken: falls through", async () => {
     const bad = scripted("gateway", [{ type: "text", text: "API Error: insufficient_quota. try again in 20s." }]);
     const good = scripted("claude-cli", [{ type: "text", text: "hm. fine." }], { tools: "inline" });

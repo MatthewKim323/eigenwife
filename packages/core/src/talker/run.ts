@@ -73,6 +73,8 @@ export interface TalkerDeps {
   /** Her names, for stripping "Eve:" labels. */
   names?(): string[];
   log?(...a: unknown[]): void;
+  /** Abandon a backend that's silent this long (native tools / inline CLI-style backends). */
+  firstTokenMs?: { native?: number; inline?: number };
 }
 
 let seq = 0;
@@ -175,9 +177,20 @@ export function createTalker(deps: TalkerDeps): Talker {
       let spoke = false;
       let rawText = false;
       let raw = "";
-      const events = b.stream(msg, { maxTokens, temperature: 0.9, signal: run.signal, userText: run.req.userText });
+      // A backend that hasn't produced anything by the deadline is abandoned for the next one.
+      const attempt = new AbortController();
+      const onRunAbort = () => attempt.abort();
+      run.signal.addEventListener("abort", onRunAbort, { once: true });
+      let stalledOut = false;
+      const deadline = b.tools === "inline" ? (deps.firstTokenMs?.inline ?? 9000) : (deps.firstTokenMs?.native ?? 3500);
+      const timer = setTimeout(() => {
+        stalledOut = true;
+        attempt.abort();
+      }, deadline);
+      const events = b.stream(msg, { maxTokens, temperature: 0.9, signal: attempt.signal, userText: run.req.userText });
       const textOnly = async function* (): AsyncGenerator<string> {
         for await (const e of events) {
+          clearTimeout(timer);
           if (run.aborted) return;
           if (e.type === "text") {
             // Real words, not just a [mood:...] mark: then the stall would be a second opener.
@@ -193,6 +206,7 @@ export function createTalker(deps: TalkerDeps): Talker {
             run.delegate(e.call);
           }
         }
+        if (stalledOut) throw new Error(`no first token in ${deadline}ms`);
       };
       try {
         for await (const chunk of guardSpoken(textOnly(), deps.names?.() ?? ["eve"])) {
@@ -206,6 +220,7 @@ export function createTalker(deps: TalkerDeps): Talker {
           run.text.push(chunk);
         }
         if (run.aborted) return run.settle(null);
+        if (stalledOut && !spoke && !run.call) throw new Error(`no first token in ${deadline}ms`);
         if (!spoke && !run.call) throw new Error("empty reply");
         run.backend ??= b.name;
         run.firstTextAt ??= now();
@@ -221,6 +236,9 @@ export function createTalker(deps: TalkerDeps): Talker {
           run.backend ??= b.name;
           return run.settle(null);
         }
+      } finally {
+        clearTimeout(timer);
+        run.signal.removeEventListener("abort", onRunAbort);
       }
     }
     run.settle(null);

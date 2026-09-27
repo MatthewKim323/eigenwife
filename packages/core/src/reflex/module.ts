@@ -450,7 +450,8 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
         t.urgency === "immediate" && !t.ambient,
       );
       if (said !== null) {
-        await observe(userText, said, t.description);
+        // Off the slot: memory.observe can be an LLM call, and the next turn shouldn't wait on it.
+        void observe(userText, said, t.description);
         return;
       }
     }
