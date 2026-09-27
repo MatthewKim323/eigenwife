@@ -96,11 +96,26 @@ describe("desktop gaze state machine", () => {
     expect(h.of("gaze.target")).toHaveLength(0);
   });
 
-  test("eye.status from hello and face, deduped", () => {
+  test("a flickering tracker makes one gaze.lost, not one per flip", async () => {
+    const h = harness(async () => ramen);
+    h.g.onMessage({ type: "fixation_start", id: 1, x: 500, y: 350 }, 0);
+    await h.g.tick(400);
+    for (let t = 1000; t < 4000; t += 300) {
+      h.g.onMessage({ type: "face", present: t % 600 === 400 }, t);
+      h.g.onMessage({ type: "gaze", valid: false, reason: t % 600 ? "face_lost" : "head_pose_outside_calibration" }, t + 10);
+    }
+    expect(h.of("gaze.lost")).toHaveLength(1);
+  });
+
+  test("eye.status from hello and face, deduped, face gone only after it lasts", async () => {
     const h = harness(async () => ramen);
     h.g.onMessage({ type: "hello", calibrated: true, accuracyDeg: 2.6, face: true }, 0);
     h.g.onMessage({ type: "face", present: true }, 10);
     h.g.onMessage({ type: "face", present: false }, 20);
+    await h.g.tick(500); // blip: not reported yet
+    h.g.onMessage({ type: "face", present: true }, 600);
+    h.g.onMessage({ type: "face", present: false }, 700);
+    await h.g.tick(2300);
     const s = h.of("eye.status").map((e) => e.data);
     expect(s).toEqual([
       { connected: true, calibrated: true, accuracyDeg: 2.6, facePresent: true },

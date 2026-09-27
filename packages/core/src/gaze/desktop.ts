@@ -64,6 +64,9 @@ interface Current {
   lastAnnounced: number;
 }
 
+/** The face must be gone this long before eye.status says so (the tracker flickers at the edges). */
+export const FACE_GONE_MS = 1500;
+
 export class DesktopGaze {
   private o: Required<DesktopGazeOptions>;
   private fix: Fix | null = null;
@@ -73,6 +76,10 @@ export class DesktopGaze {
   private status: { connected: boolean; calibrated: boolean; accuracyDeg?: number } = { connected: false, calibrated: false };
   private lastStatusKey = "";
   private lastLostReason = "";
+  /** A loss was already reported and nothing has been announced since: stay quiet. */
+  private lostReported = false;
+  /** Face-gone debounce: the tracker flickers, "away" has to last. */
+  private faceGoneAt: number | null = null;
   readonly stats = { fixations: 0, resolves: 0, announced: 0, private: 0, eve: 0, none: 0, errors: 0 };
 
   constructor(
@@ -100,9 +107,15 @@ export class DesktopGaze {
         this.pushStatus();
         return;
       case "face":
-        this.face = m.present === true;
-        this.pushStatus();
-        if (!this.face) {
+        if (m.present === true) {
+          this.faceGoneAt = null;
+          if (this.face !== true) {
+            this.face = true;
+            this.pushStatus();
+          }
+        } else {
+          // Report "gone" only if it lasts (tick checks); the stare itself ends now.
+          this.faceGoneAt ??= now;
           this.fix = null;
           this.lose("no_face");
         }
@@ -145,6 +158,10 @@ export class DesktopGaze {
 
   /** Drive resolution and re-announcement. Call every ~200ms. */
   async tick(now: number): Promise<void> {
+    if (this.faceGoneAt !== null && this.face !== false && now - this.faceGoneAt >= FACE_GONE_MS) {
+      this.face = false;
+      this.pushStatus();
+    }
     if (this.d.paused()) {
       if (this.cur) this.lose("offscreen");
       return;
@@ -195,6 +212,7 @@ export class DesktopGaze {
   }
 
   private announce(c: Current, now: number) {
+    this.lostReported = false;
     c.lastSeen = now;
     c.lastAnnounced = now;
     this.stats.announced++;
@@ -203,7 +221,8 @@ export class DesktopGaze {
 
   private lose(reason: EventMap["gaze.lost"]["reason"]) {
     this.cur = null;
-    if (this.lastLostReason === reason) return;
+    if (this.lostReported) return;
+    this.lostReported = true;
     this.lastLostReason = reason;
     this.d.emit("gaze.lost", { reason });
   }
