@@ -511,7 +511,9 @@ describe("work intents", () => {
   test("jabby modes", () => {
     expect(readWorkIntent("what's due this week")).toMatchObject({ mode: "read" });
     expect(readWorkIntent("remind me to stretch at 5")).toMatchObject({ mode: "act" });
-    expect(readWorkIntent("text leo saying im outside")).toMatchObject({ mode: "send" });
+    expect(readWorkIntent("dm leo saying im outside")).toMatchObject({ mode: "send" });
+    // texts go through Messages now (docs/MESSAGES.md)
+    expect(readWorkIntent("text leo saying im outside")).toMatchObject({ kind: "messages.send" });
   });
 
   test("clarify answers fold back in", () => {

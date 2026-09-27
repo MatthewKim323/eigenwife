@@ -16,6 +16,7 @@ import { answerClarify, readWorkIntent, type WorkAsk } from "./intent";
 import { codeRoots, listRepos, repoFromText, type KnownRepo } from "./repo";
 import { deniedPath, expandHome } from "./safety";
 import { speakable } from "./jabby";
+import { createMessagesFlow } from "../agency/actions/messages";
 
 /**
  * Eve as a coworker. Watches what matt is working on (app + repo, never the
@@ -70,6 +71,8 @@ export function createWork(ctx: CoreContext, opts: WorkOptions = {}) {
   let snapshot: WorkContextSnapshot | null = null;
   let repoCache: { at: number; list: KnownRepo[] } | null = null;
   let pending: { partial: string; until: number } | null = null;
+  /** "text stephen hung ..." (docs/MESSAGES.md): who, what, read back, edits, send. */
+  const messages = createMessagesFlow(ctx, { now: deps.now });
   let lastLineAt = -Infinity;
   let attentionPaused = false;
   const claude: { cwd: string; at: number } = { cwd: "", at: 0 };
@@ -191,6 +194,7 @@ export function createWork(ctx: CoreContext, opts: WorkOptions = {}) {
 
   // --- asks ----------------------------------------------------------------------------
   function awaiting(): boolean {
+    if (messages.awaiting()) return true;
     if (pending && deps.now() > pending.until) pending = null;
     return !!pending;
   }
@@ -283,6 +287,14 @@ export function createWork(ctx: CoreContext, opts: WorkOptions = {}) {
 
   async function handle(text: string, o: { parent?: string; goal?: string } = {}): Promise<{ ok: boolean; summary: string }> {
     let utterance = text;
+    // She asked "stephen hung or stephen lee?" / "what do you wanna say?": this is the answer (unless it's a new text ask).
+    if (messages.awaiting() && readWorkIntent(text)?.kind !== "messages.send") {
+      try {
+        return await messages.answer(text, o.parent);
+      } catch (err) {
+        return { ok: false, summary: `it broke: ${err instanceof Error ? err.message : String(err)}` };
+      }
+    }
     if (awaiting() && pending) {
       utterance = answerClarify(pending.partial, text);
       pending = null;
@@ -330,6 +342,8 @@ export function createWork(ctx: CoreContext, opts: WorkOptions = {}) {
         }
         case "jabby":
           return await jabby(ask, parent);
+        case "messages.send":
+          return await messages.start(ask, parent);
         case "code.task":
           return await codeTask(ask, goal, parent);
       }

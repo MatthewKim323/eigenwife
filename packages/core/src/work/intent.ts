@@ -13,6 +13,8 @@ export type WorkAsk =
   | { kind: "files.open"; target: string }
   | { kind: "jabby"; mode: "read" | "act" | "send"; request: string }
   | { kind: "shell.run"; command: string; dir?: string }
+  /** iMessage/SMS from matt's Messages app (docs/MESSAGES.md). body is his exact words when dictated, else what to say. */
+  | { kind: "messages.send"; who: string; body?: string; dictated: boolean }
   | { kind: "clarify"; question: string; partial: string };
 
 const strip = (t: string) =>
@@ -62,6 +64,10 @@ export function readWorkIntent(raw: string): WorkAsk | null {
   const text = strip(raw);
   if (!text) return null;
   const t = text.toLowerCase();
+
+  // Texts go out through matt's own Messages app: "text stephen hung saying yo you up".
+  const msg = readMessageAsk(text);
+  if (msg) return msg;
 
   // jabby first: "remind me", "what's due", "email leo saying ..." are never code.
   const askJ = ASK_JABBY.exec(text);
@@ -131,4 +137,82 @@ export function answerClarify(partial: string, answer: string): string {
   if (replaced !== p) return replaced;
   if (/^(?:find|locate|search|look|pull|where|open)/i.test(p)) return `${p.replace(/\s+(?:file|it|that)$/i, "")} ${a}`.replace(/\s+/g, " ");
   return `${p}: ${a}`;
+}
+
+// --- messages (docs/MESSAGES.md) -------------------------------------------------------
+
+const MSG_VERB = /^(?:text|txt|message|i-?\s?message|sms|send\s+(?:a\s+)?(?:text|message|imessage|i\s?message|sms)\s+(?:to\s+)?|shoot\s+(?:a\s+)?(?:text|message)\s+(?:to\s+)?|drop\s+(?:a\s+)?text\s+(?:to\s+)?)\s*(.+)$/i;
+/** Where the name ends and the message starts. The earliest connector wins. */
+const MSG_CONNECT =
+  /(?:\s*[,]\s*|\s+)(saying|and\s+say|to\s+say|that\s+says|say|that|and\s+(?:tell|ask|let)\s+(?:him|her|them)(?:\s+know)?(?:\s+that)?|and\s+ask|asking|telling\s+(?:him|her|them)(?:\s+that)?|to\s+(?:tell|ask)\s+(?:him|her|them)(?:\s+that)?|(?:letting|to\s+let)\s+(?:him|her|them)\s+know(?:\s+that)?|about|if|whether|to)\s+/gi;
+/** Connectors after which his words are the text itself, not a description of it. */
+const MSG_DICTATED = /^(?:saying|and\s+say|to\s+say|that\s+says|say)$/i;
+const MSG_OTHER_APP = /\b(?:on|in|over|through|via)\s+(?:discord|slack|email|e-mail|gmail|instagram|insta|ig|whatsapp|telegram|signal|linkedin|twitter|x)\b/i;
+const NOT_A_PERSON = /^(?:me|myself|us|you|him|her|them|it|back|someone|somebody|anyone|everyone|people)\b/i;
+const WHO_LEAD = /^(?:to\s+)?(?:my\s+(?:friend|buddy|boy|homie|bro|girl|dude|pal|guy|man)\s+|my\s+(?=mom|dad|mother|father|brother|sister|sis|grandma|grandpa|aunt|uncle|cousin|roommate|boss|girlfriend|boyfriend|gf|bf))/i;
+const WHO_TAIL = /\s+(?:for\s+me|real\s+quick|rn|right\s+now|please|pls|on\s+(?:imessage|messages|my\s+phone))$/i;
+const QUOTES = /^["“'‘]+|["”'’]+$/g;
+
+function cleanWho(raw: string): string {
+  let w = raw.trim().replace(/[,.:;!?]+$/, "");
+  for (let i = 0; i < 3; i++) w = w.replace(WHO_TAIL, "").trim();
+  return w.replace(WHO_LEAD, "").trim();
+}
+
+/** "text my friend stephen hung", "text stephen 'yo you up'", "imessage leo that i'm outside". null if not a text ask. */
+export function readMessageAsk(text: string): (WorkAsk & { kind: "messages.send" }) | null {
+  const m = MSG_VERB.exec(text.trim());
+  if (!m) return null;
+  const rest = m[1]!.trim();
+  if (NOT_A_PERSON.test(rest) || MSG_OTHER_APP.test(rest)) return null;
+  // Connectors inside a quoted message don't count ("text leo 'you need to chill'").
+  const q = /(?:^|\s|[:,])["“]|\s['‘]/.exec(rest);
+  const quoteAt = q ? q.index : rest.length;
+  const colonAt = rest.indexOf(":");
+  let who = rest;
+  let body: string | undefined;
+  let dictated = false;
+  let conn: RegExpExecArray | null = null;
+  for (const c of rest.matchAll(MSG_CONNECT)) {
+    if (c.index! > 0 && c.index! < quoteAt && (colonAt < 0 || c.index! < colonAt)) {
+      conn = c as RegExpExecArray;
+      break;
+    }
+  }
+  if (conn) {
+    who = rest.slice(0, conn.index);
+    const said = rest.slice(conn.index! + conn[0].length).trim();
+    dictated = MSG_DICTATED.test(conn[1]!.replace(/\s+/g, " "));
+    body = dictated ? said : `${conn[1]!.replace(/\s+/g, " ").toLowerCase()} ${said}`;
+  } else if (colonAt > 0 && colonAt < quoteAt) {
+    [who, body, dictated] = [rest.slice(0, colonAt), rest.slice(colonAt + 1), true];
+  } else if (q && quoteAt > 0) {
+    [who, body, dictated] = [rest.slice(0, quoteAt), rest.slice(quoteAt), true];
+  }
+  who = cleanWho(who);
+  if (!who || NOT_A_PERSON.test(who)) return null;
+  // A name is a few words. "text size is too small in the header" is not a text to "size is too small".
+  if (who.split(/\s+/).length > 4 || CODE_NOUN.test(who)) return null;
+  body = body?.trim().replace(QUOTES, "").trim();
+  return { kind: "messages.send", who, ...(body ? { body } : {}), dictated: !!body && dictated };
+}
+
+export type DraftEdit = { kind: "replace"; text: string } | { kind: "append"; text: string } | { kind: "rewrite"; instruction: string };
+
+const EDIT_LEAD = /^(?:(?:no|nah|actually|wait|hmm|oh|ok|okay|yeah|and|but)[,\s]+)*/i;
+const EDIT_REPLACE = /^(?:(?:just\s+)?say\s+(.+?)\s+instead|change\s+it\s+to\s+(?:say\s+)?(.+)|make\s+it\s+say\s+(.+)|instead\s+say\s+(.+)|just\s+say\s+(.+)|replace\s+it\s+with\s+(.+))$/i;
+const EDIT_APPEND = /^(?:add\s+(?:that\s+|on\s+|in\s+)?(.+)|also\s+(?:say|tell\s+(?:him|her|them)|mention|ask(?:\s+(?:him|her|them))?)\s+(?:that\s+)?(.+)|tell\s+(?:him|her|them)\s+(?:also\s+)?(?:that\s+)?(.+?)\s+too)$/i;
+const EDIT_REWRITE =
+  /^(?:make\s+it\s+(?:a\s+(?:bit|little)\s+|way\s+|more\s+|less\s+|sound\s+)?\w+.*|(?:reword|rewrite|rephrase|redo|shorten|lengthen)\s+(?:it|that).*|(?:take\s+out|remove|drop|lose|cut)\s+(?:the\s+)?.+|don'?t\s+(?:say|mention)\s+.+|without\s+(?:the\s+)?.+|(?:less|more)\s+\w+|shorter|longer|nicer|funnier|more\s+casual)$/i;
+
+/** He's changing the draft she just read back ("make it shorter", "add that i'm bringing snacks"). null if not an edit. */
+export function readDraftEdit(raw: string): DraftEdit | null {
+  const text = raw.trim().replace(/[.!?]+$/, "").replace(EDIT_LEAD, "").trim();
+  if (!text || /^(?:(?:yeah\s+)?send\s+it|do\s+it|go|go\s+ahead)$/i.test(text)) return null;
+  const r = EDIT_REPLACE.exec(text);
+  if (r) return { kind: "replace", text: r.slice(1).find(Boolean)!.trim().replace(QUOTES, "") };
+  const a = EDIT_APPEND.exec(text);
+  if (a) return { kind: "append", text: a.slice(1).find(Boolean)!.trim() };
+  if (EDIT_REWRITE.test(text)) return { kind: "rewrite", instruction: text };
+  return null;
 }

@@ -24,6 +24,7 @@ import { cannedOutcome, heuristicPrefs, runBuiltinTask } from "./planner";
 import { realOsa } from "./osa";
 import { realExec } from "../work/exec";
 import { WORK_ACTIONS } from "./actions/work";
+import { messagesActions } from "./actions/messages";
 import type { AgencyDeps, HaremBrain, HaremModule } from "./types";
 
 export interface AgencyOptions {
@@ -104,6 +105,7 @@ export function createAgency(ctx: CoreContext, opts: AgencyOptions = {}) {
   gate.register(calendarCreateEvent, calendarCreateAlias, calendarDeleteEvent, calendarFreeBusy, browserOpen, webSearchAction, webScrapeAction, placesSearchAction, shellCloseApp, shellOpen, appQuit, musicPlay, musicControl);
   gate.register(avatarWear);
   gate.register(...WORK_ACTIONS);
+  gate.register(...messagesActions({ now: deps.now }));
   gate.register(...BROWSER_ACTIONS);
 
   // Her own cursor + visible browser (docs/AGENT_CURSOR.md). The browser window

@@ -119,6 +119,11 @@ export interface ActionDef {
    * Dock spot) and clicks just before run(). Window bounds only, never content.
    */
   cursorApp?(args: Record<string, unknown>): string | null;
+  /**
+   * Only matt's spoken yes approves it (messages.send). Keys, shell buttons and
+   * other modules can still say no, never yes.
+   */
+  voiceOnly?: boolean;
   run(args: Record<string, unknown>, env: ActionEnv): Promise<ActionOutcome>;
 }
 

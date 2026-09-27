@@ -1,4 +1,4 @@
-import { readWorkIntent } from "../work/intent";
+import { readDraftEdit, readWorkIntent } from "../work/intent";
 
 /**
  * Cheap, transparent read of what an utterance is asking for. Used by the
@@ -121,7 +121,8 @@ export function readIntent(text: string): UtteranceIntent {
     deictic: DEICTIC.test(t) && words <= 12,
     laugh: LAUGH.test(t),
     down: DOWN.test(t),
-    approval: APPROVAL.test(t),
+    // "make it shorter" while she waits on "send it?" is an answer to her question too (docs/MESSAGES.md).
+    approval: APPROVAL.test(t) || readDraftEdit(t) !== null,
     filler: FILLER.test(t),
     outfit,
     browse,

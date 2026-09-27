@@ -88,7 +88,7 @@ export class Gate {
       decision = { approved: false, by: "policy", reason: verdict.reason };
       bus.emit("action.approval", { actionId, approved: false, by: "policy" }, SRC);
     } else if (ask) {
-      decision = await this.approve(actionId, description, opts.parent, def.confirmLine?.(args));
+      decision = await this.approve(actionId, description, opts.parent, def.confirmLine?.(args), def.voiceOnly);
     } else {
       decision = { approved: true, by: "policy", reason: `${permission} runs on its own` };
       bus.emit("action.approval", { actionId, approved: true, by: "policy" }, SRC);
@@ -145,16 +145,16 @@ export class Gate {
   }
 
   /** Approvals are serialized: she asks one thing at a time. */
-  private approve(actionId: string, description: string, parent?: string, line?: string): Promise<Decision> {
+  private approve(actionId: string, description: string, parent?: string, line?: string, voiceOnly = false): Promise<Decision> {
     this.pendingCount++;
-    const run = this.approvals.then(() => this.waitForApproval(actionId, description, parent, line));
+    const run = this.approvals.then(() => this.waitForApproval(actionId, description, parent, line, voiceOnly));
     this.approvals = run.catch(() => {});
     return run.finally(() => {
       this.pendingCount--;
     });
   }
 
-  private waitForApproval(actionId: string, description: string, parent?: string, line?: string): Promise<Decision> {
+  private waitForApproval(actionId: string, description: string, parent?: string, line?: string, voiceOnly = false): Promise<Decision> {
     const { bus } = this.ctx;
     const brains = this.ctx.tryUse("brains");
     this.ctx.setSlot("agency", "pending_approval", `${description} (waiting for a yes or no)`);
@@ -183,7 +183,7 @@ export class Gate {
       );
       offs.push(
         bus.on("shell.key", (e) => {
-          if (APPROVE_KEYS.has(e.data.key)) finish({ approved: true, by: "key", reason: `key ${e.data.key}` }, true);
+          if (APPROVE_KEYS.has(e.data.key) && !voiceOnly) finish({ approved: true, by: "key", reason: `key ${e.data.key}` }, true);
           else if (DENY_KEYS.has(e.data.key)) finish({ approved: false, by: "key", reason: `key ${e.data.key}` }, true);
         }),
       );
@@ -191,6 +191,8 @@ export class Gate {
       offs.push(
         bus.on("action.approval", (e) => {
           if (e.data.actionId !== actionId || e.source === SRC) return;
+          // Voice-only actions (texting people): anyone may say no, only his voice says yes.
+          if (voiceOnly && e.data.approved) return;
           finish({ approved: e.data.approved, by: e.data.by, reason: `answered by ${e.source}` }, false);
         }),
       );
