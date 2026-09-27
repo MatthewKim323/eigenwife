@@ -369,6 +369,31 @@ describe("reflex + talker", () => {
     await r.stop();
   });
 
+  test("a slow recall never delays the talker; its late hits land in the next turn's prompt", async () => {
+    const reqs: string[] = [];
+    const r = await talkerRig(() => scripted("gateway", [{ type: "text", text: "mm." }]));
+    const svc = r.ctx.use("talker");
+    const orig = svc.start.bind(svc);
+    svc.start = (q) => {
+      reqs.push(q.extra ?? "");
+      return orig(q);
+    };
+    r.memory.memories = ["his sister is maya"];
+    r.memory.delayMs = 400;
+    const t0 = Date.now();
+    r.emit("voice.final", { text: "eve how's it going" });
+    await until(() => r.speech.said.length >= 1);
+    expect(Date.now() - t0).toBeLessThan(380);
+    expect(reqs[0]).not.toContain("maya");
+    await Bun.sleep(450);
+    r.memory.delayMs = 0;
+    r.memory.memories = [];
+    r.emit("voice.final", { text: "eve anyway" });
+    await until(() => r.speech.said.length >= 2);
+    expect(reqs[1]).toContain("his sister is maya");
+    await r.stop();
+  });
+
   test("parallel Jev: the talker starts before the verdict and IGNORE (not addressed) kills it", async () => {
     const r = await talkerRig(() => scripted("gateway", [{ type: "text", text: "wow. " }, { type: "text", text: "rude." }], { delayMs: 20 }));
     // Mid-conversation window has lapsed, no name, no action: room chatter.

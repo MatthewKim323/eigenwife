@@ -11,6 +11,12 @@ System 2b frontal cortex frontier()  jabby first: memory, tools, planning   ~7-1
           speech        marks -> sentences -> TTS -> ordered speech.segment
 ```
 
+## The talker (docs/VOICE.md)
+
+Direct turns (he talks to her) now go through the **talker** (`packages/core/src/talker`): a streaming persona model with one tool, `delegate({ stall, kind, task })`, on the Anthropic API > AI Gateway (`anthropic/claude-haiku-4.5`) > OpenAI > Featherless > claude CLI haiku. It answers what it can and hands tool work to `frontier()` (kind `answer`) or the reflex's agency/work paths (kind `do`), speaking a stall line first. `persona()` below still voices everything else: ambient remarks, task reports, thinker results, onboarding. Full design, numbers and keys: `docs/VOICE.md`.
+
+`frontier()` takes `signal` (the talker's "never mind" aborts the run) and `onEvent` (tool calls drive the spoken progress updates).
+
 ## The social cortex: `persona(req)`
 
 A streaming `AsyncIterable<string>` of what Eve says, marks included. The router tries backends in order and falls through on any failure before the first word:
@@ -77,7 +83,7 @@ Small structured calls (classification, extraction). OpenAI JSON mode first, the
 ```
 say(text | stream)
   -> MarkSplitter      holds back incomplete "[..." tails across chunks, marks -> SpeechMark{at}
-  -> SentenceChunker   . ! ? ; ; first 2 segments also on "," once >= 4 words; cap 12 words
+  -> SentenceChunker   . ! ? ; ; first 2 segments also on "," or ":" once >= 4 words; cap 12 words (9 for the first)
   -> TTS               up to 4 in parallel, content-hash disk cache
   -> speech.segment    strictly in seq order { utteranceId, seq, text, marks, audioUrl? }
 ```
@@ -100,6 +106,8 @@ Events per utterance: `speech.begin` (text is the full clean text for strings, `
 | 3 | macOS `say` | a Mac with ffmpeg (or afconvert) | `Samantha` at 182 wpm (`EVE_SAY_VOICE`, `EVE_SAY_RATE`), converted to mp3. Zero keys, always there. |
 
 `EVE_TTS=openai|elevenlabs|say` pins which backend goes first; `EVE_TTS=none` turns synthesis off. Same circuit breaker as the brains.
+
+**Streaming sockets.** ElevenLabs (`multi-stream-input`, one context per segment) and Deepgram Aura-2 (`/v1/speak` websocket) synthesize over a socket that's opened at boot and re-warmed whenever he starts talking; any socket trouble falls back to the HTTP call above. `EVE_TTS_STREAM=0` turns sockets off. Fillers, stall/ack and cancel lines are prerendered in her current voice at boot (`EVE_PRERENDER_CLIPS=0` skips). Measured in docs/VOICE.md.
 
 **Cache**: `~/.eve/audio/<sha256(voiceKey + "\n" + normalized text)>.mp3`, served at `GET /api/audio/<sha>.mp3` (`audio/mpeg`, immutable, CORS from the hub). The shell resolves the relative URL against the core origin. A lookup checks every backend's voice in preference order, so a line prerendered with OpenAI keeps that voice even when OpenAI is down.
 

@@ -80,12 +80,15 @@ export class FakeBrains implements BrainService {
 export class FakeMemory implements MemoryService {
   recalls: string[] = [];
   observed: { user?: string; eve?: string; event?: string }[] = [];
+  /** Simulate a slow (network) recall. */
+  delayMs = 0;
   constructor(
     private ctx: CoreContext,
     public memories: string[] = [],
   ) {}
   async recall(query: string, opts?: { k?: number; emit?: boolean; parent?: string }): Promise<MemoryHit[]> {
     this.recalls.push(query);
+    if (this.delayMs) await Bun.sleep(this.delayMs);
     const hits: MemoryHit[] = this.memories.slice(0, opts?.k ?? 3).map((content, i) => ({
       record: { id: `m${i}`, kind: "episodic", content, importance: 0.5, confidence: 0.8, source: "test", createdAt: 0 },
       score: 0.9 - i * 0.1,

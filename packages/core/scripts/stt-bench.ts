@@ -77,7 +77,7 @@ const audio = await Promise.all(phrases.map(pcm));
 const res: Record<string, { eager: number[]; final: number[] }> = { flux: { eager: [], final: [] }, nova: { eager: [], final: [] } };
 for (let r = 0; r < rounds; r++)
   for (const [i, a] of audio.entries()) {
-    const f = await run(fluxUrl({ encoding: "linear16", sampleRate: 16000 }), a, true);
+    const f = await run(fluxUrl({ encoding: "linear16", sampleRate: 16000, eotThreshold: Number(secret("EVE_FLUX_EOT")) || undefined, eagerEotThreshold: Number(secret("EVE_FLUX_EAGER")) || undefined }), a, true);
     const n = await run(listenUrl({ encoding: "linear16", sampleRate: 16000 }), a, false);
     if (f.eager !== undefined) res.flux!.eager.push(f.eager);
     if (f.final !== undefined) res.flux!.final.push(f.final);

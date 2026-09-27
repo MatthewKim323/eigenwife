@@ -230,8 +230,30 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
 
   /** Gaze, memories (150ms budget), and thinker state for a talker prompt. */
   async function talkerExtra(t: Trigger, text: string): Promise<string> {
-    const memories = await Promise.race([recall(text, t.parent), Bun.sleep(150).then(() => [] as string[])]);
+    const memories = await quickRecall(text, t.parent);
     return extraFor(t, readIntent(text), memories, router.context());
+  }
+
+  /**
+   * Memories for a talker prompt without delaying its first token: whatever
+   * recall returns within 150ms (local name hits are sub-ms), and hits that
+   * land later (an embedding call) are folded into the next turn's prompt.
+   */
+  let lateMemories: { text: string; at: number }[] = [];
+  async function quickRecall(text: string, parent?: string): Promise<string[]> {
+    let late = false;
+    const full = recall(text, parent).then((hits) => {
+      if (late && hits.length) {
+        const known = new Set(lateMemories.map((m) => m.text));
+        lateMemories = [...lateMemories, ...hits.filter((h) => !known.has(h)).map((h) => ({ text: h, at: now() }))].slice(-6);
+      }
+      return hits;
+    });
+    const got = await Promise.race([full, Bun.sleep(150).then(() => null)]);
+    if (got === null) late = true;
+    const carried = lateMemories.filter((m) => now() - m.at < 5 * 60_000).map((m) => m.text);
+    lateMemories = [];
+    return [...new Set([...(got ?? []), ...carried])];
   }
 
   function prestart(t: Trigger, text: string) {
@@ -442,7 +464,7 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
       if (!router.prestarted(t.id)) {
         const missLines = await missFor();
         if (missLines === null) return router.drop(t.id, "stopped");
-        const memories = await recall(userText, t.parent);
+        const memories = await quickRecall(userText, t.parent);
         if (gen !== myGen) return;
         const screenLines = await screenContext(t, userText, myGen);
         if (screenLines === null || gen !== myGen) return router.drop(t.id, "stopped");
