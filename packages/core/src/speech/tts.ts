@@ -190,7 +190,9 @@ export function elevenLabsTts(io: TtsIO): TtsBackend & { quota(): { used: number
       }
       path = { via: "http" };
       const settings = m === "eleven_v3" ? { stability: 0.5 } : { stability: 0.45, similarity_boost: 0.8, style: 0.35, use_speaker_boost: true };
-      const res = await io.fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice()}/stream?output_format=mp3_44100_128&optimize_streaming_latency=3`, {
+      // optimize_streaming_latency is rejected by eleven_v3 (used for prerendered lines): fast models only.
+      const tune = m === "eleven_v3" ? "" : "&optimize_streaming_latency=3";
+      const res = await io.fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice()}/stream?output_format=mp3_44100_128${tune}`, {
         method: "POST",
         headers: { "xi-api-key": io.secret("ELEVENLABS_API_KEY"), "content-type": "application/json", accept: "audio/mpeg" },
         body: JSON.stringify({ text, model_id: m, voice_settings: settings }),
