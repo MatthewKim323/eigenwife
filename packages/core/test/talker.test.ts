@@ -305,7 +305,7 @@ class ThinkerBrains extends FakeBrains {
   }
 }
 
-async function talkerRig(backend: TalkerBackend | (() => TalkerBackend), routerOpts: Parameters<typeof reflexModule>[0]["router"] = {}) {
+async function talkerRig(backend: TalkerBackend | (() => TalkerBackend), routerOpts: NonNullable<Parameters<typeof reflexModule>[0]>["router"] = {}) {
   const clock = new FakeClock(Date.now());
   const ctx = fakeContext();
   ctx.config.demo = false;

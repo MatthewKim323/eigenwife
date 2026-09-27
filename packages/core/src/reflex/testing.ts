@@ -2,7 +2,7 @@ import { envelope, type AnyEnvelope, type EventMap, type EventType, type MemoryH
 import { EventBus } from "../bus";
 import { loadConfig } from "../config";
 import { createContext, type CoreContext, type Module } from "../context";
-import type { AgencyService, BrainService, HomeService, MemoryService, PersonaRequest, SayOptions, SpeechService } from "../services";
+import type { AgencyService, BrainService, FrontierRequest, HomeService, MemoryService, PersonaRequest, SayOptions, SpeechService } from "../services";
 
 /**
  * In-process fakes for every service the mind touches. No network, no audio,
@@ -66,7 +66,7 @@ export class FakeBrains implements BrainService {
     const text = this.reply(req);
     for (const w of text.split(/(?<= )/)) yield w;
   }
-  async frontier() {
+  async frontier(_req?: FrontierRequest) {
     return { ok: true, text: "", engine: "fake", ms: 0 };
   }
   async quickJson() {
