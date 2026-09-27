@@ -264,7 +264,7 @@ export function startGazeFeed(send: (channel: string, payload: unknown) => void,
         const fix = m.fix as { ms?: number } | null | undefined;
         fixMs = typeof fix?.ms === "number" ? fix.ms : null;
         const valid = m.valid !== false && typeof m.x === "number" && typeof m.y === "number";
-        send("cursor:gaze", { x: m.x, y: m.y, valid, fixMs, radius, t: Date.now() });
+        send("cursor:gaze", { x: m.x, y: m.y, valid, fixMs, radius, t: Date.now(), reason: typeof m.reason === "string" ? m.reason : null, guidance: typeof m.guidance === "string" ? m.guidance : null });
       }
     };
     sock.onclose = () => {

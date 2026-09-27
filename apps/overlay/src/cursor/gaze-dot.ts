@@ -16,6 +16,9 @@ export interface GazeSample {
   /** Error radius in screen points. */
   radius: number;
   t: number;
+  /** Why the sample was rejected (eye serve's reason / guidance), for the status pill. */
+  reason?: string | null;
+  guidance?: string | null;
 }
 
 export interface GazeTargetBox {
@@ -39,6 +42,10 @@ export class GazeDot {
   private last = 0;
   private box: GazeTargetBox | null = null;
   private boxAlpha = 0;
+  /** Rejected since: the pill only shows after a second of not tracking. */
+  private badSince: number | null = null;
+  private pill = "";
+  private pillAlpha = 0;
 
   feed(s: GazeSample) {
     if (!Number.isFinite(s.radius) || s.radius <= 0) s.radius = this.radius;
@@ -68,7 +75,15 @@ export class GazeDot {
     const boxLive = !!this.box && Date.now() - this.box.at < BOX_MS;
     this.boxAlpha += ((boxLive ? 1 : 0) - this.boxAlpha) * (1 - Math.exp(-6 * dt));
     if (!live && this.alpha < 0.01) this.p = null;
-    return this.alpha > 0.01 || this.boxAlpha > 0.01;
+    // Connected but rejected (head out of range, face lost...): say why, gently, after a second.
+    const bad = !!s && !s.valid && now - s.t < 2000 && !!(s.reason || s.guidance);
+    if (bad) {
+      this.badSince ??= now;
+      this.pill = pillText(s!.reason, s!.guidance);
+    } else this.badSince = null;
+    const showPill = bad && now - (this.badSince ?? now) > 1000;
+    this.pillAlpha += ((showPill ? 1 : 0) - this.pillAlpha) * (1 - Math.exp(-5 * dt));
+    return this.alpha > 0.01 || this.boxAlpha > 0.01 || this.pillAlpha > 0.01 || bad;
   }
 
   draw(g: CanvasRenderingContext2D, display: ScreenRect, hue: number) {
@@ -99,6 +114,21 @@ export class GazeDot {
         }
         g.restore();
       }
+    }
+    // Status pill, top-center of the main display (under the camera).
+    if (this.pillAlpha > 0.01 && this.pill && display.x === 0 && display.y === 0) {
+      g.save();
+      g.font = "600 12px -apple-system, system-ui, sans-serif";
+      const text = `👁 ${this.pill}`;
+      const w = g.measureText(text).width + 22;
+      const x = display.width / 2 - w / 2;
+      const y = 40;
+      g.fillStyle = `rgba(20, 20, 28, ${0.72 * this.pillAlpha})`;
+      roundRect(g, x, y, w, 24, 12);
+      g.fill();
+      g.fillStyle = hsl(gh, 80, 86, 0.95 * this.pillAlpha);
+      g.fillText(text, x + 11, y + 16);
+      g.restore();
     }
     if (!this.p || this.alpha < 0.01) return;
     const cx = this.p.x - display.x;
@@ -144,4 +174,32 @@ function roundRect(g: CanvasRenderingContext2D, x: number, y: number, w: number,
   g.arcTo(x, y + h, x, y, r);
   g.arcTo(x, y, x + w, y, r);
   g.closePath();
+}
+
+/** eye serve's reason/guidance -> a few friendly words. */
+export function pillText(reason?: string | null, guidance?: string | null): string {
+  const r = reason ?? "";
+  const gd = guidance ?? "";
+  if (/face_lost|face lost/.test(r)) return "can't see your face";
+  if (/outside_display/.test(r)) return "looking off screen";
+  if (/head_pose|pose/.test(r) || /calibration/.test(gd)) {
+    const m = gd.match(/(vertical_position|horizontal_position|distance|roll|yaw|pitch)[^(;]*?(-?\d+(?:\.\d+)?)\s*;\s*calibrated range\s*(-?\d+(?:\.\d+)?)\s*to\s*(-?\d+(?:\.\d+)?)/);
+    if (m) {
+      const [, axis, v, lo, hi] = m;
+      const val = Number(v);
+      const below = val < Number(lo);
+      const hint: Record<string, [string, string]> = {
+        vertical_position: ["sit a little higher", "sit a little lower"],
+        horizontal_position: ["move a little right", "move a little left"],
+        distance: ["lean in a little", "sit back a little"],
+        roll: ["tilt your head the other way", "straighten your head"],
+        yaw: ["turn toward the screen", "turn toward the screen"],
+        pitch: ["tilt your chin up a bit", "tilt your chin down a bit"],
+      };
+      const pair = hint[axis!];
+      if (pair) return `${below ? pair[0] : pair[1]} (where you calibrated)`;
+    }
+    return "sit like you did when you calibrated";
+  }
+  return r.replace(/_/g, " ").slice(0, 60) || "not tracking";
 }
