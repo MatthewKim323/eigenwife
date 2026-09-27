@@ -75,6 +75,8 @@ export function BootScene() {
   const begin = async () => {
     if (leaving) return;
     setLeaving(true);
+    // First, while the click still counts as a gesture: eye gaze only maps in real fullscreen.
+    if (gaze?.mode() === "eye") void gaze.enterFullscreen();
     const audioUnlocked = await unlockAudio();
     blip(660, 90);
     setTimeout(() => blip(990, 120), 90);

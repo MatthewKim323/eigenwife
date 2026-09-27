@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { AnyEnvelope, Scene } from "@eigenwife/protocol";
 import { useGaze } from "../gaze/GazeProvider";
+import { eyeLabel } from "../gaze/bridge";
 import { useBus, useEvent, useWorld } from "../lib/bus";
 import { KEY_HELP, isOperatorKeyEvent, keyAction, nextHudLevel, toggledGazeUrl } from "../lib/keys";
 import { useScene } from "../lib/scene";
@@ -243,8 +244,8 @@ function Diagnostics({ scene, quiet }: { scene: Scene; quiet: boolean }) {
       {scene !== "architecture" && (
         <div className="hud-conn">
           <span className={connected ? "on" : ""}>core</span>
-          <span className={mode === "eye" ? "on" : mode === "mouse" ? "half" : ""}>
-            {mode === "eye" ? `eye${eye?.accuracyDeg ? ` ${eye.accuracyDeg.toFixed(1)}°` : ""}` : mode === "mouse" ? "mouse gaze" : "gaze"}
+          <span className={mode === "eye" ? (eye?.valid === false ? "half" : "on") : mode === "mouse" ? "half" : ""} title={eye?.guidance ?? eye?.reason ?? undefined}>
+            {mode === "eye" ? eyeLabel(eye) : mode === "mouse" ? "mouse gaze" : "gaze"}
           </span>
           {home && <span className={home.online ? "on" : ""}>home</span>}
         </div>
@@ -286,3 +287,4 @@ function shortLabel(label: string): string {
   const first = label.split(",")[0] ?? label;
   return first.length > 42 ? `${first.slice(0, 40)}...` : first;
 }
+

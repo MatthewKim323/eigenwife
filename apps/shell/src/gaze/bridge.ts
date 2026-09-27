@@ -10,6 +10,8 @@ export interface GazeBridge {
   reset(prefix?: string): void;
   calibrate(): Promise<{ ok: boolean; afterDeg?: number; error?: string }>;
   point(): { x: number; y: number } | null;
+  /** Real document fullscreen: eye-client refuses to map gaze without it. Call from a click. */
+  enterFullscreen(): Promise<boolean>;
   close(): void;
 }
 
@@ -72,7 +74,10 @@ export function startGaze(bus: BusClient, requested: GazeMode = "auto"): GazeBri
   async function useEye(): Promise<boolean> {
     try {
       const mod = await import(/* @vite-ignore */ `${EYE_HTTP}/eye-client.js`);
-      eye = new mod.EyeClient();
+      // The tracker's own median + fast-follow smoother (screen points only, calibration stays raw).
+      const smoothing = await import(/* @vite-ignore */ `${EYE_HTTP}/iphone-protocol.js`).catch(() => null);
+      const gazeSmoother = smoothing?.GazeSmoother ? new smoothing.GazeSmoother({ strength: "steady" }) : null;
+      eye = new mod.EyeClient({ gazeSmoother });
     } catch {
       return false;
     }
@@ -92,11 +97,40 @@ export function startGaze(bus: BusClient, requested: GazeMode = "auto"): GazeBri
       return false;
     }
     active = "eye";
+    // eye-client fires status on every quality flicker: only forward real changes.
+    let lastStatus = "";
+    let lastLost = "";
     const offs = [
       eye.on("status", (s: any) => {
-        if (s.accuracyDeg) tracker.setAccuracy(s.accuracyDeg);
-        bus.emit("eye.status", { connected: s.connected, calibrated: s.calibrated, accuracyDeg: s.accuracyDeg, facePresent: s.face });
+        const radius = s.uncertaintyDeg ?? s.accuracyDeg;
+        if (radius) tracker.setAccuracy(radius);
+        const status = {
+          connected: !!s.connected,
+          calibrated: !!s.calibrated,
+          accuracyDeg: s.accuracyDeg ?? undefined,
+          facePresent: !!s.face,
+          valid: !!s.valid,
+          reason: s.reason ?? null,
+          guidance: s.guidance ?? s.pose?.guidance ?? null,
+          uncertaintyDeg: s.uncertaintyDeg ?? undefined,
+        };
+        const key = JSON.stringify(status);
+        if (key === lastStatus) return;
+        lastStatus = key;
+        bus.emit("eye.status", status);
         if (s.connected === false) bus.emit("gaze.lost", { reason: "away" });
+      }),
+      // Blink, lost face, head outside the calibrated range, sample gaps, ambiguous targets:
+      // the client already cleared its target, so Eve's "this" must clear too.
+      eye.on("lost", (l: { reason?: string }) => {
+        tracker.fixationEnd(Date.now());
+        const reason = lostReason(l.reason);
+        if (!reason || reason === lastLost) return;
+        lastLost = reason;
+        bus.emit("gaze.lost", { reason });
+      }),
+      eye.on("fixation", () => {
+        lastLost = "";
       }),
       eye.on("gaze", (g: any) => {
         localPoint(g.x, g.y);
@@ -123,6 +157,7 @@ export function startGaze(bus: BusClient, requested: GazeMode = "auto"): GazeBri
     stats: (prefix = "") => tracker.snapshot(prefix),
     reset: (prefix = "") => tracker.reset(prefix),
     point: () => last,
+    enterFullscreen,
     async calibrate() {
       if (!eye) return { ok: true, error: "mouse mode: nothing to calibrate" };
       const r = await eye.calibrate();
@@ -133,4 +168,32 @@ export function startGaze(bus: BusClient, requested: GazeMode = "auto"): GazeBri
       eye?.close();
     },
   };
+}
+
+/** Map eye-client lost reasons onto the bus vocabulary. Target switches are not losses. */
+export function lostReason(r: string | undefined): "away" | "no_face" | "offscreen" | null {
+  if (!r || r === "target_changed" || r === "ambiguous_target") return null;
+  if (/face/.test(r)) return "no_face";
+  if (/fullscreen|geometry|viewport|display/.test(r)) return "offscreen";
+  return "away";
+}
+
+export async function enterFullscreen(): Promise<boolean> {
+  if (document.fullscreenElement === document.documentElement) return true;
+  try {
+    await document.documentElement.requestFullscreen({ navigationUI: "hide" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** "eye 2.6°" when tracking, else the tracker's own short reason ("eye: enter fullscreen"). */
+export function eyeLabel(eye: { valid?: boolean; reason?: string | null; accuracyDeg?: number } | null): string {
+  if (eye && eye.valid === false && eye.reason) {
+    const r = eye.reason.replace(/_/g, " ");
+    const short = /fullscreen/.test(r) ? "enter fullscreen" : /head pose|position/.test(r) ? "sit where you calibrated" : /face/.test(r) ? "no face" : /uncalibrated/.test(r) ? "not calibrated" : r;
+    return `eye: ${short.length > 28 ? short.slice(0, 27) + "…" : short}`;
+  }
+  return `eye${eye?.accuracyDeg ? ` ${eye.accuracyDeg.toFixed(1)}°` : ""}`;
 }

@@ -130,7 +130,20 @@ export interface EventMap {
   "error": { where: string; message: string };
 
   // --- perception: eyes (attention only, never clicks) -----------------------
-  "eye.status": { connected: boolean; calibrated: boolean; accuracyDeg?: number; facePresent?: boolean };
+  "eye.status": {
+    connected: boolean;
+    calibrated: boolean;
+    accuracyDeg?: number;
+    facePresent?: boolean;
+    /** Tracker is producing mapped, trustworthy gaze right now. */
+    valid?: boolean;
+    /** Why gaze is off, from eye serve: "enter fullscreen to enable gaze mapping", "head_pose_outside_calibration", ... */
+    reason?: string | null;
+    /** Plain-language fix for the user ("return to the position used during calibration"). */
+    guidance?: string | null;
+    /** Error radius the client abstains within (live p90 or a conservative estimate). */
+    uncertaintyDeg?: number;
+  };
   /** Raw-ish gaze point in viewport css px, ~30Hz, only forwarded when someone subscribes. */
   "gaze.point": { x: number; y: number; nx: number; ny: number };
   "gaze.fixation": { target: GazeTarget | null; x: number; y: number };
