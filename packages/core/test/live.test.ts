@@ -375,6 +375,16 @@ describe("eve live end to end (fake gpt-live-1)", () => {
     expect(r.speech.said.filter((s) => s.opts?.parent && r.of("voice.final").some((f) => f.id === s.opts!.parent))).toEqual([]);
   });
 
+  test("a delegation that beats his transcript adopts his words when they land", async () => {
+    const r = await rig({ engine: "live" });
+    await r.live();
+    const id = r.fake.delegate();
+    await Bun.sleep(20);
+    await r.fake.userSays("play our song");
+    await waitFor(() => r.agency.acts.some((a) => a.kind === "music.play"), 2000, "music.play");
+    await waitFor(() => r.fake.of("session.thinking.append").some((e) => e.delegation_id === id && String(e.content).includes("likes spicy ramen")), 2000, "memory for the adopted words");
+  });
+
   test("deep question: delegation goes to the frontier brain and the answer comes back as commentary", async () => {
     const r = await rig({ engine: "live" });
     await r.live();

@@ -130,12 +130,11 @@ export class Delegations {
     if (this.open_.length > 20) this.open_.splice(0, this.open_.length - 20);
     this.d.log(`delegation ${id}${userText ? ` for "${userText}"` : ""}${del.deep ? " (deep)" : ""}`);
     this.d.changed();
-    if (!userText) {
-      // Nothing heard yet (his words may still be arriving): a quiet nudge, then wait.
-      this.thinking(id, "backend: didn't catch a request yet. ask him what he wants if it's unclear.");
+    // No words yet: the transcript can trail the delegation. adopt() picks up his next final.
+    if (userText) {
+      void this.recall(del);
+      if (del.deep) void this.frontier(del);
     }
-    void this.recall(del);
-    if (del.deep) void this.frontier(del);
     del.cancel.push(this.d.schedule(() => this.fallback(del), this.fallbackMs));
     del.cancel.push(
       this.d.schedule(() => {
@@ -145,6 +144,19 @@ export class Delegations {
       }, this.timeoutMs),
     );
     return del;
+  }
+
+  /** His words arrived after the delegation did: they're what it's about. */
+  adopt(text: string, lineage: string): boolean {
+    const del = this.list().find((x) => !x.userText && this.d.now() - x.openedAt < 5000);
+    if (!del || !text.trim()) return false;
+    del.userText = text;
+    del.lineage = lineage;
+    del.deep = isDeep(text);
+    this.d.log(`delegation ${del.id} is about "${text}"`);
+    void this.recall(del);
+    if (del.deep) void this.frontier(del);
+    return true;
   }
 
   private async recall(del: Delegation) {

@@ -591,7 +591,9 @@ export class LiveController {
         if (!d?.id) return;
         this.activity();
         this.user.flush();
-        const recent = this.lastUserFinal && this.now() - this.lastUserFinal.at < 30_000 ? this.lastUserFinal : null;
+        // His latest words, unless she already answered them (then this one is about words still in flight).
+        const last = this.lastUserFinal;
+        const recent = last && this.now() - last.at < 30_000 && (last.at > this.eveEndedAt || this.now() - last.at < 4000) ? last : null;
         this.delegations.open(d.id, recent?.text ?? "", recent?.id ?? null);
         return;
       }
@@ -637,6 +639,7 @@ export class LiveController {
     const e = this.ctx.bus.emit("voice.final", { text }, "live");
     this.lastUserFinal = { id: e.id, text, at: this.now() };
     this.liveUtterances.set(e.id, this.now());
+    this.delegations.adopt(text, e.id);
     for (const [id, at] of this.liveUtterances) if (this.now() - at > 120_000) this.liveUtterances.delete(id);
     this.syncAvatar();
   }
@@ -665,7 +668,10 @@ export class LiveController {
     this.ctx.bus.emit("avatar.mood", { mood: m.mood, intensity: m.intensity, holdMs: 2500 }, "live");
   }
 
+  private eveEndedAt = 0;
+
   private eveDone(text: string, why: "gap" | "flush") {
+    if (text && !isBackchannel(text)) this.eveEndedAt = this.now();
     const id = this.eveUtterance;
     this.eveUtterance = null;
     if (!id) return;
