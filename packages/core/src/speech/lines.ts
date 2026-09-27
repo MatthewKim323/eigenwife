@@ -85,7 +85,38 @@ export const TOUCH_LINES = {
 } as const;
 export type TouchKind = keyof typeof TOUCH_LINES;
 
-/** Everything prerender should render: every line, every touch line, every filler. */
+/**
+ * First-run onboarding (packages/core/src/onboarding, docs/KNOW_ME.md). One
+ * question at a time, in character, every one skippable. Scripted so they're
+ * prerendered; confirmations that repeat his answer back are spoken live.
+ */
+export const ONBOARDING_LINES = {
+  intro: "[mood:happy 0.6] hey. before anything else, i wanna actually know you. few quick ones. say skip whenever.",
+  resume: "[mood:neutral 0.5] okay. where were we.",
+  redo: "[mood:happy 0.5] fresh start. okay.",
+  questions: {
+    name: "[mood:happy 0.5] first. what should i call you?",
+    herName: "[mood:smug 0.5] and what do you wanna call me? eve's fine. your call.",
+    work: "[mood:thinking 0.5] what do you do? like, what are you working on right now?",
+    interests: "[mood:happy 0.5] what are you into? the stuff you could talk about for hours.",
+    birthday: "[mood:smug 0.5] when's your birthday? i'm not missing that one.",
+    boundaries: "[mood:neutral 0.5] last one. anything you don't want me bringing up, or doing?",
+  },
+  /** Re-asked once when she couldn't make out an answer. */
+  retry: ["[mood:thinking 0.5] sorry, didn't catch that.", "[mood:thinking 0.5] wait, say that again?"],
+  skip: ["[mood:neutral 0.4] okay, skipping that.", "[mood:neutral 0.4] fair. next.", "[mood:smug 0.4] mysterious. okay."],
+  /** Silence after a question: one nudge, then she lets it go. */
+  nudge: "[mood:thinking 0.4] still there? no rush.",
+  pause: "[mood:neutral 0.5] okay. we can finish this later.",
+  outro: "[mood:happy 0.6] okay. i know you a little now. that's all i needed.",
+  noRules: "[mood:smug 0.5] no rules. bold. okay.",
+} as const;
+
+export type OnboardingStepId = keyof typeof ONBOARDING_LINES.questions;
+
+/** Everything prerender should render: every line, every touch line, every filler, every onboarding line. */
 export function scriptedTexts(): string[] {
-  return [...Object.values(LINES), ...Object.values(TOUCH_LINES).flat(), ...FILLERS];
+  const o = ONBOARDING_LINES;
+  const onboarding = [o.intro, o.resume, o.redo, ...Object.values(o.questions), ...o.retry, ...o.skip, o.nudge, o.pause, o.outro, o.noRules];
+  return [...Object.values(LINES), ...Object.values(TOUCH_LINES).flat(), ...FILLERS, ...onboarding];
 }

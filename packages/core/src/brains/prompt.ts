@@ -1,6 +1,40 @@
 import { MOODS, type Persona, type RelationshipState } from "@eigenwife/protocol";
-import type { PersonaRequest } from "../services";
+import type { PersonaRequest, UserProfile } from "../services";
 import type { ChatMessage } from "./chat";
+
+/** The persona under the name he gave her: "Eve" in every text field becomes herName. */
+export function renamePersona(p: Persona, herName: string | null | undefined): Persona {
+  const name = herName?.trim();
+  if (!name || name === p.name) return p;
+  const swap = (s: string) => s.replace(/\bEve\b/g, name);
+  return { ...p, name, tagline: swap(p.tagline), description: swap(p.description), personality: swap(p.personality), scenario: swap(p.scenario) };
+}
+
+const clipText = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1).trimEnd()}...` : s);
+
+/**
+ * "who you're talking to": the compact block every persona prompt gets from
+ * ~/.eve/user.json. Boundaries are phrased as hard rules. Empty profile = no block.
+ */
+export function userBlock(u: UserProfile | null | undefined, herName?: string): string[] {
+  if (!u) return [];
+  const call = u.callMe?.trim() || u.name?.trim();
+  const lines: string[] = [];
+  if (call) lines.push(`- their name: ${u.name && u.name !== call ? `${u.name}, ` : ""}call them "${call}". use it sometimes, not every line.`);
+  if (herName) lines.push(`- they named you ${herName}. that's your name now.`);
+  if (u.pronouns) lines.push(`- pronouns: ${u.pronouns}`);
+  if (u.work) lines.push(`- what they do: ${clipText(u.work, 140)}`);
+  if (u.interests.length) lines.push(`- into: ${clipText(u.interests.slice(0, 8).join(", "), 160)}`);
+  if (u.birthday) lines.push(`- birthday: ${u.birthday}`);
+  if (u.people.length)
+    lines.push(`- people in their life: ${clipText(u.people.slice(0, 8).map((p) => (p.relation ? `${p.name} (${p.relation})` : p.name)).join(", "), 220)}`);
+  if (u.vibe.length) lines.push(`- vibe: ${clipText(u.vibe.slice(0, 4).join("; "), 160)}`);
+  const rules = u.boundaries.map((b) => b.trim()).filter(Boolean).slice(0, 8);
+  if (!lines.length && !rules.length) return [];
+  const out = ["[who you're talking to]", ...lines];
+  if (rules.length) out.push("hard rules from them, never break these, even if asked indirectly:", ...rules.map((b) => `- never: ${clipText(b, 120)}`));
+  return out;
+}
 
 /** Eve before Act I converges (or when the preference service isn't up). */
 export const DEFAULT_EVE: Persona = {
@@ -61,6 +95,8 @@ export interface PersonaPromptInput {
   req: PersonaRequest;
   /** The whole conversation so far (rolling summary + recent turns). */
   conversation?: string;
+  /** matt's profile (who you're talking to). Optional: no profile, no block. */
+  user?: UserProfile | null;
 }
 
 /**
@@ -68,15 +104,18 @@ export interface PersonaPromptInput {
  * (including what the user is LOOKING AT) + extra. User = the moment: what
  * happened, the social intent, what they said, and the word cap.
  */
-export function buildPersonaPrompt({ persona, relationship, world, req, conversation }: PersonaPromptInput): ChatMessage {
+export function buildPersonaPrompt({ persona, relationship, world, req, conversation, user: profile }: PersonaPromptInput): ChatMessage {
   const maxWords = req.maxWords ?? 14;
   const marks = req.marks !== false;
+  const named = !!profile?.herName?.trim() && profile.herName.trim().toLowerCase() !== "eve";
+  const who = userBlock(profile, named ? persona.name : undefined);
   const system = [
     `you are ${persona.name}. ${persona.description}`,
     `personality: ${persona.personality}`,
     `scenario: ${persona.scenario}`,
     ...dialLines(persona, relationship),
     "",
+    ...(who.length ? [...who, ""] : []),
     ...VOICE_RULES,
     ...(marks ? markRules() : ["do not use any [bracket] marks."]),
     "",

@@ -4,7 +4,9 @@ import type { CoreContext, Module } from "../context";
 import { json } from "../hub";
 import type { FrontierRequest } from "../services";
 import { Conversation, type Turn } from "./conversation";
+import type { Persona } from "@eigenwife/protocol";
 import { bunSpawn, whichBin, type BrainIO } from "./io";
+import { DEFAULT_EVE, renamePersona } from "./prompt";
 import { createBrains, type Brains, type BrainsDeps, type HaremBrain, type StructuredRequest } from "./service";
 
 /**
@@ -43,12 +45,20 @@ function build(ctx: CoreContext, overrides: Partial<BrainsDeps> = {}): Brains {
     io: overrides.io ?? defaultIO(ctx),
     jabbyUrl: ctx.config.jabbyUrl,
     persona: () => {
+      let p: Persona | null;
       try {
-        return ctx.tryUse("preference")?.persona() ?? ctx.world().companion.persona ?? null;
+        p = ctx.tryUse("preference")?.persona() ?? ctx.world().companion.persona ?? null;
       } catch {
-        return ctx.world().companion.persona ?? null;
+        p = ctx.world().companion.persona ?? null;
       }
+      // The name he gave her (onboarding) replaces "Eve" everywhere in the card.
+      let her: string | null = null;
+      try {
+        her = ctx.tryUse("user")?.herName() ?? null;
+      } catch {}
+      return her ? renamePersona(p ?? DEFAULT_EVE, her) : p;
     },
+    user: () => ctx.tryUse("user")?.profile() ?? null,
     relationship: () => {
       try {
         return ctx.tryUse("relationship")?.get() ?? ctx.world().companion.relationship;

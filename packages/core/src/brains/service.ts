@@ -1,5 +1,5 @@
 import type { Persona, RelationshipState } from "@eigenwife/protocol";
-import type { BrainService, FrontierRequest, FrontierResult, PersonaRequest } from "../services";
+import type { BrainService, FrontierRequest, FrontierResult, PersonaRequest, UserProfile } from "../services";
 import { anthropicBackend, claudeCliBackend, featherlessBackend, gatewayBackend, openAiBackend, type ChatBackend } from "./chat";
 import {
   claudeEngine,
@@ -26,6 +26,8 @@ export interface BrainsDeps {
   world(): string;
   /** The conversation so far (summary + recent turns), for every persona prompt. */
   conversation?(): string;
+  /** matt's profile for the "who you're talking to" block (optional). */
+  user?(): UserProfile | null;
   log?(...args: unknown[]): void;
   /** Override the backend lists (tests). */
   personaBackends?: ChatBackend[];
@@ -148,7 +150,11 @@ export function createBrains(deps: BrainsDeps): Brains {
 
   async function* persona(req: PersonaRequest): AsyncGenerator<string> {
     const card = deps.persona() ?? DEFAULT_EVE;
-    const msg = buildPersonaPrompt({ persona: card, relationship: deps.relationship(), world: deps.world(), req, conversation: deps.conversation?.() });
+    let user: UserProfile | null = null;
+    try {
+      user = deps.user?.() ?? null;
+    } catch {}
+    const msg = buildPersonaPrompt({ persona: card, relationship: deps.relationship(), world: deps.world(), req, conversation: deps.conversation?.(), user });
     const maxTokens = personaMaxTokens(req.maxWords);
     const errors: string[] = [];
     const t0 = io.now();

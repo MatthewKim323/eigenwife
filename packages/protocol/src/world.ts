@@ -39,6 +39,11 @@ export function reduceWorld(w: WorldSnapshot, e: AnyEnvelope): WorldSnapshot {
     }
     case "companion.born":
       return { ...w, companion: { ...w.companion, born: true, persona: e.data.persona, state: "idle" } };
+    case "companion.rename": {
+      const name = e.data.name.trim();
+      if (!name || !w.companion.persona || w.companion.persona.name === name) return w;
+      return { ...w, companion: { ...w.companion, persona: { ...w.companion.persona, name } } };
+    }
     case "avatar.state":
       return { ...w, companion: { ...w.companion, state: e.data.state } };
     case "avatar.mood":

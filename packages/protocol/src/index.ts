@@ -202,6 +202,19 @@ export interface EventMap {
     region?: "head" | "face" | "ears" | "chest" | "belly" | "body";
     count?: number;
   };
+  /** Matt named her (onboarding, or "call you X"). The world persona name follows; "Eve" is the default. */
+  "companion.rename": { name: string; by: "onboarding" | "user" | "restore" };
+  /** Spoken first-run onboarding (docs/KNOW_ME.md): which question she's on, for a progress chip. */
+  "onboarding.state": {
+    status: "active" | "paused" | "done" | "idle";
+    /** Step id she's asking right now ("name", "herName", "work", "interests", "birthday", "boundaries"), null when not asking. */
+    step: string | null;
+    /** 0-based index of the current step. */
+    index: number;
+    total: number;
+    /** Steps answered (not skipped) so far. */
+    answered: number;
+  };
   "memory.recall": { query: string; hits: MemoryHit[]; ms: number; by: string };
   "memory.write": { record: MemoryRecord; policy: MemoryWritePolicy };
   "relationship.update": { state: RelationshipState; delta: Partial<RelationshipState>; reason: string };

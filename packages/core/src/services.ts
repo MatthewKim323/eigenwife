@@ -178,7 +178,59 @@ export interface WardrobeService {
   wear(change: { add?: string[]; remove?: string[] | "all" }, by?: "user" | "agent"): Promise<{ items: string[]; changed: boolean; unavailable: string[] }>;
 }
 
+/** Where a user-profile field came from. Onboarding answers beat gbrain-derived values. */
+export type ProfileSource = "onboarding" | "gbrain" | "conversation" | "api";
+
+/** The semantic model of matt (~/.eve/user.json, docs/KNOW_ME.md). */
+export interface UserProfile {
+  /** His name ("Matthew Kim"). */
+  name?: string;
+  /** What she calls him ("matt"). */
+  callMe?: string;
+  /** What he calls her. Absent = "Eve". */
+  herName?: string;
+  pronouns?: string;
+  /** "MM-DD" or "YYYY-MM-DD". */
+  birthday?: string;
+  /** What he does / is working on, one short phrase. */
+  work?: string;
+  interests: string[];
+  people: { name: string; relation: string }[];
+  /** Topics or behaviors that are off limits. Hard rules in every prompt. */
+  boundaries: string[];
+  /** Short notes on how he talks and what lands. */
+  vibe: string[];
+  updatedAt: number;
+  /** Per field: who set it last. */
+  sources: Partial<Record<keyof Omit<UserProfile, "sources" | "updatedAt">, ProfileSource>>;
+}
+
+export interface UserService {
+  profile(): UserProfile;
+  /** Merge a patch. Scalars from "gbrain" never overwrite "onboarding" values; lists union. */
+  merge(patch: Partial<Omit<UserProfile, "sources" | "updatedAt">>, source: ProfileSource): Promise<UserProfile>;
+  /** The name he gave her, or null for the default ("Eve"). */
+  herName(): string | null;
+}
+
+/** First-run spoken onboarding (packages/core/src/onboarding). */
+export interface OnboardingService {
+  /** A question is out and his next words are the answer: route every utterance here. */
+  active(): boolean;
+  /** Onboarding will take over her first words (no name yet, not finished): the reflex skips its greeting. */
+  pending(): boolean;
+  /** Is this utterance a request to (re)do onboarding ("redo onboarding", "let's start over")? */
+  claims(text: string): boolean;
+  /** Handle one utterance while active (or a claimed redo). */
+  hear(text: string, parent?: string): Promise<void>;
+  /** Start (redo: from scratch) or resume. */
+  begin(opts?: { redo?: boolean; parent?: string }): Promise<void>;
+}
+
 export interface ServiceMap {
+  /** matt's profile (packages/core/src/onboarding). */
+  user: UserService;
+  onboarding: OnboardingService;
   brains: BrainService;
   speech: SpeechService;
   memory: MemoryService;

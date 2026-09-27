@@ -4,6 +4,7 @@ import { brainsModule } from "../brains/module";
 import { earsModule } from "../ears/module";
 import { homeModule } from "../home/module";
 import { memoryModule } from "../memory/module";
+import { onboardingModule } from "../onboarding/module";
 import { relationshipModule } from "../mind/module";
 import { preferenceModule } from "../preference/module";
 import { reflexModule } from "../reflex/module";
@@ -22,6 +23,8 @@ export function allModules(): Module[] {
   return [
     clock(),
     homeModule(),
+    // Before memory/preference: owns user.json and hears the first companion.born.
+    onboardingModule(),
     memoryModule(),
     preferenceModule(),
     relationshipModule(),

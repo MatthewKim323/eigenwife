@@ -46,3 +46,15 @@ test("preference reset un-births the companion", () => {
   expect(w.companion.born).toBe(false);
   expect(w.companion.persona).toBeUndefined();
 });
+
+test("companion.rename renames the born persona, and only then", () => {
+  let w = emptyWorld();
+  w = reduceWorld(w, envelope("companion.rename", { name: "Nova", by: "onboarding" }, "core"));
+  expect(w.companion.persona).toBeUndefined();
+  w = reduceWorld(w, envelope("companion.born", { persona: { name: "Eve", palette: { hue: 1 } } as any }, "core"));
+  w = reduceWorld(w, envelope("companion.rename", { name: "Nova", by: "onboarding" }, "core"));
+  expect(w.companion.persona?.name).toBe("Nova");
+  expect(w.companion.persona?.palette.hue).toBe(1);
+  w = reduceWorld(w, envelope("companion.rename", { name: "  ", by: "user" }, "core"));
+  expect(w.companion.persona?.name).toBe("Nova");
+});

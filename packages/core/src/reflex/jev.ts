@@ -27,6 +27,8 @@ export interface JevInput {
   pendingApproval?: boolean;
   /** This task.done belongs to a task the reflex itself escalated (reported directly). */
   ownTask?: boolean;
+  /** Onboarding has a question out: every utterance is an answer to her (docs/KNOW_ME.md). */
+  onboarding?: boolean;
 }
 
 export interface JevVerdict {
@@ -113,6 +115,7 @@ const NAME_CALL = /\b(?:eve|evie|eva|babe|bae|girl|wifey|wife|queen)\b/i;
  */
 export function addressed(input: JevInput, text: string, it: ReturnType<typeof readIntent>): { yes: boolean; why: string } {
   if ((process.env.EVE_ADDRESS_MODE ?? "").toLowerCase() === "always") return { yes: true, why: "always listening" };
+  if (input.onboarding) return { yes: true, why: "answering her onboarding question" };
   const w = input.world;
   const name = w.companion.persona?.name;
   if (NAME_CALL.test(text) || (name && new RegExp(`\\b${name.replace(/[^a-z]/gi, "")}\\b`, "i").test(text))) return { yes: true, why: "said her name" };

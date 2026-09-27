@@ -1,5 +1,6 @@
 import { describeOutfit, DEFAULT_RELATIONSHIP, envelope, WARDROBE_ITEMS, type AnyEnvelope, type Mood, type ReflexDecision, type RelationshipState, type Urgency } from "@eigenwife/protocol";
 import type { CoreContext, Module } from "../context";
+import type { OnboardingService } from "../services";
 import { json } from "../hub";
 import { jevEndpoint, secret } from "../config";
 import { goalFrom, readIntent, type UtteranceIntent } from "./intent";
@@ -172,6 +173,14 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
 
   // --- queue ------------------------------------------------------------------
   function enqueue(t: Trigger) {
+    // Onboarding (docs/KNOW_ME.md): while a question is out every utterance is
+    // the answer, "redo onboarding" starts it over, and ambient reactions wait.
+    const ob = ctx.tryUse("onboarding");
+    if (ob && t.rule === "utterance") {
+      const text = String(t.data.text ?? "");
+      if (ob.active() || ob.claims(text)) return toOnboarding(t, text, ob);
+    }
+    if (t.ambient && ob?.active()) return;
     if (t.rule === "utterance" && readIntent(String(t.data.text ?? "")).stop) {
       // Stop words never wait for a slot.
       void judge(t).then((v) => carryOut(t, v));
@@ -185,6 +194,18 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
       log(`queue full, dropped ${dropped.id}`);
     }
     if (t.urgency === "immediate") drain(true);
+  }
+
+  function toOnboarding(t: Trigger, text: string, ob: OnboardingService) {
+    stats.total += 1;
+    stats.byDecision.COMMENT = (stats.byDecision.COMMENT ?? 0) + 1;
+    lastReactionAt = now();
+    const reason = `${t.description} | onboarding answer`;
+    recent.push({ at: now(), trigger: t.id, rule: t.rule, decision: "COMMENT", by: "local", latencyMs: 0, reason: "onboarding" });
+    if (recent.length > 50) recent.shift();
+    ctx.bus.emit("reflex.decision", { trigger: t.id, decision: "COMMENT", scores: { COMMENT: 1 }, urgency: t.urgency, by: "local", latencyMs: 0, reason }, "core", t.parent);
+    log(`utterance -> onboarding "${text}"`);
+    void ob.hear(text, t.parent).catch((err) => log("onboarding failed:", err));
   }
 
   function drain(onlyImmediate: boolean) {
@@ -331,6 +352,11 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
   }
 
   async function speak(t: Trigger, v: JevVerdict) {
+    // Her first words belong to onboarding when it's about to run (it greets and asks).
+    if (t.rule === "companion_born" && ctx.tryUse("onboarding")?.pending()) {
+      log("born: onboarding takes her first words");
+      return;
+    }
     const myGen = gen;
     const rel = relationship();
     const intent = v.intent;
