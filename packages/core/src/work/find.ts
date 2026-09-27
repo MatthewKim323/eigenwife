@@ -300,7 +300,10 @@ export function monthOf(ms: number): string {
 export function ambiguity(ranked: RankedFile[], now: number): { question: string } | null {
   const [a, b] = ranked;
   if (!a || !b) return null;
-  if (!b.byName || b.score < a.score - 1.5) return null;
+  // Both real name matches of the same kind of thing, close enough that recency alone
+  // shouldn't decide (a resume from august vs one from march): ask.
+  if (!a.byName || !b.byName || b.score < a.score - 3) return null;
+  if (extname(a.name).toLowerCase() !== extname(b.name).toLowerCase() && !(DOC_EXT.has(extname(a.name).toLowerCase()) && DOC_EXT.has(extname(b.name).toLowerCase()))) return null;
   const newer = a.modified >= b.modified ? a : b;
   const older = newer === a ? b : a;
   const days = (newer.modified - older.modified) / 86_400_000;

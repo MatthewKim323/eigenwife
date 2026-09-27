@@ -33,8 +33,8 @@ export interface Card {
 
 /** Any dash between two price numbers (Maps writes "$10" en-dash "20"), as escapes. */
 const DASH = "[-\\u2012\\u2013\\u2014\\u2212]";
-const RATING = /^(\d(?:[.,]\d)?)\s*(?:\(([\d.,]+[kK]?)\)|stars?\b|★)/;
-const RATING_ANY = /\b([1-5][.,]\d)\s*(?:\(([\d.,]+[kK]?)\)|\s*stars?\b|\s*★|\s*\(([\d.,]+[kK]?)\s*reviews?\))/i;
+const RATING = /^(\d(?:[.,]\d)?)\s*(?:\(([\d.,]+[kK]?)(?:\s*reviews?)?\)|stars?\b|★)/i;
+const RATING_ANY = /\b([1-5][.,]\d)\s*(?:\(([\d.,]+[kK]?)\)|\(([\d.,]+[kK]?)\s*reviews?\)|stars?(?:\s+([\d.,]+[kK]?)\s+reviews?)?\b|★)/i;
 const PRICE = new RegExp(`(\\${"$"}{1,4})(?![\\d])|\\${"$"}(\\d{1,3})\\s*${DASH}\\s*(\\d{1,3})\\+?|\\${"$"}(\\d{1,3})\\+`);
 const HOURS = /\b(?:open(?:s)?(?:\s+now)?|closed|closes|closing soon|opens soon|open 24 hours)\b[^\n]{0,40}/i;
 const NOISE_NAME =
@@ -64,9 +64,9 @@ export function parseCard(name: string, text: string, n: number, url?: string): 
   const t = clean(text.replace(/\n+/g, " \n "));
   const r = RATING_ANY.exec(t);
   const rating = r ? Number(r[1]!.replace(",", ".")) : undefined;
-  const reviews = r ? parseCount(r[2] ?? r[3]) : undefined;
+  const reviews = r ? parseCount(r[2] ?? r[3] ?? r[4]) : undefined;
   const price = priceOf(t);
-  const hours = HOURS.exec(t)?.[0]?.replace(/\s*[·⋅•]\s*/g, ", ").trim();
+  const hours = HOURS.exec(text)?.[0]?.replace(/\s*[·⋅•]\s*/g, ", ").trim();
   // "Ramen · 1581 Webster St" (Maps): the category and the street.
   const kindAddr = /(?:^|\n|\s)([A-Z][A-Za-z &'-]{2,30}?)\s*[·⋅•]\s*(?:[^\n·⋅•]*[·⋅•]\s*)?(\d{1,5}\s+[A-Z0-9][^\n·⋅•]{2,40})/.exec(text);
   return prune({

@@ -143,7 +143,7 @@ export function placesLine(options: Option[], pick: { pick: number; why: string 
 
 function hoursFrom(text: string | undefined): string | null {
   if (!text) return null;
-  const m = /\b(open 24 hours|closed(?: now)?|open(?: now)?)\b[\s,.·⋅•]*(?:(closes|opens)\s+(?:at\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm)?(?:\s+\w{3})?))?/i.exec(text);
+  const m = /\b(open 24 hours|closed(?: now)?|open(?: now)?)\b[\s,.·⋅•]*(?:(closes|opens)[ \t]+(?:at[ \t]+)?(\d{1,2}(?::\d{2})?[ \t]*(?:am|pm)?))?/i.exec(text);
   if (!m) return null;
   const state = m[1]!.toLowerCase().replace(" now", "");
   if (!m[2]) return state === "open" ? "open now" : state;

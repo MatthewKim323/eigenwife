@@ -30,7 +30,11 @@ const TITLE_SCRIPT = `(() => {
  */
 const CARDS_SCRIPT = `(() => {
   const out = [];
-  const txt = (el) => (el.innerText || "").replace(/[ \\t]+/g, " ").trim().slice(0, 600);
+  // Ratings and prices often live only in aria-labels ("4.7 stars 1,234 Reviews", "Price: $$").
+  const txt = (el) => {
+    const aria = [...el.querySelectorAll('[role=img][aria-label], [aria-label*="star" i], [aria-label^="Price" i]')].map((x) => x.getAttribute('aria-label')).filter(Boolean).slice(0, 4).join("\\n");
+    return ((el.innerText || "") + (aria ? "\\n" + aria : "")).replace(/[ \\t]+/g, " ").trim().slice(0, 700);
+  };
   const feed = document.querySelector('div[role=feed]');
   if (feed) {
     for (const a of feed.querySelectorAll('div[role=article], a[aria-label][href*="/maps/place"]')) {
