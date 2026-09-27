@@ -36,7 +36,8 @@ Jabby is the brain and already has the hands. Eve doesn't reimplement gmail, syl
 | "what am i working on" | (context) | none | "you're in eigenwife (main, 3 dirty files) in Cursor." |
 | "what's due this week", "check my email", "any internships", "ask jabby ..." | `jabby.ask` | READ | jabby is told READ ONLY: look, never send / reply / archive / schedule |
 | "remind me to ...", "set a reminder" | `jabby.act` | EXTERNAL_SIDE_EFFECT | asked first; jabby may act but never message anyone but matt |
-| "email leo saying ...", "text X that ..." | `jabby.draft` then `jabby.send` | READ, then SENSITIVE_ACTION | Eve reads the exact draft back ("email to Leo: '...'. send it?") and jabby sends exactly that only after a yes |
+| "email leo saying ...", "dm X that ..." | `jabby.draft` then `jabby.send` | READ, then SENSITIVE_ACTION | Eve reads the exact draft back ("email to Leo: '...'. send it?") and jabby sends exactly that only after a yes |
+| "text stephen hung saying ...", "imessage leo that ..." | `contacts.find` then `messages.send` | READ, then SENSITIVE_ACTION (voice only) | from your own Messages app, see [MESSAGES.md](MESSAGES.md) |
 | "run git log --oneline in eigenwife" | `shell.run` | SENSITIVE_ACTION | exact command read back, one dir, 60s default timeout, destructive patterns refused before she asks |
 
 Ambiguous asks get one clarifying question and the next thing you say is taken as the answer (90s): "ship it" -> "ship what, exactly?", a code ask with no repo anywhere -> "which repo? like eigenwife, jabby?", a send with no recipient -> "who's it going to?".

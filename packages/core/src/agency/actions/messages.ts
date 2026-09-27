@@ -54,7 +54,7 @@ const MAX_TEXT = 1000;
 
 export function cleanText(s: string): string {
   return String(s ?? "")
-    .replace(/[—–]/g, ", ")
+    .replace(/[\u2014\u2013]/g, ", ")
     .replace(/\s+,/g, ",")
     .replace(/[ \t]+/g, " ")
     .trim();

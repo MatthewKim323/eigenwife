@@ -33,12 +33,13 @@ agency.runTask("just figure out tonight")
 | `actions/places.ts` | `places.search`: search, extract, rank |
 | `actions/apps.ts` | `browser.open`, `app.quit`, `shell.close_app`, `shell.open` |
 | `actions/browser.ts`, `browser/`, `cursor.ts`, `pointer.ts` | her visible browser (`browser.task`, `browser.submit`, `browser.close`), her own cursor, pointing while she talks. See [AGENT_CURSOR](AGENT_CURSOR.md) |
+| `actions/messages.ts`, `contacts.ts` | `contacts.find`, `messages.send` (iMessage/SMS from matt's Messages app) and the which-one / read-back / edit conversation. See [MESSAGES](MESSAGES.md) |
 
 ## Permissions
 
 | Class | Actions | Policy |
 |---|---|---|
-| `READ` | `web.search`, `web.scrape`, `places.search`, `calendar.free_busy` | auto, `action.approval {by:"policy"}`, no budget |
+| `READ` | `web.search`, `web.scrape`, `places.search`, `calendar.free_busy`, `contacts.find` | auto, `action.approval {by:"policy"}`, no budget |
 | `SAFE_ACTION` | `browser.open`, `app.quit`, `shell.close_app`, `shell.open` | auto, spends budget |
 | `EXTERNAL_SIDE_EFFECT` | `calendar.create_event`, `calendar.create`, `calendar.delete_event` | asks, waits |
 | `SENSITIVE_ACTION` | any kind matching send/message/email/sms/post/purchase/buy/pay/order/transfer | asks, waits, never auto even if registered lower |
@@ -63,6 +64,11 @@ For `EXTERNAL_SIDE_EFFECT` / `SENSITIVE_ACTION` the gate:
    - an `action.approval` for this `actionId` from another source (a shell button): adopted, not echoed.
    - 30s of silence: `action.approval {approved:false, by:"policy"}`.
 4. Approvals are serialized: she asks one thing at a time.
+5. `voiceOnly` actions (`messages.send`): only the spoken yes counts. `Enter`/`y` and another source's `approved:true` are ignored; any no (voice, key, button) still denies.
+
+### Messages
+
+`messages.send` texts people from matt's own Messages app: `SENSITIVE_ACTION` + `voiceOnly`, exact read-back (`text to stephen hung: "yo you up". send it?`), recipient must be a Contacts card and the handle must still be on it at send time (no raw numbers), 5 sends per 10 min, iMessage first with an SMS fallback for phone numbers, her cursor glides to Messages before the send, `EVE_MESSAGES_DRY_RUN=1` stops short of `send`. `contacts.find` (READ) matches the address book inside osascript and returns only the candidates. Edits spoken while she waits ("make it shorter", "add that...") deny that draft and start a fresh request for the new one. Voice phrases, the which-one question, drafting and first-run permissions: [MESSAGES.md](MESSAGES.md).
 
 ## Contracts for other modules
 

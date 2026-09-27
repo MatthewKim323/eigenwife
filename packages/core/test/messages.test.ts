@@ -102,7 +102,7 @@ function fakeBrain(o: { down?: boolean } = {}) {
       if (user.includes("Pending action")) return null;
       if (user.includes("add this: i'm bringing snacks")) return { text: "yo u tryna eat tonight? i'm bringing snacks" } as T;
       if (user.includes("make it shorter")) return { text: "yo u eating?" } as T;
-      if (user.includes("What matt wants to say")) return { text: "Yo u tryna eat tonight? — lmk" } as T;
+      if (user.includes("What matt wants to say")) return { text: "Yo u tryna eat tonight? \u2014 lmk" } as T;
       return null;
     },
     status: () => ({}),
@@ -298,7 +298,7 @@ describe("contacts matching", () => {
 describe("drafting in his voice", () => {
   test("dictated words stay his words (lowercased, no em dashes)", async () => {
     expect(await draftMessage(null, "Stephen Hung", "Yo you up", true)).toBe("yo you up");
-    expect(cleanText("omw — 5 min")).toBe("omw, 5 min");
+    expect(cleanText("omw \u2014 5 min")).toBe("omw, 5 min");
   });
 
   test("described texts go through the brain, cleaned", async () => {
