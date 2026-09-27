@@ -77,6 +77,8 @@ export interface HaremAgent {
   taskId: string;
   name: string;
   emoji: string;
+  /** Which Act I girl she is (packages/protocol candidates). */
+  candidateId?: string;
   role: WifeRole;
   goal: string;
   state: SwarmAgentState;
@@ -148,6 +150,8 @@ export interface Conflict {
   lines: { agentId: string; text: string }[];
   /** What Eve decided, filled in by resolve(). */
   resolution?: string;
+  /** The agent whose side Eve took. */
+  winner?: string;
 }
 
 export interface HaremOutcome {

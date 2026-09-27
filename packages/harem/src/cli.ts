@@ -6,6 +6,7 @@
  *   add --bus to publish on the core hub (ws://127.0.0.1:7777/bus) so the shell and harem room see it
  *   add --swarm to mirror cards into Open Swarm (see openswarm/README.md)
  *   add --approve to auto-approve the calendar action after 1.5s
+ *   add --core=127.0.0.1:7791 (or EVE_CORE) to talk to a core on another port
  */
 import { emptyWorld, newId, type AnyEnvelope, type Envelope, type EventMap, type EventType } from "@eigenwife/protocol";
 import { BusClient } from "@eigenwife/protocol/client";
@@ -23,7 +24,8 @@ const local = new EventBus();
 let bus: HaremBus = local;
 let client: BusClient | null = null;
 if (flag("--bus")) {
-  client = new BusClient({ client: "harem-cli", role: "adapter" }).connect();
+  const core = argv.find((a) => a.startsWith("--core="))?.slice(7) || process.env.EVE_CORE;
+  client = new BusClient({ client: "harem-cli", role: "adapter", ...(core ? { url: `ws://${core}/bus` } : {}) }).connect();
   client.on("*", (e: AnyEnvelope) => {
     if (e.source !== "harem-cli") local.publish(e);
   });
@@ -43,11 +45,11 @@ const tap = (e: AnyEnvelope) => {
   const who = d.agentId ? names.get(d.agentId) ?? d.agentId : "";
   switch (e.type) {
     case "swarm.plan": return console.log(stamp(), "PLAN", d.mode, d.confidence, d.workers.map((w: any) => w.role).join(", "));
-    case "swarm.spawn": names.set(d.agentId, `${d.emoji} ${d.name}`); return console.log(stamp(), "SPAWN", d.label);
+    case "swarm.spawn": names.set(d.agentId, `${d.emoji} ${d.name}`); return console.log(stamp(), "SPAWN", d.label, d.candidateId ? `(${d.candidateId})` : "");
     case "swarm.status": return console.log(stamp(), "  ", who, "->", d.state, d.tool ? `(${d.tool})` : "");
     case "swarm.progress": return console.log(stamp(), "  ", who, `"${d.text}"`);
     case "swarm.conflict": return d.lines.forEach((l: any) => console.log(stamp(), "CONFLICT", names.get(l.agentId), `"${l.text}"`));
-    case "swarm.resolve": return console.log(stamp(), "EVE", `"${d.text}"`);
+    case "swarm.resolve": return console.log(stamp(), "EVE", `"${d.text}"`, d.winner ? `-> ${names.get(d.winner) ?? d.winner}` : "");
     case "swarm.merge": return console.log(stamp(), "MERGE", d.retained);
     case "action.request": return console.log(stamp(), "ACTION?", d.permission, d.description);
     case "task.done": return console.log(stamp(), "DONE", d.ok, `"${d.summary}"`);

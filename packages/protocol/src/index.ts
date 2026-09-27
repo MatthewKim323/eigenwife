@@ -215,6 +215,8 @@ export interface EventMap {
     name?: string;
     emoji?: string;
     goal?: string;
+    /** Which Act I candidate she is (candidates.ts id), for her portrait. */
+    candidateId?: string;
   };
   "swarm.progress": { taskId: string; agentId: string; text: string };
   "swarm.done": { taskId: string; agentId: string; ok: boolean; result: string };
@@ -224,7 +226,8 @@ export interface EventMap {
   "swarm.status": { taskId: string; agentId: string; state: SwarmAgentState; tool?: string; confidence?: number };
   /** Two wives' structured results disagree. lines are one short in-character quip each. */
   "swarm.conflict": { taskId: string; conflictId: string; topic: string; a: string; b: string; lines: { agentId: string; text: string }[] };
-  "swarm.resolve": { taskId: string; conflictId: string; text: string };
+  /** winner: the agentId whose side Eve took, when there was one. */
+  "swarm.resolve": { taskId: string; conflictId: string; text: string; winner?: string };
   /** Wives fold back into Eve. retained is what goes to memory, discarded counts dropped raw scrape/tool chatter. */
   "swarm.merge": { taskId: string; agentIds: string[]; retained: string[]; discarded: number };
   "action.request": {

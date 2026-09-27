@@ -3,9 +3,10 @@ import { homedir } from "os";
 import { join } from "path";
 import { newId, type SwarmAgentState } from "@eigenwife/protocol";
 import { ClaudeCliBrain, sleep } from "./brain";
-import { choose, collect, detectConflicts, eveResolveLine, eveSummary } from "./conflicts";
+import { choose, collect, conflictWinner, detectConflicts, eveResolveLine, eveSummary } from "./conflicts";
 import { MAX_DEPTH, MAX_WIVES, planTask } from "./planner";
 import type { Brain, Conflict, HaremAgent, HaremDeps, HaremMirror, HaremOutcome, HaremTask, Plan, WifeResult, WorkerSpec } from "./types";
+import { assignCandidates, candidateById, personaBlock, pickCandidate, type WifeIdentity } from "./identity";
 import { RESULT_TYPE, WIVES } from "./wives";
 
 const SRC = "harem";
@@ -26,14 +27,24 @@ export class HaremManager {
     return [...this.agents.values()].filter((a) => a.state !== "despawned");
   }
 
-  spawn(taskId: string, spec: WorkerSpec): HaremAgent {
+  /**
+   * Spawn one wife as one of the Act I girls. Pass `who` to cast her
+   * yourself (executeWithHarem casts the whole plan at once); otherwise she's
+   * picked by role fit, skipping girls already on this task.
+   */
+  spawn(taskId: string, spec: WorkerSpec, who?: WifeIdentity): HaremAgent {
     if (this.active().length >= MAX_WIVES) throw new Error(`harem is full (${MAX_WIVES})`);
     const mode = WIVES[spec.role];
+    const taken = this.active()
+      .filter((a) => a.taskId === taskId && a.candidateId)
+      .map((a) => a.candidateId!);
+    const girl = who && !taken.includes(who.candidateId) ? who : pickCandidate(taskId, spec.role, taken);
     const agent: HaremAgent = {
-      id: newId(`wife_${mode.name.toLowerCase()}`),
+      id: newId(`wife_${girl.candidateId}`),
       taskId,
-      name: mode.name,
+      name: girl.name,
       emoji: mode.emoji,
+      candidateId: girl.candidateId,
       role: spec.role,
       goal: spec.goal,
       state: "spawning",
@@ -44,7 +55,17 @@ export class HaremManager {
     this.agents.set(agent.id, agent);
     this.deps.bus.emit(
       "swarm.spawn",
-      { taskId, agentId: agent.id, role: spec.role, label: `${mode.emoji} ${mode.name.toUpperCase()} · ${mode.title}`, parentId: "eve", name: mode.name, emoji: mode.emoji, goal: spec.goal },
+      {
+        taskId,
+        agentId: agent.id,
+        role: spec.role,
+        label: `${mode.emoji} ${agent.name.toUpperCase()} · ${mode.title}`,
+        parentId: "eve",
+        name: agent.name,
+        emoji: mode.emoji,
+        goal: spec.goal,
+        candidateId: girl.candidateId,
+      },
       SRC,
     );
     void this.deps.mirror?.spawn(agent);
@@ -72,7 +93,7 @@ export class HaremManager {
     try {
       const result = await this.brain.structured<Record<string, unknown>>({
         agent: `${task.taskId}:${a.role}`,
-        system: mode.system,
+        system: wifeSystem(mode.system, mode.name, a),
         prompt: `Overall task (Eve's): ${task.goal}\nYour slice: ${a.goal}\n\nShared context:\n${shared}`,
         schema: mode.schema,
         tools: mode.tools,
@@ -133,7 +154,11 @@ export async function executeWithHarem(task: HaremTask, deps: HaremDeps): Promis
   }
 
   const shared = await sharedContext(task, deps);
-  const wives = plan.workers.map((w) => harem.spawn(task.taskId, w));
+  const cast = assignCandidates(
+    task.taskId,
+    plan.workers.map((w) => w.role),
+  );
+  const wives = plan.workers.map((w, i) => harem.spawn(task.taskId, w, cast[i]));
   await beat(350);
   await Promise.all(wives.map((w) => harem.execute(w, task, shared)));
 
@@ -152,7 +177,8 @@ export async function executeWithHarem(task: HaremTask, deps: HaremDeps): Promis
     const line = eveResolveLine(conflicts);
     for (const c of conflicts) {
       c.resolution = pick ? `${line} ${pick.option.name}.` : line;
-      bus.emit("swarm.resolve", { taskId: task.taskId, conflictId: c.id, text: c.resolution }, SRC);
+      c.winner = conflictWinner(c, pick, findings);
+      bus.emit("swarm.resolve", { taskId: task.taskId, conflictId: c.id, text: c.resolution, ...(c.winner ? { winner: c.winner } : {}) }, SRC);
     }
     await beat(900);
   }
@@ -206,6 +232,13 @@ function openSwarmMirror(): Promise<HaremMirror | undefined> {
     return undefined;
   });
   return swarmMirror;
+}
+
+/** Her archetype prompt, re-voiced as the girl she is today. */
+export function wifeSystem(system: string, archetype: string, a: Pick<HaremAgent, "name" | "candidateId">): string {
+  const c = candidateById(a.candidateId);
+  if (!c) return system;
+  return `${system.replace(`You are ${archetype},`, `You are ${a.name},`)}\n${personaBlock(c)}`;
 }
 
 function distill(pick: ReturnType<typeof choose>, f: ReturnType<typeof collect>, conflicts: Conflict[]): string[] {

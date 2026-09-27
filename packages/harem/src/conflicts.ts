@@ -1,4 +1,5 @@
 import { newId } from "@eigenwife/protocol";
+import { quip } from "./identity";
 import type { BudgetResult, CalendarResult, Conflict, FoodOption, FoodResult, HaremAgent, LogisticsResult } from "./types";
 
 export interface Findings {
@@ -36,8 +37,11 @@ export function detectConflicts(f: Findings): Conflict[] {
       a: f.food.agent.id,
       b: f.budget.agent.id,
       lines: [
-        { agentId: f.food.agent.id, text: `${top.name}. It's worth it.` },
-        { agentId: f.budget.agent.id, text: `It's ${dollars(top.cost)} for ${noun(top)}. Absolutely not.` },
+        { agentId: f.food.agent.id, text: quip(f.food.agent.candidateId, "push", `${top.name}. It's worth it.`, top.name) },
+        {
+          agentId: f.budget.agent.id,
+          text: quip(f.budget.agent.candidateId, "no", `It's ${dollars(top.cost)} for ${noun(top)}. Absolutely not.`, dollars(top.cost), noun(top)),
+        },
       ],
     });
   }
@@ -48,8 +52,11 @@ export function detectConflicts(f: Findings): Conflict[] {
       a: f.food.agent.id,
       b: f.logistics.agent.id,
       lines: [
-        { agentId: f.food.agent.id, text: `${top.name} is right there.` },
-        { agentId: f.logistics.agent.id, text: `${top.distanceMinutes} minutes is not "right there".` },
+        { agentId: f.food.agent.id, text: quip(f.food.agent.candidateId, "near", `${top.name} is right there.`, top.name) },
+        {
+          agentId: f.logistics.agent.id,
+          text: quip(f.logistics.agent.candidateId, "far", `${top.distanceMinutes} minutes is not "right there".`, top.distanceMinutes),
+        },
       ],
     });
   }
@@ -69,6 +76,19 @@ export function choose(f: Findings): { option: FoodOption; start: string; relaxe
   const cheapEnough = byFit.find((o) => o.cost <= maxSpend);
   if (cheapEnough) return { option: cheapEnough, start, relaxed: "travel" };
   return { option: [...options].sort((a, b) => a.cost - b.cost)[0]!, start, relaxed: "budget" };
+}
+
+/**
+ * Whose side Eve took. Side a always pushes the food wife's top option; if
+ * Eve's pick is something else, the constraint (side b) won, unless she had
+ * to relax exactly that constraint.
+ */
+export function conflictWinner(c: Conflict, pick: ReturnType<typeof choose>, f: Findings): string | undefined {
+  if (!pick) return undefined;
+  const top = f.food?.result.options[0];
+  const relaxedHere = (c.topic === "restaurant_selection" && pick.relaxed === "budget") || (c.topic === "travel_time" && pick.relaxed === "travel");
+  if (top && pick.option.name === top.name) return c.a;
+  return relaxedHere ? c.a : c.b;
 }
 
 export function eveResolveLine(conflicts: Conflict[]): string {
