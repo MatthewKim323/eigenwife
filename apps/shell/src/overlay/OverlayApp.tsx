@@ -116,6 +116,22 @@ export function OverlayApp() {
   useEffect(() => bridge.onCursor((p) => avatarRuntime.look.cursor(p, performance.now())), []);
   // Her own cursor (docs/AGENT_CURSOR.md): while she acts, she watches it instead of yours.
   useEvent("agent.cursor", (e) => avatarRuntime.look.agent(e.data, performance.now()));
+  // Desktop gaze (docs/GAZE.md): targets carry the screen point you were looking at, so when
+  // the reflex says "glance" (avatar.look) she looks at the same thing on your screen.
+  const deskPoints = useRef(new Map<string, { x: number; y: number }>());
+  useEvent("gaze.target", (e) => {
+    const m = e.data.target.meta as { source?: string; point?: { x: number; y: number } } | undefined;
+    if (m?.source !== "desktop" || !m.point) return;
+    const map = deskPoints.current;
+    map.delete(e.data.target.key);
+    map.set(e.data.target.key, m.point);
+    if (map.size > 32) map.delete(map.keys().next().value!);
+  });
+  useEvent("avatar.look", (e) => {
+    const p = e.data.targetKey ? deskPoints.current.get(e.data.targetKey) : undefined;
+    if (!p) return;
+    avatarRuntime.attention.look({ x: p.x - (globalThis.screenX ?? 0), y: p.y - (globalThis.screenY ?? 0) }, e.data.ms, performance.now());
+  });
 
   // --- renderer: Live2D with a readable drawing buffer, tachie fallback ---------
   useEffect(() => {

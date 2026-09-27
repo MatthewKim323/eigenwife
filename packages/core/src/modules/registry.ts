@@ -14,6 +14,7 @@ import { wardrobeModule } from "../wardrobe/module";
 import { workModule } from "../work/module";
 import { followupModule } from "../followup/module";
 import { screenModule } from "../screen/module";
+import { desktopGazeModule } from "../gaze/module";
 import { clock } from "./clock";
 import { touchModule } from "../touch/module";
 import { liveModule } from "../live/module";
@@ -46,5 +47,7 @@ export function allModules(): Module[] {
     // The next step after anything she did (docs/FOLLOW_THROUGH.md).
     followupModule(),
     screenModule(),
+    // After screen: shares its helper, privacy rules and pause. eye serve fixations -> gaze.target.
+    desktopGazeModule(),
   ];
 }

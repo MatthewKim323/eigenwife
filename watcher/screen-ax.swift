@@ -3,6 +3,7 @@
 //
 //   screen-ax perms                       {"accessibility":bool,"screenRecording":bool}
 //   screen-ax dump [--pid N] [--max C]    the focused window's accessibility text as JSON
+//   screen-ax at --x X --y Y              the thing under one screen point (desktop gaze)
 //
 // dump reads ONE window: the focused window of the frontmost app (or of --pid).
 // It never walks other windows or apps. Secure text fields (AXSecureTextField)
@@ -62,6 +63,150 @@ for a in args {
 
 if cmd == "perms" {
   out(["accessibility": AXIsProcessTrusted(), "screenRecording": CGPreflightScreenCaptureAccess()])
+  exit(0)
+}
+
+// at --x X --y Y [--min-w W --min-h H] [--deny-hosts a,b]
+// What's under one screen point (global top-left points, same space as eye serve).
+// Walks up from the hit element to the first "thing a person looks at": a link,
+// button, image, cell, row, heading, or any element at least min-w x min-h (the
+// gaze error radius), so a 150pt-accurate gaze never resolves to one glyph.
+// Secure fields and denylisted hosts return private:true with no text at all.
+if cmd == "at" {
+  guard AXIsProcessTrusted() else {
+    out(["ok": false, "error": "accessibility"])
+    exit(0)
+  }
+  guard let xs = opts["x"], let ys = opts["y"], let x = Double(xs), let y = Double(ys), x.isFinite, y.isFinite else {
+    out(["ok": false, "error": "need --x and --y"])
+    exit(2)
+  }
+  let minW = CGFloat(Double(opts["min-w"] ?? "") ?? 160)
+  let minH = CGFloat(Double(opts["min-h"] ?? "") ?? 48)
+  let hosts = (opts["deny-hosts"] ?? "").split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces).lowercased() }.filter { !$0.isEmpty }
+  func hostDenied(_ u: String) -> Bool {
+    guard !hosts.isEmpty, let h = URL(string: u)?.host?.lowercased() else { return false }
+    return hosts.contains { h == $0 || h.hasSuffix("." + $0) }
+  }
+  let sys = AXUIElementCreateSystemWide()
+  AXUIElementSetMessagingTimeout(sys, 0.3)
+  var hitRef: AXUIElement?
+  guard AXUIElementCopyElementAtPosition(sys, Float(x), Float(y), &hitRef) == .success, let hit = hitRef else {
+    out(["ok": true, "none": true])
+    exit(0)
+  }
+  var hitPid: pid_t = 0
+  AXUIElementGetPid(hit, &hitPid)
+  let ra = NSRunningApplication(processIdentifier: hitPid)
+  let base: [String: Any] = ["ok": true, "app": ra?.localizedName ?? "", "bundleId": ra?.bundleIdentifier ?? "", "pid": hitPid]
+  func merged(_ extra: [String: Any]) -> [String: Any] { base.merging(extra) { _, b in b } }
+
+  // Ancestors, hit first. Secure anywhere on the path = private.
+  var path: [AXUIElement] = []
+  var cur: AXUIElement? = hit
+  while let c = cur, path.count < 30 {
+    path.append(c)
+    if isSecure(str(c, kAXRoleAttribute), str(c, kAXSubroleAttribute)) {
+      out(merged(["private": true, "secure": true]))
+      exit(0)
+    }
+    if let p = attr(c, kAXParentAttribute), CFGetTypeID(p) == AXUIElementGetTypeID() { cur = (p as! AXUIElement) } else { cur = nil }
+  }
+  var pageUrl = ""
+  var windowTitle = ""
+  for el in path {
+    let role = str(el, kAXRoleAttribute)
+    if role == "AXWebArea" && pageUrl.isEmpty { pageUrl = str(el, kAXURLAttribute) ?? "" }
+    if role == "AXWindow" && windowTitle.isEmpty { windowTitle = str(el, kAXTitleAttribute) ?? "" }
+  }
+  if hostDenied(pageUrl) {
+    out(merged(["private": true]))
+    exit(0)
+  }
+
+  let AT_TEXT: Set<String> = ["AXStaticText", "AXHeading", "AXLink", "AXImage", "AXCell", "AXTextArea", "AXTextField"]
+  let SEMANTIC: Set<String> = ["AXLink", "AXButton", "AXImage", "AXCell", "AXRow", "AXHeading", "AXMenuItem", "AXTab", "AXRadioButton", "AXCheckBox", "AXPopUpButton", "AXTextArea"]
+  let STOP: Set<String> = ["AXWebArea", "AXWindow", "AXApplication", "AXScrollArea", "AXSplitGroup"]
+  var pick = hit
+  for el in path {
+    let role = str(el, kAXRoleAttribute) ?? ""
+    if STOP.contains(role) { break }
+    pick = el
+    if SEMANTIC.contains(role) { break }
+    if let f = frame(el), f.width >= minW && f.height >= minH { break }
+  }
+
+  // Label: the element's own name, else the first few visible text descendants.
+  func own(_ el: AXUIElement) -> String {
+    for a in [kAXTitleAttribute, kAXDescriptionAttribute, kAXValueAttribute] {
+      if let s = str(el, a)?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty { return s }
+    }
+    return ""
+  }
+  var parts: [String] = []
+  let ownLabel = own(pick)
+  if !ownLabel.isEmpty { parts.append(ownLabel) }
+  var q: [(AXUIElement, Int)] = [(pick, 0)]
+  var seen = 0
+  while !q.isEmpty && parts.joined(separator: " ").count < 240 && seen < 120 {
+    let (el, d) = q.removeFirst()
+    seen += 1
+    let role = str(el, kAXRoleAttribute)
+    if isSecure(role, str(el, kAXSubroleAttribute)) {
+      out(merged(["private": true, "secure": true]))
+      exit(0)
+    }
+    if d > 0, let r = role, AT_TEXT.contains(r) {
+      let t = own(el)
+      if !t.isEmpty && !parts.contains(t) { parts.append(t) }
+    }
+    if d < 6, let kids = attr(el, kAXChildrenAttribute) as? [AXUIElement] {
+      for k in kids.prefix(24) { q.append((k, d + 1)) }
+    }
+  }
+  var label = parts.joined(separator: " · ")
+  // Big text (terminals, editors, chat logs): the whole value is not what you're
+  // looking at. Ask for the characters under the point and keep that line.
+  var lineUnder = ""
+  let pickRole = str(pick, kAXRoleAttribute) ?? ""
+  if pickRole == "AXTextArea" || pickRole == "AXTextField" || pickRole == "AXStaticText" {
+    var pt = CGPoint(x: x, y: y)
+    var idxRange: AnyObject?
+    if let ptVal = AXValueCreate(.cgPoint, &pt),
+       AXUIElementCopyParameterizedAttributeValue(pick, kAXRangeForPositionParameterizedAttribute as CFString, ptVal, &idxRange) == .success,
+       let rv = idxRange, CFGetTypeID(rv) == AXValueGetTypeID() {
+      var hitR = CFRange(location: 0, length: 0)
+      AXValueGetValue(rv as! AXValue, .cfRange, &hitR)
+      var win = CFRange(location: max(0, hitR.location - 160), length: 320)
+      var sv: AnyObject?
+      if let wv = AXValueCreate(.cfRange, &win),
+         AXUIElementCopyParameterizedAttributeValue(pick, kAXStringForRangeParameterizedAttribute as CFString, wv, &sv) == .success,
+         let s = sv as? String {
+        let off = min(s.count, max(0, hitR.location - win.location))
+        let i = s.index(s.startIndex, offsetBy: off)
+        let start = s[..<i].lastIndex(of: "\n").map { s.index(after: $0) } ?? s.startIndex
+        let end = s[i...].firstIndex(of: "\n") ?? s.endIndex
+        lineUnder = String(s[start..<end]).trimmingCharacters(in: .whitespacesAndNewlines)
+      }
+    }
+  }
+  var coarse = false
+  if !lineUnder.isEmpty {
+    label = lineUnder
+  } else if pickRole == "AXTextArea", let f = frame(pick), f.width * f.height > minW * minH * 6 {
+    // A big text area that can't say what's under the point (e.g. a terminal): its value
+    // starts wherever the scrollback does, which is not what you're looking at.
+    label = ""
+    coarse = true
+  }
+  if label.count > 240 { label = String(label.prefix(240)) }
+  var result = merged([
+    "role": str(pick, kAXRoleAttribute) ?? "", "subrole": str(pick, kAXSubroleAttribute) ?? "", "label": label,
+    "url": pageUrl, "title": windowTitle, "coarse": coarse,
+  ])
+  if let f = frame(pick) { result["frame"] = ["x": f.origin.x, "y": f.origin.y, "w": f.width, "h": f.height] }
+  if str(pick, kAXRoleAttribute) == "AXLink", let href = str(pick, kAXURLAttribute) { result["href"] = hostDenied(href) ? "" : href }
+  out(result)
   exit(0)
 }
 

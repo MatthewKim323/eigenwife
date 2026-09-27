@@ -30,6 +30,65 @@ export interface AxDump extends ScreenRead {
   private?: boolean;
 }
 
+/** What's under one screen point (screen-ax at). Private/secure hits carry no text. */
+export interface AxHit {
+  ok: boolean;
+  error?: string;
+  /** Nothing under the point (desktop, off screen). */
+  none?: boolean;
+  app: string;
+  bundleId?: string;
+  pid?: number;
+  role?: string;
+  subrole?: string;
+  label: string;
+  /** Window title and page url of the hit (for privacy checks and the label fallback). */
+  title?: string;
+  url?: string;
+  href?: string;
+  frame?: { x: number; y: number; w: number; h: number };
+  /** A big text area that can't say what's under the point: label by app/title instead. */
+  coarse?: boolean;
+  private?: boolean;
+  secure?: boolean;
+}
+
+export function parseAt(stdout: string): AxHit {
+  let j: Record<string, unknown>;
+  try {
+    j = JSON.parse(stdout.trim().split("\n").pop() ?? "");
+  } catch {
+    return { ok: false, error: "bad helper output", app: "", label: "" };
+  }
+  const s = (v: unknown) => (typeof v === "string" ? v : "");
+  const secure = j.secure === true || /secure/i.test(s(j.role)) || /secure/i.test(s(j.subrole));
+  const priv = j.private === true || secure;
+  const f = j.frame as Record<string, unknown> | undefined;
+  const frame =
+    f && [f.x, f.y, f.w, f.h].every((n) => typeof n === "number" && Number.isFinite(n))
+      ? { x: f.x as number, y: f.y as number, w: f.w as number, h: f.h as number }
+      : undefined;
+  return {
+    ok: j.ok === true,
+    error: s(j.error) || undefined,
+    none: j.none === true,
+    app: s(j.app),
+    bundleId: s(j.bundleId) || undefined,
+    pid: typeof j.pid === "number" ? j.pid : undefined,
+    role: s(j.role) || undefined,
+    subrole: s(j.subrole) || undefined,
+    // A private or secure hit never carries text past this point.
+    label: priv ? "" : s(j.label),
+    title: priv ? undefined : s(j.title) || undefined,
+    url: s(j.url) || undefined,
+    href: priv ? undefined : s(j.href) || undefined,
+    frame,
+    coarse: j.coarse === true,
+    private: priv,
+    secure,
+  };
+}
+
 export interface Permissions {
   accessibility: boolean;
   screenRecording: boolean | null;
@@ -138,6 +197,20 @@ export function createCapture(d: CaptureDeps) {
     return parseDump(r.stdout);
   }
 
+  /** What's under one global screen point (desktop gaze). ~100ms. */
+  async function at(x: number, y: number, opts: { denyHosts?: string[]; minW?: number; minH?: number } = {}): Promise<AxHit> {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return { ok: false, error: "bad point", app: "", label: "" };
+    const h = await helper();
+    if (!h) return { ok: false, error: "no helper", app: "", label: "" };
+    const argv = [h, "at", "--x", String(Math.round(x)), "--y", String(Math.round(y))];
+    if (opts.minW) argv.push("--min-w", String(Math.round(opts.minW)));
+    if (opts.minH) argv.push("--min-h", String(Math.round(opts.minH)));
+    if (opts.denyHosts?.length) argv.push("--deny-hosts", opts.denyHosts.join(","));
+    const r = await d.exec(argv, { timeoutMs: 2000, maxBytes: 20_000 });
+    if (r.code !== 0 && !r.stdout.trim()) return { ok: false, error: r.timedOut ? "helper timeout" : r.stderr.slice(0, 200) || `exit ${r.code}`, app: "", label: "" };
+    return parseAt(r.stdout);
+  }
+
   /** Remove any leftover capture (a crash mid-look). */
   function sweep(): number {
     let n = 0;
@@ -177,7 +250,7 @@ export function createCapture(d: CaptureDeps) {
     }
   }
 
-  return { helper, permissions, dump, withWindowImage, sweep, tmpDir: tmp };
+  return { helper, permissions, dump, at, withWindowImage, sweep, tmpDir: tmp };
 }
 
 export type Capture = ReturnType<typeof createCapture>;
