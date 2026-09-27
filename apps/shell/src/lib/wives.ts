@@ -48,9 +48,24 @@ export interface OverlayWives {
   order: string[];
   /** When the whole thing ended (merge / task.done), so bubbles can fade out. */
   endedAt?: number;
+  /** When this task started (first event we saw for it). */
+  startedAt?: number;
+  /** Last time a shell said it switched to its swarm scene; cleared when it leaves. */
+  shellSwarmAt?: number;
 }
 
 export const NO_WIVES: OverlayWives = { taskId: null, wives: {}, order: [] };
+
+/** A shell that flips to its swarm scene does it within ms of the task starting. */
+export const SHELL_GRACE_MS = 5000;
+
+/**
+ * Is a shell showing this task in its own swarm scene? Only if it switched
+ * for this task: a stale "swarm" from a tab closed mid-run doesn't count.
+ */
+export function shellShowing(s: OverlayWives): boolean {
+  return s.shellSwarmAt !== undefined && s.startedAt !== undefined && s.shellSwarmAt >= s.startedAt - SHELL_GRACE_MS;
+}
 
 /** How long a quip holds its caption over progress lines. */
 export const QUIP_HOLD_MS = 3200;
@@ -61,14 +76,24 @@ const clip = (s: string, n = 38) => (s.length > n ? `${s.slice(0, n - 3).trimEnd
 
 export function reduceWives(s: OverlayWives, e: AnyEnvelope, now = Date.now()): OverlayWives {
   const d = e.data as { taskId?: string; agentId?: string };
-  const fresh = (taskId: string): OverlayWives => (s.taskId === taskId && !s.endedAt ? s : { taskId, wives: {}, order: [] });
+  const keep = s.shellSwarmAt !== undefined ? { shellSwarmAt: s.shellSwarmAt } : {};
+  const fresh = (taskId: string): OverlayWives => (s.taskId === taskId && !s.endedAt ? s : { taskId, wives: {}, order: [], startedAt: now, ...keep });
   const patch = (taskId: string, agentId: string, f: (w: OverlayWife) => OverlayWife, st: OverlayWives = s): OverlayWives => {
     if (st.taskId !== taskId || !st.wives[agentId]) return st;
     return { ...st, wives: { ...st.wives, [agentId]: f(st.wives[agentId]!) } };
   };
   switch (e.type) {
     case "task.start":
-      return { taskId: (e.data as EventMap["task.start"]).taskId, wives: {}, order: [] };
+      return { taskId: (e.data as EventMap["task.start"]).taskId, wives: {}, order: [], startedAt: now, ...keep };
+    case "swarm.plan":
+      return fresh((e.data as EventMap["swarm.plan"]).taskId);
+    case "shell.scene": {
+      const scene = (e.data as EventMap["shell.scene"]).scene;
+      if (scene === "swarm") return { ...s, shellSwarmAt: now };
+      if (s.shellSwarmAt === undefined) return s;
+      const { shellSwarmAt: _, ...rest } = s;
+      return rest;
+    }
     case "swarm.spawn": {
       const x = e.data as EventMap["swarm.spawn"];
       const base = fresh(x.taskId);
@@ -123,16 +148,19 @@ export function visibleWives(s: OverlayWives, now = Date.now()): OverlayWife[] {
 }
 
 /**
- * Fan the bubbles in an arc around her head: angles from upper-left, over
- * the top, to upper-right. Returns offsets from the head in px.
+ * Where the bubbles sit in the overlay window: fanned out to either side of
+ * her head, alternating left / right and stepping down, so nothing ever
+ * covers her face. Page px, centers of the portraits.
  */
-export function fanOut(n: number, radius: number): { x: number; y: number }[] {
-  if (n <= 0) return [];
-  const from = (-155 * Math.PI) / 180;
-  const to = (-25 * Math.PI) / 180;
-  return Array.from({ length: n }, (_, i) => {
-    const t = n === 1 ? 0.5 : i / (n - 1);
-    const a = from + (to - from) * t;
-    return { x: Math.round(Math.cos(a) * radius), y: Math.round(Math.sin(a) * radius) };
+export function sideSlots(n: number, head: { x: number; y: number }, vp: { w: number; h: number }, size: number, pad = 22): { x: number; y: number; side: "l" | "r" }[] {
+  const step = size + 44;
+  const top = Math.max(pad + size / 2 + 40, head.y - step * 0.6);
+  return Array.from({ length: Math.max(0, n) }, (_, i) => {
+    const side = i % 2 ? "r" : "l";
+    const k = Math.floor(i / 2);
+    const x = side === "l" ? pad + size / 2 : vp.w - pad - size / 2;
+    // Stagger the right column half a step so a fight reads left, then right.
+    const y = Math.min(vp.h - 120, top + k * step + (side === "r" ? step * 0.35 : 0));
+    return { x: Math.round(x), y: Math.round(y), side };
   });
 }

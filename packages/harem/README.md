@@ -16,6 +16,8 @@ task -> planner (template or LLM) -> spawn 1-4 wives in parallel -> structured r
 | 🗺️ Yumi | logistics | WebSearch |
 | 🔎 Rei | research | WebSearch, WebFetch |
 
+Those names are the archetypes. At spawn each wife is cast as one of the Act I Eigen girls by role fit (Kit on food, Vivienne on calendar, Hana on budget, Sol on logistics, Ada or Wren on research), with `candidateId` on `swarm.spawn` and quips in her voice. See `docs/HAREM.md`.
+
 Caps: `MAX_WIVES = 4`, depth 1. Wives have no spawn tool, so recursion can't happen.
 
 ## Use

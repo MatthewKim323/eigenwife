@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { envelope, type AnyEnvelope, type EventMap, type EventType } from "@eigenwife/protocol";
-import { fanOut, LINGER_MS, NO_WIVES, QUIP_HOLD_MS, reduceWives, roleLabel, visibleWives, wifeCandidate, type OverlayWives } from "./wives";
+import { LINGER_MS, NO_WIVES, QUIP_HOLD_MS, reduceWives, roleLabel, shellShowing, sideSlots, visibleWives, wifeCandidate, type OverlayWives } from "./wives";
 import { reduceShell, initialShell } from "./store";
 
 const ev = <K extends EventType>(type: K, data: EventMap[K]) => envelope(type, data, "harem") as AnyEnvelope;
@@ -79,14 +79,39 @@ describe("overlay wives reducer", () => {
   });
 });
 
-describe("fanOut", () => {
-  test("arcs over her head, symmetric, never below it", () => {
-    expect(fanOut(0, 100)).toEqual([]);
-    expect(fanOut(1, 100)).toEqual([{ x: 0, y: -100 }]);
-    const four = fanOut(4, 100);
-    expect(four).toHaveLength(4);
-    for (const p of four) expect(p.y).toBeLessThan(0);
-    expect(four[0]!.x).toBe(-four[3]!.x);
-    expect(four[0]!.x).toBeLessThan(four[1]!.x);
+describe("shell swarm scene detection", () => {
+  test("a shell that switches for this task hides the bubbles; a stale one doesn't", () => {
+    const scene = (s: "swarm" | "desktop") => ev("shell.scene", { scene: s });
+    // stale: the tab flipped to swarm long ago and closed mid-run
+    let s = reduceWives(NO_WIVES, scene("swarm"), 1000);
+    s = reduceWives(s, ev("task.start", { taskId: "t", goal: "g", brain: "b" }), 60_000);
+    expect(shellShowing(s)).toBe(false);
+    // live: it flips right as the task starts
+    s = reduceWives(s, scene("swarm"), 60_050);
+    expect(shellShowing(s)).toBe(true);
+    s = reduceWives(s, scene("desktop"), 70_000);
+    expect(shellShowing(s)).toBe(false);
+    // no shell at all
+    expect(shellShowing(feed([spawn("a1", "kit", "Kit", "food")]))).toBe(false);
+  });
+});
+
+describe("sideSlots", () => {
+  const head = { x: 210, y: 170 };
+  const vp = { w: 420, h: 560 };
+  test("alternate left / right beside her head, never over her face, inside the window", () => {
+    expect(sideSlots(0, head, vp, 34)).toEqual([]);
+    const four = sideSlots(4, head, vp, 34);
+    expect(four.map((p) => p.side)).toEqual(["l", "r", "l", "r"]);
+    for (const p of four) {
+      expect(Math.abs(p.x - head.x)).toBeGreaterThan(150);
+      expect(p.x - 17).toBeGreaterThanOrEqual(0);
+      expect(p.x + 17).toBeLessThanOrEqual(vp.w);
+      expect(p.y).toBeGreaterThan(40);
+      expect(p.y).toBeLessThan(vp.h - 100);
+    }
+    // columns step down, and the right one sits a little lower so a fight reads left then right
+    expect(four[2]!.y).toBeGreaterThan(four[0]!.y);
+    expect(four[1]!.y).toBeGreaterThan(four[0]!.y);
   });
 });

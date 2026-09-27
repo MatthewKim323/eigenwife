@@ -182,7 +182,7 @@ function Braid({ fill }: { fill: string }) {
 }
 
 /** Headshot framing for PortraitArt: a square around her face and hair (wife bubbles). */
-export const HEAD_VIEWBOX = "56 76 188 188";
+export const HEAD_VIEWBOX = "66 88 168 168";
 
 export function PortraitArt({ id, name, className, viewBox = "30 18 240 420" }: { id: string; name: string; className?: string; viewBox?: string }) {
   const uid = useId().replace(/:/g, "");

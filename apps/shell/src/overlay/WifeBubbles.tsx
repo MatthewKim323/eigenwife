@@ -2,11 +2,11 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useReducer, useState } from "react";
 import type { AnyEnvelope } from "@eigenwife/protocol";
 import { WifeFace } from "../components/WifeFace";
-import { useEvent, useWorld } from "../lib/bus";
-import { fanOut, LINGER_MS, NO_WIVES, reduceWives, visibleWives, type OverlayWives } from "../lib/wives";
+import { useEvent } from "../lib/bus";
+import { LINGER_MS, NO_WIVES, reduceWives, shellShowing, sideSlots, visibleWives, type OverlayWives } from "../lib/wives";
 import "./wives.css";
 
-const EVENTS = ["task.start", "swarm.spawn", "swarm.status", "swarm.progress", "swarm.done", "swarm.conflict", "swarm.resolve", "swarm.merge", "task.done"] as const;
+const EVENTS = ["task.start", "shell.scene", "swarm.plan", "swarm.spawn", "swarm.status", "swarm.progress", "swarm.done", "swarm.conflict", "swarm.resolve", "swarm.merge", "task.done"] as const;
 const PAD = 22;
 
 /**
@@ -16,7 +16,6 @@ const PAD = 22;
  * the overlay's click-through (which only reads Eve's pixels) never changes.
  */
 export function WifeBubbles({ head, vp, scale }: { head: { x: number; y: number }; vp: { w: number; h: number }; scale: number }) {
-  const { world } = useWorld();
   const [state, dispatch] = useReducer((s: OverlayWives, e: AnyEnvelope) => reduceWives(s, e, Date.now()), NO_WIVES);
   const [, tick] = useState(0);
   for (const t of EVENTS) useEvent(t, dispatch); // eslint-disable-line react-hooks/rules-of-hooks
@@ -31,19 +30,17 @@ export function WifeBubbles({ head, vp, scale }: { head: { x: number; y: number 
   }, [state]);
 
   const now = Date.now();
-  // The shell's swarm scene already shows them big; don't double up.
-  const wives = world.scene === "swarm" ? [] : visibleWives(state, now);
-  const size = Math.round(Math.max(26, Math.min(40, 36 * scale)));
-  const spots = fanOut(wives.length, Math.max(84, 150 * scale));
+  // A shell that switched to its swarm scene for this task already shows them big; don't double up.
+  const wives = shellShowing(state) ? [] : visibleWives(state, now);
+  const size = Math.round(Math.max(26, Math.min(38, 34 * scale + 8)));
+  const spots = sideSlots(wives.length, head, vp, size, PAD);
   const ending = !!state.endedAt;
 
   return (
     <div className="ov-wives" aria-hidden>
       <AnimatePresence>
         {wives.map((w, i) => {
-          const o = spots[i]!;
-          const x = clamp(head.x + o.x, PAD + size / 2, vp.w - PAD - size / 2);
-          const y = clamp(head.y + o.y, 64, vp.h - 110);
+          const { x, y, side } = spots[i]!;
           const quip = !!w.quipUntil && now < w.quipUntil;
           const faded = w.state === "done" || w.state === "failed" || w.state === "merging" || ending;
           return (
@@ -53,7 +50,8 @@ export function WifeBubbles({ head, vp, scale }: { head: { x: number; y: number 
               data-state={w.state}
               data-quip={quip}
               data-chosen={!!w.chosen}
-              style={{ left: x, top: y }}
+              data-side={side}
+              style={{ left: x, top: y - size / 2, ["--s" as string]: `${size}px` }}
               initial={{ opacity: 0, scale: 0.4, x: head.x - x, y: head.y - y }}
               animate={{ opacity: faded && !w.chosen ? 0.62 : 1, scale: 1, x: 0, y: 0 }}
               exit={{ opacity: 0, scale: 0.5, x: (head.x - x) * 0.7, y: (head.y - y) * 0.7, transition: { duration: 0.45, ease: [0.4, 0, 0.2, 1] } }}
@@ -72,5 +70,3 @@ export function WifeBubbles({ head, vp, scale }: { head: { x: number; y: number 
     </div>
   );
 }
-
-const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));

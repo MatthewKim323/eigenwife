@@ -31,8 +31,8 @@ export function SwarmScene() {
   const cx = (w - CALM) / 2 + 30;
   const cy = h * 0.47;
   const agents = run ? run.order.map((id) => run.agents[id]!).filter(Boolean) : [];
-  // Eve's call: the wife whose side she took glows until the merge.
-  const chosen = run?.resolve?.winner && !run.merge ? run.resolve.winner : null;
+  // Eve's call: the wife whose side she took glows until the task is done.
+  const chosen = run?.resolve?.winner && !run.done ? run.resolve.winner : null;
   const pos = useMemo(() => layout(agents, cx, cy, Math.min((w - CALM) * 0.36, 380), Math.min(h * 0.3, 250)), [agents.length, cx, cy, w, h]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
@@ -215,7 +215,7 @@ function Conflict({
   // Keep the argument clear of Eve's orb.
   const my = Math.min((a.y + b.y) / 2, cy - 170);
   return (
-    <motion.div className={`conflict ${resolved ? "resolved" : ""}`} style={{ left: mx, top: my }} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: merged ? 0 : resolved ? 0.55 : 1, scale: 1 }} transition={{ type: "spring", duration: 0.5, bounce: 0.3 }}>
+    <motion.div className={`conflict ${resolved ? "resolved" : ""}`} style={{ left: mx, top: my }} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: merged ? 0 : 1, scale: 1 }} transition={{ type: "spring", duration: 0.5, bounce: 0.3 }}>
       <div className="topic mono">CONFLICT · {c.topic}</div>
       {c.lines.slice(0, 2).map((l, i) => {
         const who = agents[l.agentId];
@@ -244,10 +244,29 @@ function Resolve({ run }: { run: SwarmRun | null }) {
   const text = run?.resolve?.text ?? "";
   const typed = useTypewriter(text, 26);
   if (!run?.resolve || run.done) return null;
+  // The girl whose side she took pops in beside the line once it's said.
+  const winner = run.resolve.winner ? run.agents[run.resolve.winner] : undefined;
+  const said = typed.length >= Math.min(text.length, 6);
   return (
     <div className="resolve" key={run.resolve.conflictId}>
       <div className="k mono">EVE</div>
-      <div className="line">{typed}</div>
+      <div className="line">
+        {typed}
+        <AnimatePresence>
+          {winner && said && (
+            <motion.span
+              className="pick"
+              initial={{ opacity: 0, scale: 0.4, rotate: -12 }}
+              animate={{ opacity: 1, scale: 1, rotate: 0 }}
+              exit={{ opacity: 0, scale: 0.6 }}
+              transition={{ type: "spring", duration: 0.55, bounce: 0.35 }}
+            >
+              <WifeFace who={winner} size={46} glow />
+              <b className="mono">{winner.name}</b>
+            </motion.span>
+          )}
+        </AnimatePresence>
+      </div>
     </div>
   );
 }

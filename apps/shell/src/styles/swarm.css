@@ -73,9 +73,11 @@
 .agent .res span { color: var(--ok); margin-right: 4px; }
 .agent .res.bad span { color: var(--warn); }
 
-.conflict { position: absolute; z-index: 6; margin: -70px 0 0 -160px; width: 320px; display: grid; gap: 8px; pointer-events: none; }
+.conflict { position: absolute; z-index: 6; margin: -118px 0 0 -160px; width: 320px; display: grid; gap: 8px; pointer-events: none; }
 .conflict .topic { justify-self: center; font-size: 9.5px; letter-spacing: 0.22em; color: var(--warn); padding: 4px 9px; border-radius: 999px; background: oklch(0.2 0.05 40 / 0.6); border: 1px solid oklch(0.78 0.16 40 / 0.4); }
 .conflict .say-row { display: flex; align-items: flex-end; gap: 7px; }
+.conflict .say-row > * { transition: opacity 420ms ease; }
+.conflict.resolved .say-row:not(.won) > * { opacity: 0.5; }
 .conflict .say-row.l { justify-self: start; }
 .conflict .say-row.r { justify-self: end; flex-direction: row-reverse; }
 .conflict .say-row .wface { margin-bottom: 2px; }
@@ -86,6 +88,10 @@
 .conflict .bubble.r { justify-self: end; border-bottom-right-radius: 4px; background: oklch(0.92 0.06 calc(var(--hue) + 70)); }
 
 .resolve { position: absolute; z-index: 7; left: calc((100vw - 420px) / 2 + 30px); bottom: 150px; transform: translateX(-50%); text-align: center; pointer-events: none; }
+/* A soft scrim so the line reads over whichever card sits under it. */
+.resolve::before { content: ""; position: absolute; inset: -40px -90px; z-index: -1; background: radial-gradient(closest-side, oklch(0.1 0.03 var(--hue) / 0.94) 55%, transparent); }
+.resolve .line .pick { display: inline-flex; flex-direction: column; align-items: center; gap: 4px; margin-left: 16px; vertical-align: middle; -webkit-text-stroke: 0; }
+.resolve .line .pick b { font-size: 9px; letter-spacing: 0.24em; text-transform: uppercase; color: var(--ink-2); font-weight: 500; }
 .resolve .k { font-size: 10px; letter-spacing: 0.4em; color: var(--pink); }
 .resolve .line { margin-top: 8px; font: 700 clamp(28px, 3.4vw, 46px)/1.1 var(--font-voice); color: white; -webkit-text-stroke: 7px oklch(0.15 0.05 var(--hue)); paint-order: stroke fill; letter-spacing: -0.01em; white-space: nowrap; }
 

@@ -60,7 +60,12 @@ else local.tap(tap);
 
 if (flag("--approve")) {
   (client ?? local).on("action.request", (e: Envelope<"action.request">) => {
-    setTimeout(() => bus.emit("action.approval", { actionId: e.data.actionId, approved: true, by: "key" }, "harem-cli"), 1500);
+    setTimeout(() => {
+      const data = { actionId: e.data.actionId, approved: true, by: "key" as const };
+      bus.emit("action.approval", data, "harem-cli");
+      // the hub doesn't echo our own events back, and the harem waits on the local bus
+      if (client) local.emit("action.approval", data, "harem-cli");
+    }, 1500);
   });
 }
 
