@@ -207,7 +207,7 @@ describe("ears module on the hub", () => {
 
   beforeAll(async () => {
     process.env.EIGEN_QUIET = "1";
-    core = await startCore([earsModule({ endpoint: dg.endpoint, secret: (n) => (n === "DEEPGRAM_API_KEY" ? "k_live" : ""), minBackoffMs: 20 })], { port });
+    core = await startCore([earsModule({ endpoint: dg.endpoint, secret: (n) => (n === "DEEPGRAM_API_KEY" ? "k_live" : n === "EVE_STT" ? "nova" : ""), minBackoffMs: 20 })], { port });
     bare = await startCore([earsModule({ secret: () => "" })], { port: port + 1 });
   });
   afterAll(async () => {

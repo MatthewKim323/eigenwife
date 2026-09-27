@@ -141,7 +141,14 @@ export interface EventMap {
 
   // --- perception: ears, desktop, pages --------------------------------------
   "voice.partial": { text: string };
-  "voice.final": { text: string; confidence?: number };
+  /** endOfTurn: a model-detected end of turn (Deepgram Flux EndOfTurn): the turn is complete, don't wait for more. */
+  "voice.final": { text: string; confidence?: number; endOfTurn?: boolean };
+  /** Flux EagerEndOfTurn: he's probably done. The talker may start speculatively; nothing is spoken until voice.final. */
+  "voice.eager": { text: string };
+  /** Flux TurnResumed: he wasn't done. Drop any speculation from the last voice.eager. */
+  "voice.resumed": { reason?: string };
+  /** The talker handed a turn to the thinker (docs/VOICE.md). kind answer: look it up; do: get it done. */
+  "talker.delegate": { runId: string; kind: "answer" | "do"; task: string; stall?: string; backend?: string };
   /** One conversational turn: voice.final pieces merged across short pauses ("talk, pause, keep talking"). */
   "voice.turn": { text: string; parts: number };
   /** A line of the conversation she's having with him (his addressed turns, her spoken lines). */

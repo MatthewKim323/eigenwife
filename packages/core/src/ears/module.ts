@@ -2,6 +2,7 @@ import { secret } from "../config";
 import type { Module, SocketPeer } from "../context";
 import { json } from "../hub";
 import { DEEPGRAM_LISTEN_URL, LISTEN_DEFAULTS, listenUrl, optionsFromQuery } from "./deepgram";
+import { DEEPGRAM_FLUX_URL, FLUX_MODEL, fluxUrl } from "./flux";
 import { EarsSession, type UpstreamFactory } from "./session";
 
 /**
@@ -18,12 +19,18 @@ import { EarsSession, type UpstreamFactory } from "./session";
  *       server -> client JSON: status | partial | final | bargein | dropped
  *   GET /api/ears/status   { available, provider, model, reason?, sessions }
  *
- * Env: DEEPGRAM_API_KEY (env, .env, or jabby's .env), EVE_STT_MODEL (nova-3).
+ * Env: DEEPGRAM_API_KEY (env, .env, or jabby's .env). EVE_STT=flux (default for raw
+ * PCM/opus) | nova. Flux (/v2/listen, flux-general-en) does model-based end of turn
+ * with EagerEndOfTurn (voice.eager) / TurnResumed (voice.resumed); containerized
+ * audio (webm) and EVE_STT=nova use nova-3 (EVE_STT_MODEL). EVE_FLUX_EAGER (0.5),
+ * EVE_FLUX_EOT (0.7) tune the thresholds. Flux that won't connect falls back to nova.
  */
 
 export interface EarsOptions {
   /** Upstream base URL (tests point this at a fake Deepgram). */
   endpoint?: string;
+  /** Flux upstream base URL (tests). */
+  fluxEndpoint?: string;
   connect?: UpstreamFactory;
   secret?: (name: string) => string;
   minBackoffMs?: number;
@@ -40,6 +47,7 @@ export function earsModule(opts: EarsOptions = {}): Module {
       const get = opts.secret ?? secret;
       const key = () => get("DEEPGRAM_API_KEY");
       const model = get("EVE_STT_MODEL") || LISTEN_DEFAULTS.model;
+      const sttPref = (get("EVE_STT") || "flux").toLowerCase();
 
       // Her voice, as the core sees it; clients that play audio report more precisely.
       offs.push(
@@ -55,7 +63,7 @@ export function earsModule(opts: EarsOptions = {}): Module {
           ok: true,
           available: !!k,
           provider: "deepgram",
-          model,
+          model: sttPref === "nova" ? model : `${FLUX_MODEL} (nova fallback: ${model})`,
           ...(k ? {} : { reason: "DEEPGRAM_API_KEY not set" }),
           sessions: [...sessions.values()].map((s) => ({ state: s.state, connects: s.connects, bytesIn: s.bytesIn })),
         });
@@ -69,14 +77,23 @@ export function earsModule(opts: EarsOptions = {}): Module {
         open(peer: SocketPeer) {
           const q = peer.url.searchParams;
           const client = q.get("client") ?? "mic";
-          const url = listenUrl({ ...optionsFromQuery(q), model }, opts.endpoint ?? DEEPGRAM_LISTEN_URL);
+          const listen = optionsFromQuery(q);
+          const url = listenUrl({ ...listen, model }, opts.endpoint ?? DEEPGRAM_LISTEN_URL);
+          // Flux needs raw audio with a known encoding; webm/ogg clients stay on nova.
+          const flux = sttPref !== "nova" && q.get("stt") !== "nova" && !!listen.encoding;
+          const num = (k: string) => (get(k) ? Number(get(k)) : undefined);
+          const fUrl = flux
+            ? fluxUrl({ encoding: listen.encoding, sampleRate: listen.sampleRate, eagerEotThreshold: num("EVE_FLUX_EAGER"), eotThreshold: num("EVE_FLUX_EOT") }, opts.fluxEndpoint ?? DEEPGRAM_FLUX_URL)
+            : url;
           const send = (m: Record<string, unknown>) => {
             try {
               peer.send(JSON.stringify(m));
             } catch {}
           };
           const s = new EarsSession({
-            url,
+            url: fUrl,
+            protocol: flux ? "flux" : "nova",
+            fallbackUrl: flux ? url : undefined,
             apiKey: key(),
             connect: opts.connect,
             minBackoffMs: opts.minBackoffMs,
@@ -84,10 +101,12 @@ export function earsModule(opts: EarsOptions = {}): Module {
             keepAliveMs: opts.keepAliveMs,
             hooks: {
               partial: (text) => ctx.bus.emit("voice.partial", { text }, "ears"),
-              final: (text, confidence) => {
+              final: (text, confidence, endOfTurn) => {
                 ctx.log("ears", `heard: "${text}"`);
-                ctx.bus.emit("voice.final", { text, ...(confidence !== undefined ? { confidence } : {}) }, "ears");
+                ctx.bus.emit("voice.final", { text, ...(confidence !== undefined ? { confidence } : {}), ...(endOfTurn ? { endOfTurn } : {}) }, "ears");
               },
+              eager: (text) => ctx.bus.emit("voice.eager", { text }, "ears"),
+              resumed: () => ctx.bus.emit("voice.resumed", {}, "ears"),
               bargeIn: () => ctx.bus.emit("speech.stop", { reason: "barge-in" }, "ears"),
               toClient: send,
               log: (...a) => ctx.log("ears", ...a),
@@ -95,7 +114,7 @@ export function earsModule(opts: EarsOptions = {}): Module {
           });
           if (ctx.tryUse("speech")?.speaking()) s.tracker.fromBus(true);
           sessions.set(peer.id, s);
-          ctx.log("ears", `${client} connected (${q.get("encoding") ?? "linear16"})`);
+          ctx.log("ears", `${client} connected (${q.get("encoding") ?? "linear16"}, ${flux ? "flux" : "nova"})`);
           s.start();
         },
         message(peer, data) {

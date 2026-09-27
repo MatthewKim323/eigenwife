@@ -31,6 +31,10 @@ export interface FrontierRequest {
   timeoutMs?: number;
   /** Tools/permissions: "none" = pure reasoning, "read" = may browse/read files. */
   tools?: "none" | "read";
+  /** Cancel the run (the talker's "never mind"). */
+  signal?: AbortSignal;
+  /** Tool calls and text as they happen (progress narration). */
+  onEvent?: (e: { kind: "tool"; name: string; detail?: string } | { kind: "text"; text: string }) => void;
 }
 
 export interface FrontierResult {
@@ -227,7 +231,41 @@ export interface OnboardingService {
   begin(opts?: { redo?: boolean; parent?: string }): Promise<void>;
 }
 
+/** The talker's one tool call (packages/core/src/talker, docs/VOICE.md). */
+export interface TalkerDelegation {
+  kind: "answer" | "do";
+  task: string;
+  /** Spoken right away while the thinker works. */
+  stall?: string;
+}
+
+/** One streaming talker turn. It starts on creation and buffers; text() replays from the first word. */
+export interface TalkerRunHandle {
+  id: string;
+  text(): AsyncIterable<string>;
+  /** The delegate call as soon as it's known, or null when the turn ends without one. */
+  delegation: Promise<TalkerDelegation | null>;
+  finished: Promise<void>;
+  /** Backend that produced the first word (null until then). */
+  backend(): string | null;
+  /** What's been said so far (marks included). */
+  said(): string;
+  /** Nothing usable came out (every backend failed or it was aborted early). */
+  empty(): boolean;
+  aborted(): boolean;
+  abort(reason?: string): void;
+}
+
+/** The fast conversational voice: a streaming persona model with one tool, delegate (packages/core/src/talker). */
+export interface TalkerService {
+  /** Some talker backend is configured and not parked. */
+  available(): boolean;
+  start(req: { userText: string; event?: string; behavior?: string; extra?: string; maxWords?: number; parent?: string }): TalkerRunHandle;
+}
+
 export interface ServiceMap {
+  /** The talker (packages/core/src/talker). */
+  talker: TalkerService;
   /** matt's profile (packages/core/src/onboarding). */
   user: UserService;
   onboarding: OnboardingService;

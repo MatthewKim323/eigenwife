@@ -9,6 +9,7 @@ import { relationshipModule } from "../mind/module";
 import { preferenceModule } from "../preference/module";
 import { reflexModule } from "../reflex/module";
 import { speechModule } from "../speech/module";
+import { talkerModule } from "../talker/module";
 import { wardrobeModule } from "../wardrobe/module";
 import { workModule } from "../work/module";
 import { screenModule } from "../screen/module";
@@ -35,6 +36,8 @@ export function allModules(): Module[] {
     // After speech: wraps the speech service so the gpt-live-1 engine can own her voice (docs/LIVE.md).
     liveModule(),
     earsModule(),
+    // The fast voice with one tool (delegate); the reflex routes turns through it. docs/VOICE.md
+    talkerModule(),
     reflexModule(),
     agencyModule(),
     touchModule(),

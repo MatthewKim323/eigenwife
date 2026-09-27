@@ -265,6 +265,8 @@ export function createBrains(deps: BrainsDeps): Brains {
           json: !!req.json,
           tools: req.tools === "read" ? READ_TOOLS : [],
           timeoutMs: req.timeoutMs ?? 90_000,
+          signal: req.signal,
+          onEvent: req.onEvent,
         },
         health,
         io.now,

@@ -8,6 +8,7 @@ import type { OutfitIntent } from "./outfit";
 import { createJev, type JevDecider, type JevVerdict } from "./jev";
 import { DEFAULT_RULES, PerceptionEngine, type Rule, type Trigger } from "./rules";
 import { screenDeictic } from "../screen/intent";
+import { VoiceRouter, type RouterTrigger } from "../talker/router";
 
 /**
  * The reflex router. Perception rules raise triggers, Jev judges each one, and
@@ -28,6 +29,8 @@ export interface ReflexOptions {
   gazeFreshMs?: number;
   /** Wait this long after a voice.final for him to keep talking before it's a turn (0 = immediate). */
   turnMs?: number;
+  /** Talker router overrides (tests: gap timing, narrator). */
+  router?: Partial<Pick<import("../talker/router").RouterDeps, "gapQuietMs" | "gapMaxMs" | "narrator" | "sleep" | "speculateMs">>;
 }
 
 const URGENCY_RANK: Record<Urgency, number> = { immediate: 0, soon: 1, later: 2 };
@@ -87,6 +90,12 @@ export function behaviorFor(decision: ReflexDecision, t: Trigger, intent: Uttera
     default:
       return "react";
   }
+}
+
+/** The talker answers real questions properly (up to three short sentences). */
+function talkerWordsFor(behavior: string, rel: RelationshipState): number {
+  if (behavior === "answer" || behavior === "help") return Math.round(35 + rel.verbosity * 20);
+  return Math.round(14 + rel.verbosity * 36);
 }
 
 function maxWordsFor(behavior: string, direct: boolean, rel: RelationshipState): number {
@@ -149,6 +158,8 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
   const recent: { at: number; trigger: string; rule: string; decision: ReflexDecision; by: string; latencyMs: number; reason: string }[] = [];
   const stats: ReflexStats = { total: 0, ambient: 0, ambientIgnored: 0, byDecision: {}, byJev: 0 };
   const log = (...a: unknown[]) => ctx.log("reflex", ...a);
+  /** Talker/thinker routing (docs/VOICE.md). */
+  let router: VoiceRouter;
 
   // --- slot: at most one reaction in flight ---------------------------------
   const acquire = (): Promise<void> => {
@@ -181,6 +192,12 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
       if (ob.active() || ob.claims(text)) return toOnboarding(t, text, ob);
     }
     if (t.ambient && ob?.active()) return;
+    if (t.rule === "utterance") {
+      const text = String(t.data.text ?? "");
+      // "never mind" while she's off looking something up: drop the job, not just the line.
+      if (router.active && router.isCancel(text)) return cancelJobs(t, text);
+      if (!readIntent(text).stop) prestart(t, text);
+    }
     if (t.rule === "utterance" && readIntent(String(t.data.text ?? "")).stop) {
       // Stop words never wait for a slot.
       void judge(t).then((v) => carryOut(t, v));
@@ -194,6 +211,39 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
       log(`queue full, dropped ${dropped.id}`);
     }
     if (t.urgency === "immediate") drain(true);
+  }
+
+  // --- talker: start in parallel with Jev ---------------------------------------
+  /** Asks the local intent reader already maps to an action: those never need a talker reply. */
+  function talkerSkips(text: string): boolean {
+    const it = readIntent(text);
+    if (it.approval && pendingApprovals.size) return true;
+    if (it.outfit || it.music || it.browse || it.command || it.task || it.work) return true;
+    if (screenOffer || ctx.tryUse("work")?.awaiting()) return true;
+    // Screen questions need a look first (speak() does it, then starts the talker).
+    if (ctx.tryUse("screen") && screenDeictic(text)) return true;
+    return false;
+  }
+
+  /** Gaze, memories (150ms budget), and thinker state for a talker prompt. */
+  async function talkerExtra(t: Trigger, text: string): Promise<string> {
+    const memories = await Promise.race([recall(text, t.parent), Bun.sleep(150).then(() => [] as string[])]);
+    return extraFor(t, readIntent(text), memories, router.context());
+  }
+
+  function prestart(t: Trigger, text: string) {
+    if (!router.usable() || talkerSkips(text)) return;
+    router.prestart({ id: t.id, text, parent: t.parent }, () => talkerExtra(t, text));
+  }
+
+  function cancelJobs(t: Trigger, text: string) {
+    router.cancel(text);
+    gen += 1;
+    stats.total += 1;
+    ctx.bus.emit("reflex.decision", { trigger: t.id, decision: "REACT", scores: { REACT: 1 }, urgency: t.urgency, by: "local", latencyMs: 0, reason: `${t.description} | cancel thinker` }, "core", t.parent);
+    log(`utterance -> cancel "${text}"`);
+    ctx.bus.emit("conversation.turn", { role: "user", text }, "core", t.parent);
+    void say(pick(["okay, dropped it.", "okay. forget it.", "mm, never mind then."], t.id), t, t.parent, "neutral", true);
   }
 
   function toOnboarding(t: Trigger, text: string, ob: OnboardingService) {
@@ -211,7 +261,11 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
   function drain(onlyImmediate: boolean) {
     if (busy) return;
     const t0 = now();
-    for (let i = queue.length - 1; i >= 0; i--) if (t0 - queue[i]!.at > stale[queue[i]!.urgency]) queue.splice(i, 1);
+    for (let i = queue.length - 1; i >= 0; i--)
+      if (t0 - queue[i]!.at > stale[queue[i]!.urgency]) {
+        router.drop(queue[i]!.id, "stale");
+        queue.splice(i, 1);
+      }
     const userIdle = !ctx.world().user.speaking && t0 - (ctx.world().user.lastUtteranceAt ?? 0) > 3_000;
     const talking = speaking();
     const idx = queue.findIndex((t) => {
@@ -286,6 +340,8 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
 
   // --- act on a verdict -----------------------------------------------------------
   async function carryOut(t: Trigger, v: JevVerdict) {
+    // Jev in parallel with the talker: anything but a spoken reply kills the prestarted stream.
+    if (t.rule === "utterance" && !(v.decision === "REACT" || v.decision === "COMMENT" || v.decision === "ASK" || v.decision === "HELP")) router.drop(t.id, v.decision);
     switch (v.decision) {
       case "IGNORE":
         if (v.stopSpeech) {
@@ -340,14 +396,14 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
     return lines.join("\n");
   }
 
-  async function say(text: string | AsyncIterable<string>, t: Trigger | null, parent: string | undefined, mood?: Mood, forceInterrupt = false): Promise<string | null> {
+  async function say(text: string | AsyncIterable<string>, t: Trigger | null, parent: string | undefined, mood?: Mood, forceInterrupt = false, brain = "persona"): Promise<string | null> {
     const speech = ctx.tryUse("speech");
     if (!speech) {
       log("no speech service: would have said", typeof text === "string" ? `"${text}"` : "(stream)");
       return null;
     }
     const interrupt = forceInterrupt ? speech.speaking() : !!t && t.urgency === "immediate" && !t.ambient && speech.speaking();
-    const r = await speech.say(text, { parent, interrupt, priority: t?.urgency === "immediate" ? "high" : "normal", brain: "persona", mood });
+    const r = await speech.say(text, { parent, interrupt, priority: t?.urgency === "immediate" ? "high" : "normal", brain, mood });
     return r.text;
   }
 
@@ -362,6 +418,27 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
     const intent = v.intent;
     const behavior = behaviorFor(v.decision, t, intent, rel);
     const userText = t.rule === "utterance" ? String(t.data.text ?? "") : undefined;
+    // He talked to her: the talker answers (and delegates what needs tools). docs/VOICE.md
+    if (userText !== undefined && router.usable()) {
+      let extra = "";
+      if (!router.prestarted(t.id)) {
+        const memories = await recall(userText, t.parent);
+        if (gen !== myGen) return;
+        const screenLines = await screenContext(t, userText, myGen);
+        if (screenLines === null || gen !== myGen) return router.drop(t.id, "stopped");
+        extra = extraFor(t, intent, memories, [...screenLines, ...router.context()]);
+      }
+      if (gen !== myGen) return router.drop(t.id, "stopped");
+      const said = await router.respond(
+        { id: t.id, text: userText, parent: t.parent },
+        { userText, event: t.description, behavior, extra, maxWords: talkerWordsFor(behavior, rel), fallback: FALLBACK[behavior] ?? "mhm." },
+        t.urgency === "immediate" && !t.ambient,
+      );
+      if (said !== null) {
+        await observe(userText, said, t.description);
+        return;
+      }
+    }
     const memories = await recall(userText ?? t.description, t.parent);
     if (gen !== myGen) return;
     const screenLines = await screenContext(t, userText, myGen);
@@ -609,7 +686,7 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
     })();
   }
 
-  async function escalate(t: Trigger) {
+  async function escalate(t: Trigger, acked = false) {
     if (t.rule === "utterance" && acceptedOffer) {
       const offer = acceptedOffer;
       acceptedOffer = null;
@@ -618,16 +695,17 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
     const text = String(t.data.text ?? t.description);
     const goal = t.rule === "utterance" ? goalFrom(text) : t.description;
     const work = ctx.tryUse("work");
-    if (t.rule === "utterance" && work?.claims(text)) return escalateWork(t, text, goal, work.awaiting());
+    if (t.rule === "utterance" && work?.claims(text)) return escalateWork(t, text, goal, acked || work.awaiting());
     const agency = ctx.tryUse("agency");
     if (!agency) {
       log("no agency service: can't run tasks");
       await say("i can't do that from here yet. my hands aren't hooked up.", t, t.parent, "sad");
       return;
     }
-    await say(pick(ACK_LINES, t.id), t, t.parent, "thinking");
+    if (!acked) await say(pick(ACK_LINES, t.id), t, t.parent, "thinking");
     escalations += 1;
     ownGoals.add(goal);
+    const job = router.track("do", goal, text);
     // The task runs in the background: the slot frees up so she can still chat.
     void (async () => {
       let res: { ok: boolean; summary: string };
@@ -639,8 +717,22 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
         escalations -= 1;
         ownGoals.delete(goal);
       }
+      if (job.cancelled) return router.finish(job);
+      router.finish(job);
       await report(t, goal, text, res);
     })();
+  }
+
+  /** The talker delegated a "do": route it through the same paths Jev's ACT/ESCALATE use. The stall already played. */
+  async function doDelegated(rt: RouterTrigger, task: string) {
+    const t: Trigger = { id: `${rt.id}#do`, rule: "utterance", description: `he asked you to: ${task}`, urgency: "immediate", data: { text: task }, parent: rt.parent, at: now(), ambient: false };
+    const it = readIntent(task);
+    if (it.outfit) return outfit(t, it.outfit);
+    if (it.music || it.browse || it.command) {
+      const scores = { IGNORE: 0, GLANCE: 0, REACT: 0, COMMENT: 0, ASK: 0, HELP: 0, ACT: 1, ESCALATE: 0 };
+      return act(t, { decision: "ACT", scores, by: "local", latencyMs: 0, reason: "talker delegate", intent: it });
+    }
+    return escalate(t, true);
   }
 
   /** Work asks (docs/WORK.md): files, code, jabby, shell. Same ack + background run + report as a task. */
@@ -650,6 +742,7 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
     if (!answering) await say(pick(ACK_LINES, t.id), t, t.parent, "thinking");
     escalations += 1;
     ownGoals.add(goal);
+    const job = router.track("do", goal, text);
     void (async () => {
       let res: { ok: boolean; summary: string };
       try {
@@ -660,11 +753,15 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
         escalations -= 1;
         ownGoals.delete(goal);
       }
+      if (job.cancelled) return router.finish(job);
+      router.finish(job);
       await report(t, goal, text, res);
     })();
   }
 
   async function report(t: Trigger, goal: string, userText: string, res: { ok: boolean; summary: string }) {
+    // Not over him, not over herself: wait for a natural gap (docs/VOICE.md).
+    await router.waitGap();
     await acquire();
     try {
       const rel = relationship();
@@ -708,6 +805,32 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
       const ep = jevEndpoint();
       jev = opts.jev ?? createJev(ep ? { apiKey: ep.apiKey, url: ep.url, model: ep.model } : {});
       log(`jev: ${ep ? `${ep.model} via ${ep.via} (400ms budget, local fallback)` : "local scorer (no AI_GATEWAY_API_KEY or TYPESAFE_API_KEY)"}`);
+
+      router = new VoiceRouter({
+        bus: ctx.bus,
+        talker: () => ctx.tryUse("talker"),
+        brains: () => ctx.tryUse("brains"),
+        speech: () => ctx.tryUse("speech"),
+        now,
+        log: (...a) => ctx.log("talker", ...a),
+        say: (text, parent, o = {}) => say(text, o.immediate ? ({ urgency: "immediate", ambient: false } as Trigger) : null, parent, o.mood, false, o.brain ?? "persona"),
+        doTask: doDelegated,
+        acquire,
+        release,
+        observe,
+        userSpeaking: () => ctx.world().user.speaking,
+        ...opts.router,
+      });
+      // Flux EagerEndOfTurn: start the talker before he's even done; TurnResumed drops it.
+      offs.push(
+        ctx.bus.on("voice.eager", (e) => {
+          const text = String(e.data.text ?? "").trim();
+          if (!text || readIntent(text).stop || ctx.tryUse("onboarding")?.active() || !router.usable() || talkerSkips(text)) return;
+          const t: Trigger = { id: `eager#${now().toString(36)}`, rule: "utterance", description: `user said "${text}"`, urgency: "immediate", data: { text }, at: now(), ambient: false };
+          router.speculate(text, () => talkerExtra(t, text));
+        }),
+        ctx.bus.on("voice.resumed", () => router.unspeculate("turn resumed")),
+      );
 
       ctx.provide("reflex", {
         trigger: (x) =>
@@ -756,7 +879,8 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
           pend ??= { texts: [] };
           pend.texts.push(text);
           pend.parent = e.id;
-          if (turnMs <= 0) return flushTurn();
+          // Flux already decided the turn is over (model-based end of turn): no extra wait.
+          if (turnMs <= 0 || e.data.endOfTurn) return flushTurn();
           if (pend.timer) clearTimeout(pend.timer);
           // A finished-sounding sentence waits a little less.
           const wait = /[?!.]$/.test(text) && text.split(/\s+/).length >= 3 ? Math.round(turnMs * 0.6) : turnMs;
@@ -796,6 +920,7 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
       );
     },
     stop() {
+      router?.dispose();
       for (const off of offs.splice(0)) off();
       queue.length = 0;
     },

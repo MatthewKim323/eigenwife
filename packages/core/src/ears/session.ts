@@ -1,4 +1,5 @@
 import { TranscriptAssembler, type DeepgramMessage } from "./deepgram";
+import { FluxTurnTracker } from "./flux";
 import { acceptWhileSpeaking, SpeakingTracker } from "./gate";
 
 /** The slice of WebSocket we use, so tests can hand in anything socket-shaped. */
@@ -23,7 +24,12 @@ export type UpstreamState = "connecting" | "open" | "reconnecting" | "closed";
 
 export interface SessionHooks {
   partial(text: string): void;
-  final(text: string, confidence?: number): void;
+  /** endOfTurn: a model-detected end of turn (Flux), so nobody needs to wait for more. */
+  final(text: string, confidence?: number, endOfTurn?: boolean): void;
+  /** Flux EagerEndOfTurn: probably done, start thinking speculatively. */
+  eager?(text: string): void;
+  /** Flux TurnResumed: he kept going, drop the speculation. */
+  resumed?(): void;
   /** 3+ words while she's talking: stop her. Fires once per utterance. */
   bargeIn(text: string): void;
   /** JSON to the mic client (transcripts echo back so it can draw what it heard). */
@@ -43,6 +49,10 @@ export interface SessionOptions {
   keepAliveMs?: number;
   /** Audio held while the upstream reconnects, in bytes (1s of 16k PCM). */
   bufferBytes?: number;
+  /** "flux" speaks Deepgram's /v2/listen TurnInfo protocol; "nova" (default) the /v1 Results one. */
+  protocol?: "nova" | "flux";
+  /** Where to go when Flux won't connect (two closes before an open): the nova URL. */
+  fallbackUrl?: string;
 }
 
 const OPEN = 1;
@@ -57,6 +67,10 @@ export class EarsSession {
   readonly tracker: SpeakingTracker;
   private sock: UpstreamSocket | null = null;
   private assembler: TranscriptAssembler;
+  private flux: FluxTurnTracker;
+  protocol: "nova" | "flux";
+  private url: string;
+  private failedOpens = 0;
   private closed = false;
   private backoff: number;
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
@@ -79,6 +93,14 @@ export class EarsSession {
       partial: (t) => this.onPartial(t),
       final: (t, c) => this.onFinal(t, c),
     });
+    this.protocol = o.protocol ?? "nova";
+    this.url = o.url;
+    this.flux = new FluxTurnTracker({
+      partial: (t) => this.onPartial(t),
+      eager: (t) => this.onEager(t),
+      resumed: () => this.o.hooks.resumed?.(),
+      final: (t, c) => this.onFinal(t, c, true),
+    });
   }
 
   private now() {
@@ -89,7 +111,7 @@ export class EarsSession {
     this.open();
     const ka = this.o.keepAliveMs ?? 4000;
     this.keepAlive = setInterval(() => {
-      if (this.sock?.readyState === OPEN && this.now() - this.lastSentAt >= ka) this.sendUp(JSON.stringify({ type: "KeepAlive" }));
+      if (this.protocol === "nova" && this.sock?.readyState === OPEN && this.now() - this.lastSentAt >= ka) this.sendUp(JSON.stringify({ type: "KeepAlive" }));
     }, Math.max(50, Math.floor(ka / 2)));
     return this;
   }
@@ -103,7 +125,7 @@ export class EarsSession {
     if (this.closed) return;
     let sock: UpstreamSocket;
     try {
-      sock = (this.o.connect ?? bunUpstream)(this.o.url, this.o.apiKey);
+      sock = (this.o.connect ?? bunUpstream)(this.url, this.o.apiKey);
     } catch (err) {
       this.o.hooks.log("upstream connect threw", err);
       this.scheduleReconnect(String(err));
@@ -114,10 +136,13 @@ export class EarsSession {
     try {
       sock.binaryType = "arraybuffer";
     } catch {}
+    let opened = false;
     sock.onopen = () => {
       if (this.sock !== sock) return;
+      opened = true;
+      this.failedOpens = 0;
       this.backoff = this.o.minBackoffMs ?? 250;
-      this.setState("open");
+      this.setState("open", { protocol: this.protocol });
       for (const chunk of this.pending.splice(0)) this.sendUp(chunk);
       this.pendingBytes = 0;
     };
@@ -131,15 +156,22 @@ export class EarsSession {
         return;
       }
       if (msg.type === "Error" || (msg as any).err_code) this.o.hooks.log("deepgram error", raw.slice(0, 300));
-      this.assembler.push(msg);
+      if (this.protocol === "flux") this.flux.push(msg as any);
+      else this.assembler.push(msg);
     };
     sock.onerror = () => {};
     sock.onclose = (ev) => {
       if (this.sock !== sock) return;
       this.sock = null;
       // Whatever was mid-utterance is still something they said.
-      this.assembler.commit();
+      this.commitCurrent();
       if (this.closed) return;
+      if (!opened && this.protocol === "flux" && this.o.fallbackUrl && ++this.failedOpens >= 2) {
+        this.o.hooks.log("flux would not connect, falling back to nova", ev?.reason ?? ev?.code ?? "");
+        this.protocol = "nova";
+        this.url = this.o.fallbackUrl;
+        this.failedOpens = 0;
+      }
       this.scheduleReconnect(ev?.reason || `closed ${ev?.code ?? ""}`.trim());
     };
   }
@@ -183,8 +215,19 @@ export class EarsSession {
 
   /** Ask Deepgram to flush now; commit locally too in case it has nothing pending. */
   finalize() {
+    if (this.protocol === "flux") return this.flux.commit();
     if (this.sock?.readyState === OPEN) this.sendUp(JSON.stringify({ type: "Finalize" }));
     setTimeout(() => this.assembler.commit(), 250);
+  }
+
+  private commitCurrent() {
+    if (this.protocol === "flux") this.flux.commit();
+    else this.assembler.commit();
+  }
+
+  private onEager(text: string) {
+    if (this.verdict(text) !== "accept") return;
+    this.o.hooks.eager?.(text);
   }
 
   private verdict(text: string) {
@@ -208,7 +251,7 @@ export class EarsSession {
     this.o.hooks.partial(text);
   }
 
-  private onFinal(text: string, confidence?: number) {
+  private onFinal(text: string, confidence?: number, endOfTurn = false) {
     const v = this.verdict(text);
     this.busyUtterance = false;
     const barged = this.barged;
@@ -222,7 +265,7 @@ export class EarsSession {
       this.o.hooks.toClient({ type: "bargein", text });
     }
     this.o.hooks.toClient({ type: "final", text, confidence });
-    this.o.hooks.final(text, confidence);
+    this.o.hooks.final(text, confidence, endOfTurn || undefined);
   }
 
   close() {
@@ -238,7 +281,7 @@ export class EarsSession {
         s.close(1000, "client gone");
       } catch {}
     }
-    this.assembler.commit();
+    this.commitCurrent();
     this.state = "closed";
   }
 }
