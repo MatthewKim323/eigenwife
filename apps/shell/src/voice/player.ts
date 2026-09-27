@@ -1,7 +1,8 @@
 import type { SpeechMark } from "@eigenwife/protocol";
-import { getAudioContext } from "./audio";
-import { LipsyncEnvelope, rmsOfBytes } from "./lipsync";
+import { WebAudioEngine, type AudioEngine, type Playback } from "./engine";
+import { LipsyncEnvelope } from "./lipsync";
 import { estimateSpeechMs, MarkCursor, markTimes, SegmentQueue, type Segment } from "./queue";
+import { SpeechRate, TimedMarks } from "./stream";
 import { bestVoice, SynthMouth, wordLengthAt } from "./synth";
 
 export interface PlayerHooks {
@@ -24,23 +25,26 @@ interface Playing {
 
 /**
  * Plays speech.segment events in strict (utteranceId, seq) order through one
- * AudioContext. Audio is prefetched and decoded the moment a segment arrives,
- * so the gap between segments is just scheduling. An AnalyserNode taps the
- * same source for lipsync. Segments without audio fall back to
- * speechSynthesis with a fake mouth.
+ * AudioContext. Audio is prepared the moment a segment arrives (see
+ * engine.ts): cached files are fetched and decoded whole, live streams
+ * (stream: true) start downloading and buffering so they play from their
+ * first bytes, and the next segment is ready while the current one plays.
+ * An AnalyserNode taps whatever plays for lipsync. Marks fire by playback
+ * position. Segments without audio fall back to speechSynthesis with a fake mouth.
  */
 export class SpeechPlayer {
   private queue = new SegmentQueue();
   private abort = new AbortController();
-  private buffers = new Map<string, Promise<AudioBuffer | null>>();
+  private prepared = new Map<string, Promise<Playback | null>>();
   private playing: Playing | null = null;
   private tracked = new Set<string>();
   private spoken = new Map<string, string>();
   private timers: ReturnType<typeof setTimeout>[] = [];
+  private tickers: ReturnType<typeof setInterval>[] = [];
   private envelope = new LipsyncEnvelope();
   private synthMouth = new SynthMouth();
-  private analyser: AnalyserNode | null = null;
-  private bytes: Uint8Array<ArrayBuffer> = new Uint8Array(1024);
+  /** Her speaking rate, learned from played audio (times streamed segments before their length is known). */
+  readonly rate = new SpeechRate();
   private raf = 0;
   private lastFrame = 0;
   private gated = false;
@@ -50,6 +54,7 @@ export class SpeechPlayer {
   constructor(
     private hooks: PlayerHooks,
     private resolveUrl: (u: string) => string,
+    private engine: AudioEngine = new WebAudioEngine(),
   ) {}
 
   start() {
@@ -97,7 +102,8 @@ export class SpeechPlayer {
     const cut = this.queue.abort();
     this.abort.abort();
     this.abort = new AbortController();
-    this.buffers.clear();
+    for (const p of this.prepared.values()) void p.then((pb) => pb?.stop());
+    this.prepared.clear();
     this.clearTimers();
     const cur = this.playing;
     this.playing = null;
@@ -118,22 +124,9 @@ export class SpeechPlayer {
 
   private prefetch(s: Segment) {
     const k = this.key(s);
-    if (this.buffers.has(k)) return;
-    const ctx = getAudioContext();
-    const signal = this.abort.signal;
-    const p = (async () => {
-      try {
-        const res = await fetch(this.resolveUrl(s.audioUrl!), { signal });
-        if (!res.ok) throw new Error(`audio ${res.status}`);
-        const data = await res.arrayBuffer();
-        if (!ctx) return null;
-        return await ctx.decodeAudioData(data);
-      } catch (err) {
-        if (!signal.aborted) console.warn("[voice] segment audio failed, falling back to speechSynthesis", err);
-        return null;
-      }
-    })();
-    this.buffers.set(k, p);
+    if (this.prepared.has(k)) return;
+    const p = this.engine.prepare(this.resolveUrl(s.audioUrl!), !!s.stream, this.abort.signal).catch(() => null);
+    this.prepared.set(k, p);
   }
 
   private pump() {
@@ -158,14 +151,16 @@ export class SpeechPlayer {
     const gen = this.abort.signal;
     const placeholder: Playing = { seg: s, kind: "audio", stop() {} };
     this.playing = placeholder;
-    let buf: AudioBuffer | null = null;
+    let pb: Playback | null = null;
     if (s.audioUrl) {
       this.prefetch(s);
-      buf = await this.buffers.get(this.key(s))!;
-      this.buffers.delete(this.key(s));
+      pb = await this.prepared.get(this.key(s))!;
+      this.prepared.delete(this.key(s));
     }
-    if (gen.aborted || this.playing !== placeholder) return;
-    const ctx = getAudioContext();
+    if (gen.aborted || this.playing !== placeholder) {
+      pb?.stop();
+      return;
+    }
     const done = () => {
       if (this.playing?.seg !== s) return;
       this.clearTimers();
@@ -176,34 +171,59 @@ export class SpeechPlayer {
       this.pump();
     };
     const before = this.spoken.get(s.utteranceId) ?? "";
-    if (buf && ctx && ctx.state === "running") {
-      const src = ctx.createBufferSource();
-      src.buffer = buf;
-      if (!this.analyser) {
-        this.analyser = ctx.createAnalyser();
-        this.analyser.fftSize = 1024;
-        this.analyser.connect(ctx.destination);
-        this.bytes = new Uint8Array(this.analyser.fftSize);
-      }
-      src.connect(this.analyser);
-      const ms = buf.duration * 1000;
-      this.playing = {
-        seg: s,
-        kind: "audio",
-        stop: () => {
-          try {
-            src.onended = null;
-            src.stop();
-          } catch {}
-        },
-      };
-      src.onended = done;
-      src.start();
-      this.scheduleMarks(s, ms);
-      this.hooks.subtitle({ utteranceId: s.utteranceId, before, text: s.text, startedAt: performance.now(), durationMs: ms });
-      return;
-    }
+    if (pb && this.engine.running()) {
+      if (await this.playAudio(s, pb, before, done)) return;
+      if (gen.aborted || this.playing?.seg !== s) return;
+    } else pb?.stop();
     this.playSynth(s, before, done);
+  }
+
+  /** Play prepared audio; false if it refused to start (the caller falls back to speechSynthesis). */
+  private async playAudio(s: Segment, pb: Playback, before: string, done: () => void): Promise<boolean> {
+    const est = pb.duration() ?? this.rate.estimate(s.text);
+    const marks = new TimedMarks(s.text, s.marks ?? [], est);
+    const fire = (list: SpeechMark[]) => list.forEach((m) => this.hooks.mark(m, s.utteranceId));
+    let over = false;
+    const end = () => {
+      if (over) return;
+      over = true;
+      fire(marks.rest());
+      const d = pb.duration();
+      if (d) this.rate.learn(s.text, d);
+      done();
+    };
+    this.playing = {
+      seg: s,
+      kind: "audio",
+      stop: () => {
+        over = true;
+        pb.stop();
+      },
+    };
+    try {
+      await pb.start(end);
+    } catch (err) {
+      console.warn("[voice] audio refused to play, falling back to speechSynthesis", err);
+      pb.stop();
+      return false;
+    }
+    if (over || this.playing?.seg !== s) return true;
+    // Marks by playback position: a stream that stalls holds its marks back too.
+    fire(marks.due(pb.time(), pb.duration()));
+    this.tickers.push(setInterval(() => !over && fire(marks.due(pb.time(), pb.duration())), 25));
+    // A stream that never ends must not hold her mouth open forever.
+    this.timers.push(
+      setTimeout(
+        () => {
+          if (over) return;
+          pb.stop();
+          end();
+        },
+        Math.max(15_000, est * 3),
+      ),
+    );
+    this.hooks.subtitle({ utteranceId: s.utteranceId, before, text: s.text, startedAt: performance.now(), durationMs: est });
+    return true;
   }
 
   private playSynth(s: Segment, before: string, done: () => void) {
@@ -298,6 +318,8 @@ export class SpeechPlayer {
   private clearTimers() {
     this.timers.forEach(clearTimeout);
     this.timers = [];
+    this.tickers.forEach(clearInterval);
+    this.tickers = [];
   }
 
   private frame(t: number) {
@@ -309,13 +331,8 @@ export class SpeechPlayer {
       mouth = this.synthMouth.value(t);
       this.envelope.drive(mouth);
     } else {
-      let rms = 0;
-      const live = p?.kind === "audio" && !!this.analyser;
-      if (live) {
-        this.analyser!.getByteTimeDomainData(this.bytes);
-        rms = rmsOfBytes(this.bytes);
-      }
-      mouth = this.envelope.update(rms, live, dt, t);
+      const level = p?.kind === "audio" ? this.engine.level() : null;
+      mouth = this.envelope.update(level ?? 0, level !== null, dt, t);
     }
     this.hooks.mouth(mouth, !p && this.envelope.holding(t), !!p);
   }
