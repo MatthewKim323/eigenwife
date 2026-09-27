@@ -7,9 +7,9 @@ import { MarkSplitter, splitMarks } from "./marks";
  *
  * - split after . ! ? ; (a run like "?!" or "..." counts once) when followed
  *   by whitespace, so "3.5" and "$21.50" never split
- * - for the first 2 segments, also split after a comma once the segment has
- *   >= 4 words (gets audio started sooner)
- * - hard cap: 12 words per segment
+ * - for the first 2 segments, also split after a comma or colon once it has
+ *   >= 4 words (the first clause goes to TTS on its own, audio starts sooner)
+ * - hard cap: 12 words per segment, 9 for the first
  *
  * Marks ride along with the segment whose text they fall in, with `at`
  * rebased to that segment's text. A mark sitting exactly on a boundary
@@ -23,6 +23,8 @@ export interface Segment {
 }
 
 export const MAX_WORDS = 12;
+/** The first segment is what she says first: keep it short so TTS starts sooner. */
+export const FIRST_MAX_WORDS = 9;
 const EARLY_COMMA_SEGMENTS = 2;
 const EARLY_COMMA_MIN_WORDS = 4;
 
@@ -72,7 +74,7 @@ export class SentenceChunker {
     }
     // early comma
     if (this.emitted < EARLY_COMMA_SEGMENTS) {
-      const cre = /,(?=\s)/g;
+      const cre = /[,:](?=\s)/g;
       while ((m = cre.exec(b))) {
         const end = m.index + 1;
         if (best >= 0 && end >= best) break;
@@ -90,7 +92,7 @@ export class SentenceChunker {
       n++;
       const end = m.index + m[0].length;
       if (best >= 0 && end >= best) break;
-      if (n === MAX_WORDS) {
+      if (n === (this.emitted === 0 ? FIRST_MAX_WORDS : MAX_WORDS)) {
         if (end < b.length && /\s/.test(b[end]!)) best = end;
         else if (final && end < b.length) best = end;
         break;

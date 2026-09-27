@@ -110,9 +110,15 @@ describe("sentence chunker", () => {
     expect(chunk("okay so, the thing is, i think you should, maybe not, do that.")).toEqual(["okay so, the thing is,", "i think you should,", "maybe not, do that."]);
     expect(chunk("no, no, no.")).toEqual(["no, no, no."]);
   });
-  test("hard cap at 12 words", () => {
-    const out = chunk("one two three four five six seven eight nine ten eleven twelve thirteen fourteen");
-    expect(out).toEqual(["one two three four five six seven eight nine ten eleven twelve", "thirteen fourteen"]);
+  test("hard cap: 9 words for the first segment (audio starts sooner), 12 after", () => {
+    const out = chunk("one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty twentyone twentytwo");
+    expect(out).toEqual(["one two three four five six seven eight nine", "ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty twentyone", "twentytwo"]);
+  });
+  test("first clause goes on its own at a comma or colon once it has 4 words", () => {
+    expect(chunk("okay so here's the thing: it's closed on mondays. try tuesday.")).toEqual(["okay so here's the thing:", "it's closed on mondays.", "try tuesday."]);
+    expect(chunk("one sec, checking.")).toEqual(["one sec, checking."]);
+    const c = new SentenceChunker();
+    expect(c.push("honestly the garlic one is fine, ").map((s) => s.text)).toEqual(["honestly the garlic one is fine,"]);
   });
   test("waits for the space after a period while streaming", () => {
     const c = new SentenceChunker();

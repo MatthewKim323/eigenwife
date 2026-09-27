@@ -9,6 +9,7 @@ import { createJev, type JevDecider, type JevVerdict } from "./jev";
 import { DEFAULT_RULES, PerceptionEngine, type Rule, type Trigger } from "./rules";
 import { screenDeictic } from "../screen/intent";
 import { VoiceRouter, type RouterTrigger } from "../talker/router";
+import { CANCEL_LINES } from "../speech/lines";
 
 /**
  * The reflex router. Perception rules raise triggers, Jev judges each one, and
@@ -243,7 +244,7 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
     ctx.bus.emit("reflex.decision", { trigger: t.id, decision: "REACT", scores: { REACT: 1 }, urgency: t.urgency, by: "local", latencyMs: 0, reason: `${t.description} | cancel thinker` }, "core", t.parent);
     log(`utterance -> cancel "${text}"`);
     ctx.bus.emit("conversation.turn", { role: "user", text }, "core", t.parent);
-    void say(pick(["okay, dropped it.", "okay. forget it.", "mm, never mind then."], t.id), t, t.parent, "neutral", true);
+    void say(pick([...CANCEL_LINES], t.id), t, t.parent, "neutral", true);
   }
 
   function toOnboarding(t: Trigger, text: string, ob: OnboardingService) {

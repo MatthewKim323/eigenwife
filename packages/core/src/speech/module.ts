@@ -4,6 +4,7 @@ import type { CoreContext, Module } from "../context";
 import { json } from "../hub";
 import type { SayOptions } from "../services";
 import { bunSpawn, whichBin } from "../brains/io";
+import { CANCEL_LINES, FILLERS, STALL_LINES } from "./lines";
 import { createSpeech, type Speech, type SpeechDeps } from "./service";
 import { AUDIO_NAME_RE, AUDIO_TYPES, AudioCache, deepgramTts, elevenLabsTts, openAiTts, sayTts, Tts, type AudioExt, type TtsBackend, type TtsIO } from "./tts";
 
@@ -60,7 +61,14 @@ export function speechModule(overrides: Partial<SpeechDeps> & { tts?: Tts | null
         const live = tts?.live().map((b) => b.name) ?? [];
         ctx.log("speech", `tts: ${live.length ? live.join(" > ") : "none (segments without audio)"}; cache ${tts?.cache.size ?? 0} files`);
       };
-      if (tts && overrides.tts === undefined) void tts.probe().then(report);
+      // Fillers, stall and ack clips in her current voice, so the talker's "one sec" plays with zero TTS wait.
+      const clips = async () => {
+        if (!tts || secret("EVE_PRERENDER_CLIPS") === "0") return;
+        let made = 0;
+        for (const text of [...FILLERS, ...STALL_LINES, ...CANCEL_LINES]) if ((await tts.render(text).catch(() => null))?.cached === false) made++;
+        if (made) ctx.log("speech", `prerendered ${made} stall/ack clips`);
+      };
+      if (tts && overrides.tts === undefined) void tts.probe().then(report).then(clips);
       else report();
 
       ctx.route("/api/audio/", async (req, url) => {

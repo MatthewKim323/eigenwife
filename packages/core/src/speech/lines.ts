@@ -42,6 +42,17 @@ export type LineName = keyof typeof LINES;
 /** Played when the brain is slow to start (> 700ms). Short, cached, interchangeable. */
 export const FILLERS = ["hm.", "mm.", "hm, okay.", "mm, hold on."] as const;
 
+/**
+ * The talker's stall and ack clips (docs/VOICE.md): what she says the instant a
+ * turn goes to the thinker. Prerendered in her current voice at boot, so they
+ * play with zero TTS wait. The first four cover a delegation with no stall
+ * text of its own; the rest are the keyword router's stalls.
+ */
+export const STALL_LINES = ["one sec.", "lemme check.", "ooh, okay. looking.", "hm, lemme look.", "ooh, lemme look.", "one sec, checking.", "hm, let me check."] as const;
+
+/** "never mind" while she's off looking something up. */
+export const CANCEL_LINES = ["okay, dropped it.", "okay. forget it.", "mm, never mind then."] as const;
+
 /** Touch reactions: pre-rendered so she answers a pat or a poke instantly, mood marks match her face. */
 export const TOUCH_LINES = {
   pat: [
@@ -118,5 +129,5 @@ export type OnboardingStepId = keyof typeof ONBOARDING_LINES.questions;
 export function scriptedTexts(): string[] {
   const o = ONBOARDING_LINES;
   const onboarding = [o.intro, o.resume, o.redo, ...Object.values(o.questions), ...o.retry, ...o.skip, o.nudge, o.pause, o.outro, o.noRules];
-  return [...Object.values(LINES), ...Object.values(TOUCH_LINES).flat(), ...FILLERS, ...onboarding];
+  return [...Object.values(LINES), ...Object.values(TOUCH_LINES).flat(), ...FILLERS, ...STALL_LINES, ...CANCEL_LINES, ...onboarding];
 }

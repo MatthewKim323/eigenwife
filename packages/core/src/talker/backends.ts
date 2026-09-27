@@ -1,6 +1,7 @@
 import { mkdirSync } from "fs";
 import { ANTHROPIC_MODEL, claudePersonaArgs, FEATHERLESS_MODELS, GATEWAY_CHAT_URL, openAiBody, parseClaudeStream } from "../brains/chat";
 import { cliEnv, drainText, HttpError, killAfter, readLines, sseData, type BrainIO } from "../brains/io";
+import { STALL_LINES } from "../speech/lines";
 import { anthropicTool, InlineDelegateParser, INLINE_RULE, lookupIntent, openAiTool, parseDelegateArgs, partialStall, type DelegateCall } from "./tools";
 
 /**
@@ -292,7 +293,7 @@ export function featherlessTalker(io: BrainIO): TalkerBackend {
 }
 
 /** Stall lines for keyword-routed lookups (also prerendered in her voice: speech/lines.ts STALL_LINES). */
-export const KEYWORD_STALLS = ["ooh, lemme look.", "one sec, checking.", "hm, let me check."];
+export const KEYWORD_STALLS: string[] = STALL_LINES.slice(4);
 
 async function* keywordDelegate(userText: string): AsyncGenerator<TalkerEvent> {
   const stall = KEYWORD_STALLS[userText.length % KEYWORD_STALLS.length]!;

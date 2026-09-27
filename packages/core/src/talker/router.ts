@@ -2,6 +2,7 @@ import type { AnyEnvelope, Mood } from "@eigenwife/protocol";
 import type { EventBus } from "../bus";
 import type { BrainService, SpeechService, TalkerDelegation, TalkerRunHandle, TalkerService } from "../services";
 import { sameTurn } from "../ears/flux";
+import { STALL_LINES } from "../speech/lines";
 import { isCancel, Narrator, waitForGap, type GapProbe, type ProgressSignal } from "./narrate";
 
 /**
@@ -19,7 +20,7 @@ import { isCancel, Narrator, waitForGap, type GapProbe, type ProgressSignal } fr
  */
 
 /** Said when the talker delegated without saying anything itself. Prerendered in her voice (speech/lines.ts). */
-export const ACK_CLIPS = ["one sec.", "lemme check.", "ooh, okay. looking.", "hm, lemme look."];
+export const ACK_CLIPS: string[] = STALL_LINES.slice(0, 4);
 
 export interface RouterTrigger {
   id: string;
