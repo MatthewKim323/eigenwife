@@ -101,7 +101,7 @@ describe("digest", () => {
     const brains = { quickJson: async (_s: string, u: string) => (seen.push(u), { profile: { work: "cs at ucsb" }, facts: [{ content: "Close with Eyan", importance: 0.7 }] }) } as unknown as BrainService;
     const d = await buildDigest({ client: new GbrainClient(g.runner), brains, who: "matt", queryTimeoutMs: 25_000 });
     expect(g.of("query").length).toBe(6);
-    expect(g.of("query")[0]!.args).toEqual(["query", "matt's closest friends and the important people in his life", "--limit", "8", "--detail", "low"]);
+    expect(g.of("query")[0]!.args).toEqual(["query", "matt's close friends", "--limit", "8", "--detail", "low"]);
     expect(seen[0]).toContain("(people/eyan-koko)");
     expect(d.by).toBe("brain");
     expect(d.profile).toEqual({ work: "cs at ucsb" });

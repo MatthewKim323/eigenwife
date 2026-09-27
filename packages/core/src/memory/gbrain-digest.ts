@@ -31,14 +31,8 @@ export interface Digest {
 export const DIGEST_MAX_AGE_MS = 24 * 3600_000;
 
 /** What she asks gbrain about him. {who} is his name ("matt" until onboarding says otherwise). */
-export const DIGEST_QUERIES = [
-  "{who}'s closest friends and the important people in his life",
-  "what {who} is building: projects, startups, side projects",
-  "{who}'s school, major, work and career",
-  "{who}'s interests, hobbies, music and taste",
-  "recent events and what's been going on in {who}'s life",
-  "how {who} talks and what kind of humor he likes",
-];
+// Short on purpose: long natural-language questions often come back empty from `gbrain query` (measured).
+export const DIGEST_QUERIES = ["{who}'s close friends", "what {who} is building", "{who} school and work", "{who}'s music", "recent events in {who}'s life", "about {who}"];
 
 export const DIGEST_SYSTEM = `You build a compact profile of one person (the owner of this personal knowledge base) for his desktop companion, who talks to him out loud.
 From the notes, return JSON only:
