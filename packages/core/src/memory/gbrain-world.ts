@@ -102,7 +102,7 @@ export function lead(body: string, maxChars = 260): string {
     out = `${out} ${s}`.trim();
     if (out.length > maxChars * 0.6) break;
   }
-  return (out || first.slice(0, maxChars)).replace(/\s*[–—]\s*/g, ", ");
+  return (out || first.slice(0, maxChars)).replace(/\s*[\u2013\u2014]\s*/g, ", ");
 }
 
 /** Bullets from a daily catch-up ("- [00:10-00:12] Nathan getting some apparel"), with who they're about. */
@@ -139,7 +139,7 @@ const dateOf = (s: string | undefined) => {
 /** One page -> entries. Pure (tested). */
 export function entriesFor(kind: WorldKind, row: Listed, raw: string): WorldEntry[] {
   const p = parsePage(raw);
-  const title = (p.title || row.title).replace(/\s*[–—]\s*/g, ", ");
+  const title = (p.title || row.title).replace(/\s*[\u2013\u2014]\s*/g, ", ");
   const at = dateOf(typeof p.meta.date === "string" ? p.meta.date : undefined) || dateOf(row.updated);
   if (kind === "day") {
     const bullets = dayBullets(p.body).filter(safe);

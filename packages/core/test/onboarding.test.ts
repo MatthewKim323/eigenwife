@@ -445,7 +445,7 @@ describe("profile", () => {
     expect(mergeProfile(p, { work: "cs student" }, "gbrain", 9).updatedAt).toBe(3);
   });
   test("normalize survives junk and strips em dashes", () => {
-    const p = normalizeProfile({ name: 3, callMe: " matt ", work: "a — b", interests: "x", people: ["Sean", { relation: "no name" }], sources: { work: "hacker" } });
+    const p = normalizeProfile({ name: 3, callMe: " matt ", work: "a \u2014 b", interests: "x", people: ["Sean", { relation: "no name" }], sources: { work: "hacker" } });
     expect(p.callMe).toBe("matt");
     expect(p.work).toBe("a, b");
     expect(p.interests).toEqual([]);
@@ -479,7 +479,7 @@ describe("prompt", () => {
     expect(m.system).toContain("- never: bring up my ex");
     expect(m.system).toContain("- never: comment on my weight");
     expect(m.user).toContain("reply out loud as Nova");
-    expect(m.system).not.toMatch(/[–—]/);
+    expect(m.system).not.toMatch(/[\u2013\u2014]/);
   });
   test("no profile, no block", () => {
     expect(userBlock(emptyProfile())).toEqual([]);

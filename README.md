@@ -65,7 +65,7 @@ bun run scripts/e2e.ts                  # headless golden path, 6 steps, ~40s
 | `watcher` | macOS app / now-playing watcher, Claude Code hook |
 | `scripts` | `dev` launcher, `e2e` golden path |
 
-Docs: [ARCHITECTURE](docs/ARCHITECTURE.md) · [SPEC](docs/SPEC.md) · [BRAINS](docs/BRAINS.md) · [MIND](docs/MIND.md) · [MEMORY](docs/MEMORY.md) · [AGENCY](docs/AGENCY.md) · [WORK](docs/WORK.md) · [SCREEN](docs/SCREEN.md) · [AGENT CURSOR](docs/AGENT_CURSOR.md) · [AVATAR](docs/AVATAR.md) · [SPONSORS](docs/SPONSORS.md) · [PLAYBOOK](docs/PLAYBOOK.md)
+Docs: [ARCHITECTURE](docs/ARCHITECTURE.md) · [SPEC](docs/SPEC.md) · [BRAINS](docs/BRAINS.md) · [MIND](docs/MIND.md) · [MEMORY](docs/MEMORY.md) · [KNOW ME](docs/KNOW_ME.md) · [AGENCY](docs/AGENCY.md) · [WORK](docs/WORK.md) · [SCREEN](docs/SCREEN.md) · [AGENT CURSOR](docs/AGENT_CURSOR.md) · [AVATAR](docs/AVATAR.md) · [SPONSORS](docs/SPONSORS.md) · [PLAYBOOK](docs/PLAYBOOK.md)
 
 ## Keys
 

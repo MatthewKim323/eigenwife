@@ -67,6 +67,17 @@ The memory module also listens on the bus:
 | `task.done` | episodic: "Eve handled: Booked Menya Tsuki for 7:30" |
 | `swarm.merge` `retained[]` | facts with `source: "swarm"` |
 
+### gbrain (matt's knowledge brain)
+
+A third source of memories, all background, never on the reply path (details, numbers, privacy rules: [KNOW_ME.md](KNOW_ME.md)):
+
+- **World preload**: people, projects, events, recent days and jabby's learned facts become local records (`source: "gbrain"`, `provenance: { slug, title, at }`) in a separate pool that is searched like any memory but never written to `memories.jsonl` (so never mirrored to Zo or Moss). Cached in `~/.eve/gbrain-world.json`, rebuilt daily.
+- **Entity index**: names and aliases map to records; `recall()` puts exact name hits first (`via: "entity"`) and skips the network query embedding when the query names someone she knows.
+- **Digest**: six hybrid queries summarized into profile fields (`~/.eve/user.json`, onboarding wins) and ~18 facts. Cached in `~/.eve/gbrain.json`.
+- **Prefetch**: `voice.partial` / `voice.final` fire keyword searches for unknown names before he's done talking; results land as short-term memories. `memory.pending(text)` lets the reflex wait up to 600ms for one.
+- **Write-back**: `STORE_LONG_TERM` / `UPDATE_PREFERENCE` with importance >= 0.7, filtered for sensitive, private and screen-derived content, batched into `eigenwife/learned/YYYY-MM-DD`.
+- `GET /api/memory/status` reports all of it.
+
 ### Demo seed
 
 With `config.demo` (default on, `EIGEN_DEMO=0` to disable) and an empty store, eight memories are seeded with stable ids (`seed_*`), `source: "seed"`, and `createdAt` spread over the past four weeks so recency does real work: likes spicy food, $28 ramen complaint, saving money this month, works late on weekdays, likes Japanese food, hates long explanations, laughed when teased, not into outdoor-heavy plans. Seeding twice is a no-op.
@@ -179,6 +190,8 @@ Sequence:
 | `status.json` heartbeat `{ pid, startedAt, lastBeatAt, host, port, online, memories, tasks, lastSyncAt }` | home | at most once a minute |
 | `memories.md` readable top 60 memories by importance | home, derived from `memories.jsonl` | Zo only |
 | `embeddings.json` | memory | no |
+| `user.json` matt's profile (docs/KNOW_ME.md) | onboarding module, `PUT /api/user`, gbrain digest | no |
+| `gbrain-world.json`, `gbrain.json` gbrain preload + digest caches | memory | no |
 
 **Zo mirror** (`ZO_API_KEY`): writes are debounced (1.5s) and coalesced, so a burst becomes one sync carrying the latest bytes of every dirty file, into `/home/workspace/eve/` on her Zo (`ZO_EVE_DIR` to override); files Zo already holds are skipped. Transport is the shared Zo MCP client (`packages/core/src/zo/`, `write_file` on the low-priority lane); if that fails, `POST /zo/ask` asks the Zo agent to write the files verbatim. Failed files stay dirty for the next sync. `lastSyncAt` is recorded, and once a sync succeeds `home.status.host` reads `"zo"`. `POST /api/home/sync` forces a full sync.
 
@@ -222,6 +235,8 @@ EVE  STATUS ONLINE | UPTIME 05:31:14 | MEMORIES 142 | TASKS 3
 | `POST /api/memory` `{ kind, content, policy? }` | write one record |
 | `POST /api/memory/recall` `{ query, k?, kinds?, emit? }` | recall (emits `memory.recall` unless `emit: false`) |
 | `POST /api/memory/observe` `{ user?, eve?, event? }` | run the write policy |
+| `GET /api/memory/status` | counts, backend, gbrain (world, digest, lookups, write-back); `POST { world \| digest \| flush: true }` | 
+| `GET /api/user`, `PUT/PATCH /api/user` | matt's profile (contract in [KNOW_ME.md](KNOW_ME.md)) |
 | `GET /api/preference` | vector, deltas, progress, persona, born, history |
 | `POST /api/preference/converge` | force convergence now |
 | `POST /api/preference/reset` | rerun Act I |
@@ -238,6 +253,8 @@ EVE  STATUS ONLINE | UPTIME 05:31:14 | MEMORIES 142 | TASKS 3
 | `OPENAI_API_KEY` | OpenAI embeddings (local embedding otherwise) |
 | `MOSS_PROJECT_ID`, `MOSS_PROJECT_KEY`, `MOSS_INDEX` | Moss mirror + recall |
 | `TYPESAFE_API_KEY` | Jev scores Act I attention (local model otherwise) |
+| `EVE_GBRAIN`, `EVE_GBRAIN_WRITE`, `GBRAIN_BIN` | gbrain reads / write-back (default on for the real `~/.eve`), CLI path |
+| `EVE_ONBOARDING` | `1` enables the spoken first-run onboarding (off: the website writes `/api/user`) |
 | `ZO_API_KEY`, `ZO_BASE_URL`, `ZO_EVE_DIR` | Zo mirror, restore, calendar/maps/spotify (see [ZO.md](ZO.md) for the `EVE_ZO_*` switches) |
 
 ## 7. Contracts for other modules

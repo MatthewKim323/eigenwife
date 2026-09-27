@@ -68,7 +68,7 @@ describe("parsing", () => {
   });
   test("digest answers are validated: private stuff and secrets dropped, importance clamped", () => {
     const d = parseDigest({
-      profile: { name: "Matthew Kim", callMe: "Matt", birthday: "sometime in march", work: "building eigenwife — a desktop companion", interests: ["anime", "", 4], people: [{ name: "Katie Shuai", relation: "girlfriend" }, { relation: "x" }] },
+      profile: { name: "Matthew Kim", callMe: "Matt", birthday: "sometime in march", work: "building eigenwife \u2014 a desktop companion", interests: ["anime", "", 4], people: [{ name: "Katie Shuai", relation: "girlfriend" }, { relation: "x" }] },
       facts: [
         { content: "Runs jabby, a discord-native always-on agent", importance: 0.95 },
         { content: "Was diagnosed with something last year", importance: 0.9 },

@@ -115,7 +115,7 @@ export class GbrainWriteback {
     const who = this.o.who?.() || "matt";
     const header = `# eigenwife learned ${slug.slice(-10)}\n\nFacts Eve (eigenwife, matt's desktop companion) learned talking with ${who} on ${slug.slice(-10)}. Auto-extracted, source: eigenwife.\n`;
     const body = existing.trim() ? existing.trimEnd() : header.trimEnd();
-    const lines = fresh.map((r) => `- [${hhmm(now, tz)}] (eigenwife) ${who}: ${r.content.trim().replace(/\s*[–—]\s*/g, ", ")}`);
+    const lines = fresh.map((r) => `- [${hhmm(now, tz)}] (eigenwife) ${who}: ${r.content.trim().replace(/\s*[\u2013\u2014]\s*/g, ", ")}`);
     const ok = await this.o.client.put(slug, `${body}\n${lines.join("\n")}\n`);
     if (ok) {
       this.written += fresh.length;

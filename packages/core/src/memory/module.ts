@@ -235,7 +235,10 @@ export function memoryModule(opts: MemoryModuleOptions = {}): Module {
       const recall: MemoryService["recall"] = async (query, o = {}) => {
         const t0 = performance.now();
         const k = o.k ?? 5;
-        const q = await embedQuery(query);
+        // Exact names first: "leo" is Leo's record whatever the cosine says. When he
+        // named someone she knows, skip the network query embedding: the whole recall stays local.
+        const named = new Set(entities.match(query).flatMap((m) => m.ids));
+        const q = named.size ? { local: localEmbed(query) } : await embedQuery(query);
         let mossScores: Map<string, number> | undefined;
         if (moss?.ready()) {
           try {
@@ -244,8 +247,6 @@ export function memoryModule(opts: MemoryModuleOptions = {}): Module {
           } catch {}
         }
         const res = search(allRecords(), vecs, q, { k, kinds: o.kinds, now: now(), moss: mossScores });
-        // Exact names first: "leo" is Leo's record whatever the cosine says.
-        const named = new Set(entities.match(query).flatMap((m) => m.ids));
         const byName = [...named]
           .map((id) => pool.get(id) ?? records.get(id) ?? short.get(id)?.rec)
           .filter((r): r is MemoryRecord => !!r && (!o.kinds?.length || o.kinds.includes(r.kind)))

@@ -42,7 +42,7 @@ title: Daily catch-up
 date: '2026-09-21T00:00:00.000Z'
 ---
 
-# Daily catch-up — 2026-09-21
+# Daily catch-up \u2014 2026-09-21
 
 **Nathan Kim** (8 msgs)
 - [00:10-00:12] Nathan getting some apparel, offered matt a free black medium

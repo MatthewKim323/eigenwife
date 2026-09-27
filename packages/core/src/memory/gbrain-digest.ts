@@ -55,7 +55,7 @@ export function parseDigest(raw: unknown): { profile: DigestProfile; facts: Dige
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
   const p = (o.profile && typeof o.profile === "object" ? o.profile : {}) as Record<string, unknown>;
-  const s = (v: unknown, n = 120) => (typeof v === "string" && v.trim() && !/^(?:null|unknown|n\/a)$/i.test(v.trim()) ? clip(v.trim().replace(/\s*[–—]\s*/g, ", "), n) : undefined);
+  const s = (v: unknown, n = 120) => (typeof v === "string" && v.trim() && !/^(?:null|unknown|n\/a)$/i.test(v.trim()) ? clip(v.trim().replace(/\s*[\u2013\u2014]\s*/g, ", "), n) : undefined);
   const list = (v: unknown, n = 60) => (Array.isArray(v) ? v.map((x) => s(x, n)).filter((x): x is string => !!x && !looksSensitive(x)) : []);
   const profile: DigestProfile = {};
   for (const k of ["name", "callMe", "pronouns", "work"] as const) {

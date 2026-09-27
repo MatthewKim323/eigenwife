@@ -21,7 +21,7 @@ export function emptyProfile(): UserProfile {
 
 const str = (v: unknown, max = 160): string | undefined => {
   if (typeof v !== "string") return undefined;
-  const s = v.replace(/\s*[–—]\s*/g, ", ").replace(/\s+/g, " ").trim();
+  const s = v.replace(/\s*[\u2013\u2014]\s*/g, ", ").replace(/\s+/g, " ").trim();
   return s ? s.slice(0, max) : undefined;
 };
 
