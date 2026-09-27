@@ -4,9 +4,10 @@
  */
 import type { ScreenRect } from "@eigenwife/protocol";
 import { CursorSim, isCursorEvent, onDisplay, toLocal, type CursorFrame } from "./sim";
+import { GazeDot, type GazeSample, type GazeTargetBox } from "./gaze-dot";
 
 interface Bridge {
-  on(channel: "event" | "browser" | "hue" | "display" | "reset" | "level", cb: (p: unknown) => void): () => void;
+  on(channel: "event" | "browser" | "hue" | "display" | "reset" | "level" | "gaze" | "gaze-target", cb: (p: unknown) => void): () => void;
 }
 
 const bridge: Bridge = (window as unknown as { eveCursor?: Bridge }).eveCursor ?? { on: () => () => {} };
@@ -17,6 +18,8 @@ let hue = Number(q.get("hue")) || 330;
 const canvas = document.getElementById("c") as HTMLCanvasElement;
 const g = canvas.getContext("2d")!;
 const sim = new CursorSim();
+// Your gaze (docs/GAZE.md), drawn under her cursor.
+const gaze = new GazeDot();
 // The layer's co-op presence: she's always on screen (idle never fades her out).
 if (q.get("presence") === "1") sim.setAlwaysOn(true);
 let raf = 0;
@@ -187,6 +190,8 @@ function draw(now: number): "busy" | "calm" | "sleep" {
   const f = sim.frame(now);
   g.clearRect(0, 0, innerWidth, innerHeight);
   if (f.browser) drawBrowser(f.browser);
+  const gazeLive = gaze.step(now);
+  if (gazeLive) gaze.draw(g, display, hue);
   const onHere = onDisplay({ x: f.x, y: f.y }, display);
   if (onHere) {
     const p = toLocal(f, display);
@@ -254,6 +259,7 @@ function draw(now: number): "busy" | "calm" | "sleep" {
       drawPointer(f, p.x, p.y);
     }
   }
+  if (gazeLive) return "busy";
   if (!f.active) return "sleep";
   // Only breathing at rest: 20fps is plenty and keeps the GPU cool.
   const calm = !f.moving && !f.ripples.length && !f.particles.length && !f.scroll && !f.typing && f.hover === 0 && f.point === 0 && (!f.browser || f.browser.alpha >= 1);
@@ -298,6 +304,17 @@ bridge.on("display", (d) => {
 });
 bridge.on("level", (lv) => {
   if (typeof lv === "number" && Number.isFinite(lv)) sim.setLevel(lv, performance.now());
+  wake();
+});
+bridge.on("gaze", (p) => {
+  const s = p as GazeSample;
+  if (!s || typeof s.valid !== "boolean" || typeof s.t !== "number") return;
+  gaze.feed(s);
+  wake();
+});
+bridge.on("gaze-target", (p) => {
+  const b = p as GazeTargetBox | null;
+  gaze.feedTarget(b && b.rect && Number.isFinite(b.rect.x) ? b : null);
   wake();
 });
 bridge.on("reset", () => {

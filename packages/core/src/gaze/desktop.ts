@@ -305,6 +305,7 @@ export function toTarget(hit: AxHit & { label: string }, point: { x: number; y: 
         ...(host ? { host } : {}),
         ...(hit.role ? { role: hit.role.replace(/^AX/, "") } : {}),
         point: { x: Math.round(point.x), y: Math.round(point.y) },
+        ...(hit.frame ? { frame: { x: Math.round(hit.frame.x), y: Math.round(hit.frame.y), width: Math.round(hit.frame.w), height: Math.round(hit.frame.h) } } : {}),
       },
     },
     ...(hit.frame ? { frame: hit.frame } : {}),

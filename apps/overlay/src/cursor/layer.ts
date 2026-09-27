@@ -195,6 +195,17 @@ export function startCursorLayer(opts: CursorLayerOpts): CursorLayer {
       if (at) presence.onAgent({ x: at.x, y: at.y, action: "idle" }, Date.now());
     }
   });
+  // --- your gaze (docs/GAZE.md) ----------------------------------------------------
+  // Straight from eye serve (30Hz stays local, never through the core), plus the
+  // outline of whatever desktop gaze resolved it to. EVE_GAZE_DOT=0 hides it.
+  const stopGaze = process.env.EVE_GAZE_DOT === "0" ? () => {} : startGazeFeed(send, opts.log);
+  bus.on("gaze.target", (e) => {
+    const m = e.data.target.meta as { source?: string; frame?: ScreenRect } | undefined;
+    if (m?.source !== "desktop" || !m.frame) return;
+    send("cursor:gaze-target", { rect: m.frame, label: e.data.target.label, at: Date.now() });
+  });
+  bus.on("gaze.lost", () => send("cursor:gaze-target", null));
+
   opts.log(`cursor layer up on ${wins.size} display(s)`);
 
   return {
@@ -203,6 +214,7 @@ export function startCursorLayer(opts: CursorLayerOpts): CursorLayer {
     },
     refresh: tick,
     stop() {
+      stopGaze();
       clearInterval(ticker);
       clearInterval(fsTimer);
       bus.close();
@@ -212,5 +224,63 @@ export function startCursorLayer(opts: CursorLayerOpts): CursorLayer {
       for (const w of wins.values()) if (!w.isDestroyed()) w.destroy();
       wins.clear();
     },
+  };
+}
+
+/** eye serve's raw stream -> the cursor windows. Reconnects quietly; nothing when eye serve isn't running. */
+export function startGazeFeed(send: (channel: string, payload: unknown) => void, log: (...a: unknown[]) => void, url = process.env.EYE_URL ?? "ws://127.0.0.1:8765/ws"): () => void {
+  let ws: WebSocket | null = null;
+  let closed = false;
+  let backoff = 1000;
+  let radius = 120;
+  let fixMs: number | null = null;
+  let told = false;
+  const open = () => {
+    if (closed) return;
+    let sock: WebSocket;
+    try {
+      sock = new WebSocket(url);
+    } catch {
+      return void setTimeout(open, (backoff = Math.min(backoff * 2, 10_000)));
+    }
+    ws = sock;
+    sock.onopen = () => {
+      backoff = 1000;
+      if (!told) log(`gaze dot on (${url})`);
+      told = true;
+    };
+    sock.onmessage = (ev) => {
+      let m: Record<string, unknown>;
+      try {
+        m = JSON.parse(String(ev.data));
+      } catch {
+        return;
+      }
+      if (m.type === "hello") {
+        const d = m.display as { ptPerDeg?: number } | undefined;
+        const deg = typeof m.uncertaintyDeg === "number" ? m.uncertaintyDeg : typeof m.accuracyDeg === "number" ? m.accuracyDeg : 2.5;
+        radius = deg * (typeof d?.ptPerDeg === "number" ? d.ptPerDeg : 48);
+      } else if (m.type === "gaze") {
+        const fix = m.fix as { ms?: number } | null | undefined;
+        fixMs = typeof fix?.ms === "number" ? fix.ms : null;
+        const valid = m.valid !== false && typeof m.x === "number" && typeof m.y === "number";
+        send("cursor:gaze", { x: m.x, y: m.y, valid, fixMs, radius, t: Date.now() });
+      }
+    };
+    sock.onclose = () => {
+      if (ws === sock) ws = null;
+      send("cursor:gaze", { x: 0, y: 0, valid: false, fixMs: null, radius, t: Date.now() });
+      if (!closed) setTimeout(open, (backoff = Math.min(backoff * 2, 10_000)));
+    };
+    sock.onerror = () => {
+      try {
+        sock.close();
+      } catch {}
+    };
+  };
+  open();
+  return () => {
+    closed = true;
+    ws?.close();
   };
 }
