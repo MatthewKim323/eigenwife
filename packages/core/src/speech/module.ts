@@ -5,6 +5,7 @@ import { json } from "../hub";
 import type { SayOptions } from "../services";
 import { bunSpawn, whichBin } from "../brains/io";
 import { CANCEL_LINES, FILLERS, STALL_LINES } from "./lines";
+import { bunSocket } from "./sockets";
 import { createSpeech, type Speech, type SpeechDeps } from "./service";
 import { AUDIO_NAME_RE, AUDIO_TYPES, AudioCache, deepgramTts, elevenLabsTts, openAiTts, sayTts, Tts, type AudioExt, type TtsBackend, type TtsIO } from "./tts";
 
@@ -31,6 +32,7 @@ export function ttsIO(ctx: { config: { eveHome: string } }): TtsIO {
     which: whichBin,
     now: Date.now,
     tmpDir: join(ctx.config.eveHome, "work", "tts"),
+    socket: bunSocket,
   };
 }
 
@@ -50,6 +52,7 @@ export function speechFor(ctx: CoreContext) {
 
 export function speechModule(overrides: Partial<SpeechDeps> & { tts?: Tts | null } = {}): Module {
   let speech: Speech | null = null;
+  const offs: (() => void)[] = [];
   return {
     name: "speech",
     start(ctx) {
@@ -69,6 +72,17 @@ export function speechModule(overrides: Partial<SpeechDeps> & { tts?: Tts | null
         if (made) ctx.log("speech", `prerendered ${made} stall/ack clips`);
       };
       if (tts && overrides.tts === undefined) void tts.probe().then(report).then(clips);
+      // Prewarm her voice's socket at boot and the moment he starts talking, so the reply's first audio skips connection setup.
+      if (tts) {
+        tts.warm();
+        let warmedAt = 0;
+        const warm = () => {
+          if (Date.now() - warmedAt < 2000) return;
+          warmedAt = Date.now();
+          tts.warm();
+        };
+        offs.push(ctx.bus.on("voice.partial", warm), ctx.bus.on("voice.eager", warm));
+      }
       else report();
 
       ctx.route("/api/audio/", async (req, url) => {
@@ -116,6 +130,7 @@ export function speechModule(overrides: Partial<SpeechDeps> & { tts?: Tts | null
       });
     },
     stop() {
+      offs.splice(0).forEach((o) => o());
       speech?.dispose();
     },
   };

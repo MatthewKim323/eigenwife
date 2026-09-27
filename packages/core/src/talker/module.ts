@@ -70,9 +70,12 @@ export function talkerModule(opts: TalkerOptions = {}): Module {
         return her ? renamePersona(p ?? DEFAULT_EVE, her) : (p ?? DEFAULT_EVE);
       };
       const runs = new Map<string, TalkerRun>();
+      // EVE_TALKER_BACKENDS=gateway,claude-cli limits (and orders) the backends: benches, debugging.
+      const only = (io.secret("EVE_TALKER_BACKENDS") || "").split(",").map((s) => s.trim()).filter(Boolean);
+      const all = opts.backends ?? defaultTalkerBackends(io);
       const talker = createTalker({
         io,
-        backends: opts.backends ?? defaultTalkerBackends(io),
+        backends: only.length ? only.map((n) => all.find((b) => b.name === n)).filter((b): b is TalkerBackend => !!b) : all,
         prompt: (req) =>
           buildTalkerPrompt({
             persona: persona(),

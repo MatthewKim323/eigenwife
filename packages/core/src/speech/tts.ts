@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { HealthBook } from "../brains/health";
 import { drainText, HttpError, type Fetcher, type Spawner } from "../brains/io";
+import { auraStream, elevenStream, type SocketFactory, type StreamingSynth } from "./sockets";
 
 /**
  * Text to speech with a content-hash disk cache.
@@ -30,6 +31,8 @@ export interface TtsIO {
   now(): number;
   /** Scratch dir for local synthesis temp files. */
   tmpDir: string;
+  /** Websocket factory for streaming TTS (prewarmed sockets). Absent = HTTP only (tests). EVE_TTS_STREAM=0 turns it off. */
+  socket?: SocketFactory;
 }
 
 export interface TtsBackend {
@@ -38,6 +41,10 @@ export interface TtsBackend {
   voiceKey(): string;
   configured(): boolean;
   synth(text: string, signal?: AbortSignal): Promise<{ bytes: Uint8Array; ext: AudioExt }>;
+  /** Open the streaming socket ahead of time (no-op without one). */
+  warm?(): void;
+  /** How the last synth went: "ws" or "http", and ms to the first audio byte over ws. */
+  lastPath?(): { via: "ws" | "http"; firstChunkMs?: number } | null;
 }
 
 /** How Eve sounds (OpenAI `instructions`). */
@@ -70,13 +77,41 @@ export function openAiTts(io: TtsIO): TtsBackend {
 /** Aura-2 voice. Andromeda: casual and expressive, less read-aloud than the others. */
 export const DEEPGRAM_DEFAULT_VOICE = "aura-2-andromeda-en";
 
+/** Streaming sockets are on when a factory exists and EVE_TTS_STREAM isn't "0". */
+const streaming = (io: TtsIO) => !!io.socket && io.secret("EVE_TTS_STREAM") !== "0";
+
+/** Try the prewarmed socket, fall back to HTTP on any socket trouble. */
+async function viaSocket(
+  ws: StreamingSynth | null,
+  text: string,
+  signal: AbortSignal | undefined,
+  set: (p: { via: "ws" | "http"; firstChunkMs?: number }) => void,
+): Promise<{ bytes: Uint8Array; ext: AudioExt } | null> {
+  if (!ws) return null;
+  try {
+    const r = await ws.synth(text, signal);
+    set({ via: "ws", firstChunkMs: r.firstChunkMs });
+    return { bytes: r.bytes, ext: r.ext };
+  } catch (err) {
+    if (signal?.aborted) throw err;
+    return null;
+  }
+}
+
 export function deepgramTts(io: TtsIO): TtsBackend {
   const voice = () => io.secret("EVE_DEEPGRAM_VOICE") || DEEPGRAM_DEFAULT_VOICE;
+  const ws = streaming(io) ? auraStream({ key: () => io.secret("DEEPGRAM_API_KEY"), voice, factory: io.socket, now: io.now }) : null;
+  let path: { via: "ws" | "http"; firstChunkMs?: number } | null = null;
   return {
     name: "deepgram",
     voiceKey: () => `deepgram:${voice()}:v1`,
     configured: () => !!io.secret("DEEPGRAM_API_KEY"),
+    warm: () => ws?.warm(),
+    lastPath: () => path,
     async synth(text, signal) {
+      const streamed = await viaSocket(ws, text, signal, (p) => (path = p));
+      if (streamed) return streamed;
+      path = { via: "http" };
       const res = await io.fetch(`https://api.deepgram.com/v1/speak?model=${encodeURIComponent(voice())}&encoding=mp3`, {
         method: "POST",
         headers: { Authorization: `Token ${io.secret("DEEPGRAM_API_KEY")}`, "content-type": "application/json" },
@@ -129,8 +164,16 @@ export function elevenLabsTts(io: TtsIO): TtsBackend & { quota(): { used: number
       });
   };
   const underReserve = () => !!quota && quota.limit - quota.used < reserve();
+  const liveSettings = () => ({ stability: 0.45, similarity_boost: 0.8, style: 0.35, use_speaker_boost: true });
+  // The socket is for live lines (flash); prerender's eleven_v3 goes over HTTP.
+  const ws = streaming(io) ? elevenStream({ key: () => io.secret("ELEVENLABS_API_KEY"), voice, model, settings: liveSettings, factory: io.socket, now: io.now }) : null;
+  let path: { via: "ws" | "http"; firstChunkMs?: number } | null = null;
   return {
     name: "elevenlabs",
+    warm: () => {
+      if (model() !== "eleven_v3") ws?.warm();
+    },
+    lastPath: () => path,
     voiceKey: () => `elevenlabs:${voice()}:v2`,
     quota: () => quota,
     configured: () => {
@@ -141,6 +184,11 @@ export function elevenLabsTts(io: TtsIO): TtsBackend & { quota(): { used: number
     async synth(text, signal) {
       const m = model();
       if (quota) quota = { ...quota, used: quota.used + text.length };
+      if (m !== "eleven_v3") {
+        const streamed = await viaSocket(ws, text, signal, (p) => (path = p));
+        if (streamed) return streamed;
+      }
+      path = { via: "http" };
       const settings = m === "eleven_v3" ? { stability: 0.5 } : { stability: 0.45, similarity_boost: 0.8, style: 0.35, use_speaker_boost: true };
       const res = await io.fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice()}/stream?output_format=mp3_44100_128&optimize_streaming_latency=3`, {
         method: "POST",
@@ -281,6 +329,11 @@ export class Tts {
       if (ext) return this.rendered(sha, ext, b.name, true, 0);
     }
     return null;
+  }
+
+  /** Prewarm the streaming socket of the backend that would speak next. */
+  warm(): void {
+    this.live()[0]?.warm?.();
   }
 
   live(): TtsBackend[] {
