@@ -102,11 +102,15 @@ export interface MemoryRecord {
   createdAt: number;
   lastRecalledAt?: number;
   tags?: string[];
+  /** Where it came from outside Eve, e.g. a gbrain page: drives "remembered from gbrain · <title>". */
+  provenance?: { system: string; slug?: string; title?: string; /** When the source says it happened / was updated (epoch ms). */ at?: number };
 }
 
 export interface MemoryHit {
   record: MemoryRecord;
   score: number;
+  /** How it was found: an exact name in the entity index, or vector similarity. */
+  via?: "entity" | "vector";
 }
 
 export interface SpeechMark {

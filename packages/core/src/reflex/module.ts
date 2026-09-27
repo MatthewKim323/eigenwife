@@ -418,15 +418,29 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
     const intent = v.intent;
     const behavior = behaviorFor(v.decision, t, intent, rel);
     const userText = t.rule === "utterance" ? String(t.data.text ?? "") : undefined;
+    // He named someone she doesn't know yet and gbrain is still looking (docs/KNOW_ME.md):
+    // give it ~600ms to land in local memory; past that, she covers and it's there next turn.
+    // null = a stop word arrived while waiting.
+    const missFor = async (): Promise<string[] | null> => {
+      const lookup = userText ? ctx.tryUse("memory")?.pending?.(userText) : null;
+      if (!lookup) return [];
+      const landed = await lookup.settle(600);
+      if (gen !== myGen) return null;
+      return landed === null
+        ? [`you don't remember "${lookup.term}" yet (it's on the tip of your tongue). don't make anything up about it: cover naturally, like "wait... ${lookup.term.toLowerCase()}? remind me" or keep it vague.`]
+        : [];
+    };
     // He talked to her: the talker answers (and delegates what needs tools). docs/VOICE.md
     if (userText !== undefined && router.usable()) {
       let extra = "";
       if (!router.prestarted(t.id)) {
+        const missLines = await missFor();
+        if (missLines === null) return router.drop(t.id, "stopped");
         const memories = await recall(userText, t.parent);
         if (gen !== myGen) return;
         const screenLines = await screenContext(t, userText, myGen);
         if (screenLines === null || gen !== myGen) return router.drop(t.id, "stopped");
-        extra = extraFor(t, intent, memories, [...screenLines, ...router.context()]);
+        extra = extraFor(t, intent, memories, [...screenLines, ...missLines, ...router.context()]);
       }
       if (gen !== myGen) return router.drop(t.id, "stopped");
       const said = await router.respond(
@@ -439,11 +453,13 @@ export function reflexModule(opts: ReflexOptions = {}): Module {
         return;
       }
     }
+    const missLines = await missFor();
+    if (missLines === null) return;
     const memories = await recall(userText ?? t.description, t.parent);
     if (gen !== myGen) return;
     const screenLines = await screenContext(t, userText, myGen);
     if (screenLines === null || gen !== myGen) return;
-    const extra = extraFor(t, intent, memories, screenLines);
+    const extra = extraFor(t, intent, memories, [...screenLines, ...missLines]);
     const brains = ctx.tryUse("brains");
     const fallback =
       t.rule === "task_done"

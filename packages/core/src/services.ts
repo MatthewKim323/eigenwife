@@ -81,6 +81,12 @@ export interface MemoryService {
   observe(exchange: { user?: string; eve?: string; event?: string }): Promise<MemoryRecord[]>;
   count(): number;
   all(): MemoryRecord[];
+  /**
+   * A gbrain lookup for something this text names is in flight (docs/KNOW_ME.md).
+   * settle(ms) resolves true/false when it lands in time, null when it didn't.
+   * null = nothing to look up (already known locally, or no name in it).
+   */
+  pending?(text: string): { term: string; settle(ms: number): Promise<boolean | null> } | null;
 }
 
 export interface RelationshipService {

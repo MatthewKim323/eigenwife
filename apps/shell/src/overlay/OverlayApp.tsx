@@ -15,7 +15,7 @@ import { Subtitles } from "../voice/Subtitles";
 import { voice, voiceUi } from "../voice/VoiceProvider";
 import { bridge, inElectron } from "./bridge";
 import { ClickThroughGate, containRect, fitBox, HIT, hitAlpha, TAP_SLOP, type Box } from "./hittest";
-import { chipFor, triggerLabel } from "./status";
+import { chipFor, recallFlash, triggerLabel } from "./status";
 import { lookChip, nextLook, NO_LOOK, type LookState } from "./looking";
 import { WifeBubbles } from "./WifeBubbles";
 import "../avatar/avatar.css";
@@ -435,8 +435,8 @@ function Flashes() {
     setTimeout(() => setItems((xs) => xs.filter((x) => x.id !== id)), FLASH_MS);
   };
   useEvent("memory.recall", (e) => {
-    const top = e.data.hits[0]?.record.content;
-    if (top && e.data.hits.length) push("memory", `remembered · ${Math.max(1, Math.round(e.data.ms))}ms · ${top}`);
+    const text = recallFlash(e.data.hits, e.data.ms);
+    if (text) push("memory", text);
   });
   useEvent("memory.write", (e) => {
     if (e.data.policy === "STORE_LONG_TERM" || e.data.policy === "UPDATE_PREFERENCE") push("saved", `noted · ${e.data.record.content}`);

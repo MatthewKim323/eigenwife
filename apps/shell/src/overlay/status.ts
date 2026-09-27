@@ -45,3 +45,37 @@ export function chipFor(s: ChipInput): Chip {
 export function triggerLabel(trigger: string): string {
   return trigger.replace(/#\d+$/, "").replace(/[_.]+/g, " ").trim();
 }
+
+/** "2d ago" / "3mo ago" / "just now". */
+export function ago(ms: number): string {
+  const m = Math.round(ms / 60_000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  if (h < 48) return `${h}h ago`;
+  const d = Math.round(h / 24);
+  if (d < 60) return `${d}d ago`;
+  const mo = Math.round(d / 30);
+  return mo < 24 ? `${mo}mo ago` : `${Math.round(mo / 12)}y ago`;
+}
+
+interface RecallHitLike {
+  record: { content: string; source?: string; createdAt?: number; provenance?: { system: string; title?: string; slug?: string; at?: number } };
+}
+
+/**
+ * The memory flash text. A gbrain memory says where it came from:
+ * "remembered from gbrain · 4ms · Leo Park · 2mo ago"; anything else keeps
+ * "remembered · 4ms · <what>".
+ */
+export function recallFlash(hits: RecallHitLike[], ms: number, now = Date.now()): string | null {
+  const top = hits[0]?.record;
+  if (!top) return null;
+  const t = `${Math.max(1, Math.round(ms))}ms`;
+  const p = top.provenance;
+  if (p && (top.source === p.system || p.system === "gbrain")) {
+    const when = p.at ?? top.createdAt;
+    return `remembered from ${p.system} · ${t} · ${p.title || p.slug || top.content}${when ? ` · ${ago(now - when)}` : ""}`;
+  }
+  return `remembered · ${t} · ${top.content}`;
+}

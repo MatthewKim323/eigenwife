@@ -13,7 +13,8 @@ import { homedir } from "os";
 import { join } from "path";
 import { bunRunner, filterHits, GbrainClient, gbrainInstalled, type GbrainRunner } from "./gbrain";
 import { buildDigest, DIGEST_MAX_AGE_MS, type Digest } from "./gbrain-digest";
-import { liveCue } from "./gbrain-live";
+import { liveCue, type Cue } from "./gbrain-live";
+import { buildWorld, EntityIndex, WORLD_MAX_AGE_MS, worldRecords, type WorldCache } from "./gbrain-world";
 import { GbrainWriteback } from "./gbrain-writeback";
 
 /**
@@ -51,6 +52,10 @@ export interface GbrainMemoryOptions {
   digestDelayMs?: number;
   /** Skip the digest entirely (live + write-back only). */
   digest?: boolean;
+  /** Skip the world preload (people, projects, events, learned facts). */
+  world?: boolean;
+  /** Page caps for the world preload. */
+  worldLimits?: Partial<Record<"person" | "project" | "event" | "day" | "learned" | "profile", number>>;
   queryTimeoutMs?: number;
   /** Budget for one live lookup (keyword search, p50 355ms). */
   liveTimeoutMs?: number;
@@ -68,6 +73,8 @@ export type MemoryServiceImpl = MemoryService & {
   backend(): { embeddings: "openai" | "local"; moss: boolean };
   /** gbrain status (docs/KNOW_ME.md), set once the module is up. */
   gbrain?: () => Record<string, unknown>;
+  /** gbrain-derived records (world preload + digest), local only. */
+  gbrainPool?: () => MemoryRecord[];
 };
 
 const BREAKER_MS = 10 * 60_000;
@@ -98,6 +105,10 @@ export function memoryModule(opts: MemoryModuleOptions = {}): Module {
       const records = new Map<string, MemoryRecord>();
       const short = new Map<string, { rec: MemoryRecord; expiresAt: number }>();
       const vecs = new Map<string, RecordVecs>();
+      /** gbrain-derived records (world preload + digest): searched like any memory, never persisted to memories.jsonl, Moss or Zo. */
+      const pool = new Map<string, MemoryRecord>();
+      /** Names and aliases -> record ids, for exact hits ahead of vector search. */
+      const entities = new EntityIndex();
       const shortTtl = opts.shortTermTtlMs ?? 4 * 3600_000;
 
       const cacheFile = await home.read<{ model?: string; dims?: number; vectors?: Record<string, Vec> }>("embeddings", {});
@@ -159,7 +170,7 @@ export function memoryModule(opts: MemoryModuleOptions = {}): Module {
       /** Add OpenAI vectors to records that lack them, in one batched call. */
       const fillOpenai = async () => {
         if (!embedder || !openaiLive()) return;
-        const missing = [...records.values(), ...[...short.values()].map((s) => s.rec)].filter((r) => !vecs.get(r.id)?.openai);
+        const missing = [...records.values(), ...pool.values(), ...[...short.values()].map((s) => s.rec)].filter((r) => !vecs.get(r.id)?.openai);
         if (!missing.length) return;
         const before = embedder.failures;
         const out = await embedder.embed(missing.map((r) => r.content));
@@ -207,7 +218,7 @@ export function memoryModule(opts: MemoryModuleOptions = {}): Module {
       };
       const allRecords = (): MemoryRecord[] => {
         pruneShort();
-        return [...records.values(), ...[...short.values()].map((s) => s.rec)];
+        return [...records.values(), ...pool.values(), ...[...short.values()].map((s) => s.rec)];
       };
 
       const embedQuery = async (q: string): Promise<RecordVecs> => {
@@ -233,11 +244,19 @@ export function memoryModule(opts: MemoryModuleOptions = {}): Module {
           } catch {}
         }
         const res = search(allRecords(), vecs, q, { k, kinds: o.kinds, now: now(), moss: mossScores });
+        // Exact names first: "leo" is Leo's record whatever the cosine says.
+        const named = new Set(entities.match(query).flatMap((m) => m.ids));
+        const byName = [...named]
+          .map((id) => pool.get(id) ?? records.get(id) ?? short.get(id)?.rec)
+          .filter((r): r is MemoryRecord => !!r && (!o.kinds?.length || o.kinds.includes(r.kind)))
+          .sort((a, b) => b.importance - a.importance)
+          .map((r) => ({ record: r, score: 1.5, via: "entity" as const }));
+        const merged = [...byName, ...res.hits.filter((h) => !named.has(h.record.id)).map((h) => ({ ...h, via: "vector" as const }))].slice(0, k);
         const t = now();
-        const hits: MemoryHit[] = res.hits.map((h) => {
-          const live = records.get(h.record.id) ?? short.get(h.record.id)?.rec;
+        const hits: MemoryHit[] = merged.map((h) => {
+          const live = records.get(h.record.id) ?? short.get(h.record.id)?.rec ?? pool.get(h.record.id);
           if (live) live.lastRecalledAt = t;
-          return { record: { ...h.record, lastRecalledAt: t }, score: h.score };
+          return { record: { ...h.record, lastRecalledAt: t }, score: h.score, via: h.via };
         });
         if (hits.length) schedulePersist();
         const ms = Math.round((performance.now() - t0) * 10) / 10;
@@ -279,6 +298,7 @@ export function memoryModule(opts: MemoryModuleOptions = {}): Module {
           source: rec.source ?? "observation",
           createdAt: rec.createdAt ?? now(),
           ...(rec.lastRecalledAt ? { lastRecalledAt: rec.lastRecalledAt } : {}),
+          ...(rec.provenance ? { provenance: rec.provenance } : {}),
           ...(rec.tags?.length || isShort ? { tags: [...new Set([...(rec.tags ?? []), ...(isShort ? ["short-term"] : [])])] } : {}),
         };
         vecs.set(r.id, v);
@@ -388,8 +408,13 @@ export function memoryModule(opts: MemoryModuleOptions = {}): Module {
       const client = gbrainOn ? new GbrainClient(g!.runner ?? bunRunner()) : null;
       let digest: Digest | null = null;
       let digesting: Promise<Digest | null> | null = null;
-      const live = { lookups: 0, hits: 0, inflight: 0, lastQuery: "", lastMs: 0, lastAt: 0 };
+      let world: WorldCache | null = null;
+      let building: Promise<WorldCache | null> | null = null;
+      const live = { lookups: 0, hits: 0, empty: 0, inflight: 0, fromPartial: 0, lastQuery: "", lastMs: 0, lastAt: 0 };
+      /** term (lowercase) -> when it was looked up; results live in short-term memory for the cache window. */
       const recentCues = new Map<string, number>();
+      /** term (lowercase) -> the lookup in flight (resolves true when it found something). */
+      const inflight = new Map<string, Promise<boolean>>();
       const gTimer = (ms: number, fn: () => void) => {
         const t = setTimeout(() => {
           gbrainTimers.delete(t);
@@ -403,23 +428,68 @@ export function memoryModule(opts: MemoryModuleOptions = {}): Module {
         return u?.callMe || u?.name?.split(/\s+/)[0]?.toLowerCase() || "matt";
       };
 
-      /** Fold a digest into the profile (onboarding wins) and the long-term store (replacing the last digest's facts). */
-      const applyDigest = async (d: Digest, replaceFacts: boolean) => {
+      /** Put records in the gbrain pool (replacing ones with `tag`), index their aliases, embed in the background. */
+      const setPool = (tag: string, recs: MemoryRecord[], aliases: Map<string, string[]> = new Map()) => {
+        const old = new Set([...pool.values()].filter((r) => r.tags?.includes(tag)).map((r) => r.id));
+        entities.removeIds(old);
+        for (const id of old) {
+          pool.delete(id);
+          vecs.delete(id);
+        }
+        for (const r of recs) {
+          pool.set(r.id, r);
+          vecs.set(r.id, vecsFor(r.content));
+          for (const a of aliases.get(r.id) ?? []) entities.add(a, r.id);
+        }
+        void fillOpenai();
+      };
+
+      const applyWorld = (w: WorldCache) => {
+        const recs = worldRecords(w);
+        const aliases = new Map<string, string[]>();
+        w.entries.forEach((e, i) => aliases.set(recs[i]!.id, e.aliases));
+        setPool("world", recs, aliases);
+      };
+
+      /** Fold a digest into the profile (onboarding wins) and the gbrain pool. */
+      const applyDigest = async (d: Digest) => {
         try {
           if (Object.keys(d.profile).length) await ctx.tryUse("user")?.merge(d.profile, "gbrain");
         } catch (err) {
           log("gbrain profile merge failed:", err);
         }
-        if (!replaceFacts || !d.facts.length) return;
-        const keep = new Set(d.facts.map((f) => f.content.toLowerCase()));
-        for (const r of [...records.values()])
-          if (r.source === "gbrain" && r.tags?.includes("digest") && !keep.has(r.content.toLowerCase())) {
-            records.delete(r.id);
-            vecs.delete(r.id);
+        setPool(
+          "digest",
+          d.facts.map((f, i) => ({
+            id: `gd_${i}`,
+            kind: "fact" as const,
+            content: f.content,
+            importance: f.importance,
+            confidence: 0.7,
+            source: "gbrain",
+            createdAt: d.at,
+            tags: ["gbrain", "digest"],
+            provenance: { system: "gbrain", title: "digest of matt's notes", at: d.at },
+          })),
+        );
+      };
+
+      const runWorld = (): Promise<WorldCache | null> => {
+        if (!client) return Promise.resolve(null);
+        if (building) return building;
+        building = (async () => {
+          const w = await buildWorld({ client, now, log, limits: g!.worldLimits });
+          if (!w.entries.length) {
+            log(`gbrain world: nothing (${w.pages} pages)`);
+            return null;
           }
-        for (const f of d.facts)
-          await write({ kind: "fact", content: f.content, importance: f.importance, confidence: 0.7, source: "gbrain", tags: ["gbrain", "digest"] }, "STORE_LONG_TERM");
-        schedulePersist();
+          world = w;
+          await home.write("gbrain-world", w);
+          applyWorld(w);
+          log(`gbrain world: ${w.entries.length} records from ${w.pages} pages in ${(w.ms / 1000).toFixed(1)}s, ${entities.size()} names`);
+          return w;
+        })().finally(() => (building = null));
+        return building;
       };
 
       const runDigest = (): Promise<Digest | null> => {
@@ -435,7 +505,7 @@ export function memoryModule(opts: MemoryModuleOptions = {}): Module {
           }
           digest = d;
           await home.write("gbrain", d);
-          await applyDigest(d, true);
+          await applyDigest(d);
           log(`gbrain digest: ${d.facts.length} facts, profile ${Object.keys(d.profile).join(",") || "-"} by ${d.by} in ${Math.round(d.ms / 1000)}s`);
           return d;
         })().finally(() => (digesting = null));
@@ -443,70 +513,119 @@ export function memoryModule(opts: MemoryModuleOptions = {}): Module {
       };
 
       if (client) {
+        world = await home.read<WorldCache | null>("gbrain-world", null);
+        if (world?.entries?.length) applyWorld(world);
         digest = await home.read<Digest | null>("gbrain", null);
-        if (digest) void applyDigest(digest, false);
-        if (g!.digest !== false) {
-          const check = () => {
-            if (!digest || now() - digest.at > DIGEST_MAX_AGE_MS) void runDigest();
-            gTimer(3600_000, check);
-          };
-          gTimer(g!.digestDelayMs ?? 20_000, check);
-        }
+        if (digest) void applyDigest(digest);
+        const check = async () => {
+          // World first (fast, local names), then the digest (slow hybrid queries + a brain).
+          if (g!.world !== false && (!world || now() - world.at > WORLD_MAX_AGE_MS)) await runWorld().catch((err) => log("gbrain world failed:", err));
+          if (g!.digest !== false && (!digest || now() - digest.at > DIGEST_MAX_AGE_MS)) await runDigest().catch((err) => log("gbrain digest failed:", err));
+          gTimer(3600_000, () => void check());
+        };
+        if (g!.world !== false || g!.digest !== false) gTimer(g!.digestDelayMs ?? 20_000, () => void check());
         if (writeOn) writeback = new GbrainWriteback({ client, debounceMs: g!.writeDebounceMs, now, who, log });
       }
 
-      /** Fire-and-forget: search gbrain for what he just mentioned; results are for her NEXT turn. */
-      const lookup = async (text: string) => {
-        if (!client || live.inflight >= 2) return;
+      /** What in this text is worth a gbrain lookup, and is it already known locally? */
+      const cueFor = (text: string): Cue | null => {
         const known = (ctx.tryUse("user")?.profile().people ?? []).map((p) => p.name);
         const cue = liveCue(text, known);
-        if (!cue) return;
+        if (!cue) return null;
+        // A name she already knows (world preload, earlier lookups) needs no trip to gbrain.
+        if (cue.kind !== "remember" && (entities.has(cue.query) || entities.match(cue.query).length)) return null;
+        return cue;
+      };
+
+      /**
+       * Fire-and-forget keyword search for what he's saying (voice.partial:
+       * speculative, before he's done; voice.final: last chance). Results land
+       * as short-term memories + a world slot + index entries, so they're
+       * local by the time the persona prompt is built (usually) or next turn.
+       */
+      const prefetch = (text: string, partial: boolean): Promise<boolean> | null => {
+        if (!client) return null;
+        const cue = cueFor(text);
+        if (!cue) return null;
         const key = cue.query.toLowerCase();
-        const coolMs = g!.liveCooldownMs ?? 10 * 60_000;
-        if (now() - (recentCues.get(key) ?? -Infinity) < coolMs) return;
+        const running = inflight.get(key);
+        if (running) return running;
+        if (now() - (recentCues.get(key) ?? -Infinity) < (g!.liveCooldownMs ?? 30 * 60_000)) return null;
+        if (inflight.size >= 2) return null;
         recentCues.set(key, now());
-        live.inflight += 1;
         live.lookups += 1;
+        if (partial) live.fromPartial += 1;
         live.lastQuery = cue.query;
-        try {
-          const hits = await client.search(cue.query, { timeoutMs: g!.liveTimeoutMs ?? 2500, limit: 6 });
-          live.lastMs = client.stats.lastMs ?? 0;
-          live.lastAt = now();
-          const top = filterHits(hits ?? [], { relative: 0.7, perPrefix: 2 }).slice(0, 3);
-          if (!top.length) return;
-          live.hits += top.length;
-          for (const h of top)
-            await write(
-              { kind: "fact", content: `from ${who()}'s notes (${h.slug}): ${h.text.slice(0, 220)}`, importance: 0.5, confidence: 0.6, source: "gbrain", tags: ["gbrain", "live"] },
-              "STORE_SHORT_TERM",
-            );
-          ctx.setSlot("gbrain", "recall", `his notes on "${cue.query}": ${top.map((h) => h.text.slice(0, 160)).join(" | ")}`);
-          const setAt = now();
-          gTimer(g!.liveSlotMs ?? 5 * 60_000, () => {
-            if (live.lastAt <= setAt) ctx.setSlot("gbrain", "recall", null);
-          });
-        } catch (err) {
-          log("gbrain lookup failed:", err);
-        } finally {
-          live.inflight -= 1;
-        }
+        const p = (async () => {
+          try {
+            const hits = await client.search(cue.query, { timeoutMs: g!.liveTimeoutMs ?? 2500, limit: 6 });
+            live.lastMs = client.stats.lastMs ?? 0;
+            live.lastAt = now();
+            const top = filterHits(hits ?? [], { relative: 0.7, perPrefix: 2 }).slice(0, 3);
+            if (!top.length) {
+              live.empty += 1;
+              return false;
+            }
+            live.hits += top.length;
+            for (const h of top) {
+              const r = await write(
+                {
+                  kind: "fact",
+                  content: `from ${who()}'s notes (${h.slug}): ${h.text.slice(0, 220)}`,
+                  importance: 0.5,
+                  confidence: 0.6,
+                  source: "gbrain",
+                  tags: ["gbrain", "live"],
+                  provenance: { system: "gbrain", slug: h.slug, title: h.text.split(/(?<=[.!?])\s/)[0]!.slice(0, 60) },
+                },
+                "STORE_SHORT_TERM",
+              );
+              if (r && cue.kind !== "remember") entities.add(cue.query, r.id);
+            }
+            ctx.setSlot("gbrain", "recall", `his notes on "${cue.query}": ${top.map((h) => h.text.slice(0, 160)).join(" | ")}`);
+            const setAt = now();
+            gTimer(g!.liveSlotMs ?? 5 * 60_000, () => {
+              if (live.lastAt <= setAt) ctx.setSlot("gbrain", "recall", null);
+            });
+            return true;
+          } catch (err) {
+            log("gbrain lookup failed:", err);
+            return false;
+          } finally {
+            inflight.delete(key);
+          }
+        })();
+        inflight.set(key, p);
+        return p;
       };
       if (client)
         offs.push(
-          ctx.bus.on("voice.final", (e) => {
-            // Never awaited: the reply path only reads local memory.
-            void lookup(e.data.text ?? "");
-          }),
+          // Never awaited: the reply path only reads local memory.
+          ctx.bus.on("voice.partial", (e) => void prefetch(e.data.text ?? "", true)),
+          ctx.bus.on("voice.final", (e) => void prefetch(e.data.text ?? "", false)),
         );
+      service.pending = (text: string) => {
+        const cue = client ? cueFor(text) : null;
+        if (!cue) return null;
+        const p = inflight.get(cue.query.toLowerCase()) ?? prefetch(text, false);
+        if (!p) return null;
+        return {
+          term: cue.query,
+          settle: (ms: number) => Promise.race([p, Bun.sleep(ms).then(() => null)]),
+        };
+      };
       if (writeback) offs.push(ctx.bus.on("memory.write", (e) => void writeback?.offer(e.data.record, e.data.policy)));
 
       const gbrainStatus = () => ({
         live: !!client,
         write: !!writeback,
         realHome,
+        world: world ? { at: world.at, ageMin: Math.round((now() - world.at) / 60_000), ms: world.ms, pages: world.pages, records: world.entries.length, names: entities.size() } : null,
+        building: !!building,
         digest: digest ? { at: digest.at, ageMin: Math.round((now() - digest.at) / 60_000), ms: digest.ms, by: digest.by, facts: digest.facts.length, queries: digest.queries, hits: digest.hits, error: digest.error } : null,
         digesting: !!digesting,
-        lookups: { ...live },
+        pool: pool.size,
+        lookups: { ...live, inflight: inflight.size },
         pendingWrites: writeback?.pending() ?? 0,
         written: writeback?.written ?? 0,
         writeFailures: writeback?.failed ?? 0,
@@ -514,10 +633,12 @@ export function memoryModule(opts: MemoryModuleOptions = {}): Module {
         cli: client ? { ...client.stats } : null,
       });
       service.gbrain = gbrainStatus;
+      service.gbrainPool = () => [...pool.values()];
       ctx.route("/api/memory/status", async (req) => {
         if (req.method === "POST") {
-          // POST { digest: true } forces a digest now (background; poll status).
-          const body = (await req.json().catch(() => ({}))) as { digest?: boolean; flush?: boolean };
+          // POST { world: true } / { digest: true } rebuilds now (background; poll status). { flush: true } writes back now.
+          const body = (await req.json().catch(() => ({}))) as { digest?: boolean; world?: boolean; flush?: boolean };
+          if (body.world) void runWorld();
           if (body.digest) void runDigest();
           if (body.flush) await writeback?.flush();
         }

@@ -218,7 +218,7 @@ function Diagnostics({ scene, quiet }: { scene: Scene; quiet: boolean }) {
               {recallFresh && (
                 <div className="hud-recall" key={recall!.ts}>
                   <Pill delay={0} tone="ok">
-                    remembered · <b>{Math.max(1, Math.round(recall!.ms))}ms</b>
+                    remembered{recall!.hits[0]?.record.provenance ? ` from ${recall!.hits[0].record.provenance.system}` : ""} · <b>{Math.max(1, Math.round(recall!.ms))}ms</b>
                   </Pill>
                   {recall!.hits.slice(0, 3).map((h, i) => (
                     <div className="hud-recall-line" key={h.record.id} style={{ animationDelay: `${120 + i * 70}ms` }}>

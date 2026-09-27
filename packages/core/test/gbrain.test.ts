@@ -130,7 +130,7 @@ describe("digest", () => {
     const stop = await startModules(ctx, [onboardingModule(), memoryModule({ openaiKey: "", moss: null, gbrain: { runner: g.runner, digestDelayMs: 0 } })]);
     const mem = ctx.use("memory") as MemoryServiceImpl;
     await waitFor(() => !!home.files.get("gbrain"));
-    await waitFor(() => mem.all().filter((r) => r.source === "gbrain").length === 2);
+    await waitFor(() => mem.gbrainPool!().filter((r) => r.tags?.includes("digest")).length === 2);
     const u = ctx.use("user").profile();
     expect(u.callMe).toBe("matt");
     expect(u.work).toBe("building eigenwife");
@@ -138,8 +138,11 @@ describe("digest", () => {
     expect(u.sources.name).toBe("gbrain");
     expect(u.interests).toEqual(["anime", "climbing"]);
     expect(u.people).toEqual([{ name: "Katie Shuai", relation: "girlfriend" }]);
-    const facts = mem.all().filter((r) => r.source === "gbrain");
-    expect(facts.every((r) => r.tags?.includes("digest"))).toBe(true);
+    // gbrain facts are searchable but never persisted to memories.jsonl (so never mirrored to Zo or Moss).
+    expect(mem.all().filter((r) => r.source === "gbrain")).toEqual([]);
+    const facts = mem.gbrainPool!();
+    expect(facts.every((r) => r.provenance?.system === "gbrain")).toBe(true);
+    expect((await mem.recall("eyan koko high school", { emit: false }))[0]?.record.content).toBe("Close with Eyan Koko since high school");
     expect((home.files.get("gbrain") as Digest).by).toBe("brain");
     const status = mem.gbrain!() as { live: boolean; write: boolean; digest: { facts: number } };
     expect(status.live).toBe(true);
