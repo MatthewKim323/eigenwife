@@ -14,6 +14,7 @@ import { workModule } from "../work/module";
 import { screenModule } from "../screen/module";
 import { clock } from "./clock";
 import { touchModule } from "../touch/module";
+import { liveModule } from "../live/module";
 
 /**
  * The full Eve. Modules never import each other: they talk over the bus.
@@ -31,6 +32,8 @@ export function allModules(): Module[] {
     wardrobeModule(),
     brainsModule(),
     speechModule(),
+    // After speech: wraps the speech service so the gpt-live-1 engine can own her voice (docs/LIVE.md).
+    liveModule(),
     earsModule(),
     reflexModule(),
     agencyModule(),

@@ -329,7 +329,31 @@ export interface EventMap {
   "agent.cursor": { x: number; y: number; space: "screen"; action: AgentCursorAction; label?: string; target?: string; ms?: number };
   /** Her visible browser window (Playwright Chromium) opened, moved, or closed. bounds in screen points. */
   "agent.browser": { status: "open" | "closed"; bounds?: ScreenRect; url?: string };
+
+  // --- voice engine: classic cascade vs Eve Live (docs/LIVE.md) ----------------------
+  /**
+   * Which voice path owns the mic and her voice. classic = ears (STT) + brains +
+   * speech (TTS). live = one full-duplex gpt-live-1 session. Only one STT path
+   * is active at a time: ears stand down while live, and the other way round.
+   * Persisted in ~/.eve/voice.json.
+   */
+  "voice.engine": { engine: VoiceEngine; by: "tray" | "voice" | "env" | "api" | "restore" | "fallback" | "cost"; reason?: string };
+  /** Eve Live session lifecycle, for the tray / HUD chip. usedMin / capMin: today's live minutes vs the daily cap. */
+  "live.state": {
+    status: LiveStatus;
+    provider?: "gateway" | "openai";
+    voice?: string;
+    /** Human readable: why it's off, what's missing ("Eve Live needs OpenAI or gateway credits"). */
+    reason?: string;
+    usedMin?: number;
+    capMin?: number;
+    sessionId?: string;
+  };
 }
+
+export type VoiceEngine = "classic" | "live";
+/** off: classic engine. idle: live engine, session closed until he talks. no_access: missing key or credits. */
+export type LiveStatus = "off" | "connecting" | "live" | "idle" | "closing" | "no_access" | "capped" | "error";
 
 /** point: shared attention, a small wiggle at something she is talking about. */
 export type AgentCursorAction = "move" | "click" | "type" | "scroll" | "hover" | "point" | "idle";
@@ -451,3 +475,4 @@ export * from "./world";
 export * from "./wardrobe";
 export * from "./candidates";
 export * from "./cursor";
+export * from "./live";
