@@ -1,8 +1,10 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { Ambient, Glitch, useNow, useTypewriter } from "../components/fx";
+import { WifeFace } from "../components/WifeFace";
 import { gazeProps } from "../gaze/tracker";
 import { summarizeResult, useShell, type SwarmAgent, type SwarmRun } from "../lib/store";
+import { roleLabel } from "../lib/wives";
 import "../styles/swarm.css";
 
 const CALM = 420;
@@ -29,6 +31,8 @@ export function SwarmScene() {
   const cx = (w - CALM) / 2 + 30;
   const cy = h * 0.47;
   const agents = run ? run.order.map((id) => run.agents[id]!).filter(Boolean) : [];
+  // Eve's call: the wife whose side she took glows until the merge.
+  const chosen = run?.resolve?.winner && !run.merge ? run.resolve.winner : null;
   const pos = useMemo(() => layout(agents, cx, cy, Math.min((w - CALM) * 0.36, 380), Math.min(h * 0.3, 250)), [agents.length, cx, cy, w, h]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
@@ -57,19 +61,23 @@ export function SwarmScene() {
       <EveNode x={cx} y={cy} run={run} name={persona?.name ?? "Eve"} />
       {agents.map((a) => {
         const p = pos.get(a.id);
-        return p ? <AgentNode key={a.id} a={a} x={p.x} y={p.y} cx={cx} cy={cy} /> : null;
+        return p ? <AgentNode key={a.id} a={a} x={p.x} y={p.y} cx={cx} cy={cy} chosen={chosen === a.id} lost={!!chosen && chosen !== a.id && isInConflict(run, a.id)} /> : null;
       })}
       {run?.conflicts.map((c) => {
         const pa = pos.get(c.lines[0]?.agentId ?? c.a) ?? pos.get(c.a);
         const pb = pos.get(c.lines[1]?.agentId ?? c.b) ?? pos.get(c.b);
         if (!pa || !pb) return null;
-        return <Conflict key={c.conflictId} c={c} a={pa} b={pb} cy={cy} resolved={!!run.resolve} merged={!!run.merge} />;
+        return <Conflict key={c.conflictId} c={c} a={pa} b={pb} cy={cy} resolved={!!run.resolve} merged={!!run.merge} agents={run.agents} winner={run.resolve?.winner} />;
       })}
       {run?.merge && <Merge run={run} pos={pos} cx={cx} cy={cy} />}
       <Resolve run={run} />
       <ApprovalCard run={run} />
     </motion.div>
   );
+}
+
+function isInConflict(run: SwarmRun | null, id: string) {
+  return !!run?.conflicts.some((c) => c.a === id || c.b === id);
 }
 
 function layout(agents: SwarmAgent[], cx: number, cy: number, rx: number, ry: number) {
@@ -141,13 +149,13 @@ function EveNode({ x, y, run, name }: { x: number; y: number; run: SwarmRun | nu
   );
 }
 
-function AgentNode({ a, x, y, cx, cy }: { a: SwarmAgent; x: number; y: number; cx: number; cy: number }) {
+function AgentNode({ a, x, y, cx, cy, chosen, lost }: { a: SwarmAgent; x: number; y: number; cx: number; cy: number; chosen: boolean; lost: boolean }) {
   const last = a.progress[a.progress.length - 1] ?? "";
   const typed = useTypewriter(last, 80);
   const gone = a.state === "despawned";
   return (
     <motion.div
-      className={`agent ${a.state}`}
+      className={`agent ${a.state} ${chosen ? "chosen" : ""} ${lost ? "lost" : ""}`}
       style={{ left: x, top: y }}
       initial={{ x: cx - x, y: cy - y, scale: 0.5, opacity: 0 }}
       animate={gone ? { x: (cx - x) * 0.85, y: (cy - y) * 0.85, scale: 0.4, opacity: 0 } : { x: 0, y: 0, scale: 1, opacity: 1 }}
@@ -155,10 +163,13 @@ function AgentNode({ a, x, y, cx, cy }: { a: SwarmAgent; x: number; y: number; c
       {...gazeProps(`swarm_${a.id}`, `${a.name ?? a.label}: ${a.goal ?? a.role}`, "other", { role: a.role, state: a.state })}
     >
       <div className="top">
-        <span className="emoji">{a.emoji ?? "◆"}</span>
+        <WifeFace who={a} size={50} glow={chosen} dim={lost} />
         <div className="who">
           <b>{a.name ?? a.label}</b>
-          <span className="mono">{a.role.toUpperCase()}</span>
+          <span className="mono">
+            {a.emoji ? <i className="role-emoji">{a.emoji}</i> : null}
+            {roleLabel(a.role)}
+          </span>
         </div>
         <span className={`state mono ${a.state}`}>{a.state === "working" && a.tool ? a.tool : a.state}</span>
       </div>
@@ -181,18 +192,50 @@ function AgentNode({ a, x, y, cx, cy }: { a: SwarmAgent; x: number; y: number; c
   );
 }
 
-function Conflict({ c, a, b, cy, resolved, merged }: { c: SwarmRun["conflicts"][number]; a: { x: number; y: number }; b: { x: number; y: number }; cy: number; resolved: boolean; merged: boolean }) {
+function Conflict({
+  c,
+  a,
+  b,
+  cy,
+  resolved,
+  merged,
+  agents,
+  winner,
+}: {
+  c: SwarmRun["conflicts"][number];
+  a: { x: number; y: number };
+  b: { x: number; y: number };
+  cy: number;
+  resolved: boolean;
+  merged: boolean;
+  agents: SwarmRun["agents"];
+  winner?: string;
+}) {
   const mx = (a.x + b.x) / 2;
   // Keep the argument clear of Eve's orb.
   const my = Math.min((a.y + b.y) / 2, cy - 170);
   return (
     <motion.div className={`conflict ${resolved ? "resolved" : ""}`} style={{ left: mx, top: my }} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: merged ? 0 : resolved ? 0.55 : 1, scale: 1 }} transition={{ type: "spring", duration: 0.5, bounce: 0.3 }}>
       <div className="topic mono">CONFLICT · {c.topic}</div>
-      {c.lines.slice(0, 2).map((l, i) => (
-        <motion.div key={i} className={`bubble ${i ? "r" : "l"}`} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 + i * 0.7 }}>
-          {l.text}
-        </motion.div>
-      ))}
+      {c.lines.slice(0, 2).map((l, i) => {
+        const who = agents[l.agentId];
+        const won = resolved && winner === l.agentId;
+        return (
+          <motion.div
+            key={i}
+            className={`say-row ${i ? "r" : "l"} ${won ? "won" : ""}`}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3 + i * 0.7 }}
+          >
+            {who && <WifeFace who={who} size={30} glow={won} dim={resolved && !!winner && !won} />}
+            <div className={`bubble ${i ? "r" : "l"}`}>
+              {who?.name && <b className="by mono">{who.name}</b>}
+              {l.text}
+            </div>
+          </motion.div>
+        );
+      })}
     </motion.div>
   );
 }

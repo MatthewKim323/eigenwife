@@ -52,6 +52,11 @@
 .agent.failed { border-color: oklch(0.78 0.16 40 / 0.45); }
 .agent .top { display: flex; align-items: center; gap: 10px; }
 .agent .emoji { width: 36px; height: 36px; border-radius: 12px; display: grid; place-items: center; font-size: 20px; background: oklch(1 0 0 / 0.07); }
+.agent .top .wface { margin: -4px 0 -4px -3px; }
+.agent .who .role-emoji { font-style: normal; margin-right: 5px; letter-spacing: 0; filter: saturate(0.85); }
+.agent { transition: border-color 420ms ease, box-shadow 420ms ease, opacity 420ms ease; }
+.agent.chosen { border-color: oklch(0.88 0.13 var(--hue) / 0.6); box-shadow: 0 20px 60px oklch(0.04 0.03 var(--hue) / 0.5), 0 0 44px oklch(0.8 0.16 var(--hue) / 0.35); }
+.agent.lost { opacity: 0.72; }
 .agent .who { flex: 1; display: grid; gap: 3px; min-width: 0; }
 .agent .who b { font: 600 15px/1 var(--font-ui); letter-spacing: -0.01em; }
 .agent .who span { font-size: 9px; letter-spacing: 0.2em; color: var(--ink-3); }
@@ -68,8 +73,14 @@
 .agent .res span { color: var(--ok); margin-right: 4px; }
 .agent .res.bad span { color: var(--warn); }
 
-.conflict { position: absolute; z-index: 6; margin: -70px 0 0 -140px; width: 280px; display: grid; gap: 8px; pointer-events: none; }
+.conflict { position: absolute; z-index: 6; margin: -70px 0 0 -160px; width: 320px; display: grid; gap: 8px; pointer-events: none; }
 .conflict .topic { justify-self: center; font-size: 9.5px; letter-spacing: 0.22em; color: var(--warn); padding: 4px 9px; border-radius: 999px; background: oklch(0.2 0.05 40 / 0.6); border: 1px solid oklch(0.78 0.16 40 / 0.4); }
+.conflict .say-row { display: flex; align-items: flex-end; gap: 7px; }
+.conflict .say-row.l { justify-self: start; }
+.conflict .say-row.r { justify-self: end; flex-direction: row-reverse; }
+.conflict .say-row .wface { margin-bottom: 2px; }
+.conflict .bubble .by { display: block; margin-bottom: 2px; font-size: 8.5px; letter-spacing: 0.18em; text-transform: uppercase; opacity: 0.55; font-weight: 600; }
+.conflict .say-row.won .bubble { box-shadow: 0 10px 30px oklch(0 0 0 / 0.35), 0 0 0 2px oklch(0.9 0.12 var(--hue) / 0.7); }
 .conflict .bubble { max-width: 220px; padding: 9px 13px; border-radius: 16px; font: 500 13px/1.3 var(--font-voice); color: oklch(0.2 0.03 var(--hue)); background: oklch(0.97 0.02 var(--hue)); box-shadow: 0 10px 30px oklch(0 0 0 / 0.35); }
 .conflict .bubble.l { justify-self: start; border-bottom-left-radius: 4px; }
 .conflict .bubble.r { justify-self: end; border-bottom-right-radius: 4px; background: oklch(0.92 0.06 calc(var(--hue) + 70)); }

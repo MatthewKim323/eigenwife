@@ -1,0 +1,52 @@
+/* The harem on the desktop: tiny, click-through portrait bubbles around Eve. */
+.ov-wives { position: absolute; inset: 0; pointer-events: none; }
+
+.ov-wife {
+  position: absolute;
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  transform-origin: 50% 50%;
+  translate: -50% -50%;
+  pointer-events: none;
+}
+.ov-wife .wface { box-shadow: 0 0 0 1px oklch(1 0 0 / 0.1), 0 0 10px oklch(0.75 0.15 var(--wf-hue) / 0.35), 0 4px 12px oklch(0 0 0 / 0.35); }
+.ov-wife[data-state="working"] .wface { animation: ov-wife-bob 2.4s ease-in-out infinite; }
+.ov-wife[data-state="spawning"] .wface,
+.ov-wife[data-state="assigned"] .wface { filter: saturate(0.7); }
+
+.ov-wife-cap {
+  max-width: 124px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: oklch(0.2 0.03 var(--hue) / 0.72);
+  border: 1px solid oklch(0.85 0.06 var(--hue) / 0.14);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  color: oklch(0.95 0.01 var(--hue) / 0.9);
+  font: 500 9px/1.3 var(--font-mono);
+  letter-spacing: 0.02em;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  animation: ov-wife-cap-in 240ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+/* A quip is the one moment worth reading: brighter, wraps to two lines. */
+.ov-wife[data-quip="true"] .ov-wife-cap {
+  max-width: 150px;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  background: oklch(0.97 0.02 var(--hue) / 0.94);
+  color: oklch(0.22 0.03 var(--hue));
+  font: 600 10px/1.25 var(--font-voice);
+  letter-spacing: 0;
+}
+
+@keyframes ov-wife-bob { 50% { transform: translateY(-2px); } }
+@keyframes ov-wife-cap-in { from { opacity: 0; transform: translateY(-2px); } }
+@media (prefers-reduced-motion: reduce) {
+  .ov-wife .wface, .ov-wife-cap { animation: none !important; }
+}

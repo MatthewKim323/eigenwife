@@ -92,7 +92,7 @@ describe("casting the Act I girls", () => {
       expect(q).toBeTruthy();
       for (const line of [q.push!("Mensho"), q.no!("$22", "noodles"), q.near!("Mensho"), q.far!(35)]) {
         expect(line.length).toBeLessThan(64);
-        expect(line).not.toMatch(/[–—]/);
+        expect(line).not.toMatch(/[\u2013\u2014]/);
       }
     }
   });

@@ -181,7 +181,10 @@ function Braid({ fill }: { fill: string }) {
   return <g>{segs}</g>;
 }
 
-export function PortraitArt({ id, name, className }: { id: string; name: string; className?: string }) {
+/** Headshot framing for PortraitArt: a square around her face and hair (wife bubbles). */
+export const HEAD_VIEWBOX = "56 76 188 188";
+
+export function PortraitArt({ id, name, className, viewBox = "30 18 240 420" }: { id: string; name: string; className?: string; viewBox?: string }) {
   const uid = useId().replace(/:/g, "");
   const art = PERSON_ART[id] ?? PERSON_ART.mira!;
   const r = useMemo(() => rng(id), [id]);
@@ -197,7 +200,7 @@ export function PortraitArt({ id, name, className }: { id: string; name: string;
   const skinTop = ok(Math.min(0.96, sl + 0.05), sc, sh + 5);
   const skinBot = ok(sl - 0.08, sc + 0.015, sh - 5);
   return (
-    <svg className={className} viewBox="30 18 240 420" preserveAspectRatio="xMidYMid slice" role="img" aria-label={`illustrated portrait of ${name}`}>
+    <svg className={className} viewBox={viewBox} preserveAspectRatio="xMidYMid slice" role="img" aria-label={`illustrated portrait of ${name}`}>
       <defs>
         <linearGradient id={`bg${uid}`} x1="0" y1="0" x2="0.4" y2="1">
           <stop offset="0" style={{ stopColor: ok(0.74, 0.13, art.hue) }} />

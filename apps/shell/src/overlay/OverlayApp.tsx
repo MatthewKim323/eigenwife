@@ -17,6 +17,7 @@ import { bridge, inElectron } from "./bridge";
 import { ClickThroughGate, containRect, fitBox, HIT, hitAlpha, TAP_SLOP, type Box } from "./hittest";
 import { chipFor, triggerLabel } from "./status";
 import { lookChip, nextLook, NO_LOOK, type LookState } from "./looking";
+import { WifeBubbles } from "./WifeBubbles";
 import "../avatar/avatar.css";
 import "./overlay.css";
 
@@ -320,6 +321,7 @@ export function OverlayApp() {
           <i />
         </div>
       </div>
+      <WifeBubbles head={{ x: box.x + box.w * HEAD_IN_BOX.x, y: box.y + box.h * HEAD_IN_BOX.y }} vp={vp} scale={box.w / BOX_W} />
       <Flashes />
       <LookingChip />
       <Subtitles placement="column" />

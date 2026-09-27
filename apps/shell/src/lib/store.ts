@@ -24,6 +24,8 @@ export interface SwarmAgent {
   label: string;
   name?: string;
   emoji?: string;
+  /** Which Act I girl she is (her portrait). */
+  candidateId?: string;
   goal?: string;
   parentId?: string;
   state: EventMap["swarm.status"]["state"];
@@ -190,6 +192,7 @@ export function reduceShell(s: ShellState, e: AnyEnvelope): ShellState {
           label: e.data.label,
           ...(e.data.name ? { name: e.data.name } : {}),
           ...(e.data.emoji ? { emoji: e.data.emoji } : {}),
+          ...(e.data.candidateId ? { candidateId: e.data.candidateId } : {}),
           ...(e.data.goal ? { goal: e.data.goal } : {}),
           ...(e.data.parentId ? { parentId: e.data.parentId } : {}),
           state: prev?.state ?? "spawning",

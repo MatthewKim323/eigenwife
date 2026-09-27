@@ -1,0 +1,47 @@
+/* A wife's circular portrait. The ring takes her card's hue (--wf-hue). */
+.wface {
+  --wf-hue: var(--hue);
+  position: relative;
+  display: inline-block;
+  flex: none;
+  border-radius: 50%;
+  padding: 2px;
+  background: conic-gradient(from 210deg, oklch(0.88 0.13 var(--wf-hue)), oklch(0.7 0.16 calc(var(--wf-hue) + 40)), oklch(0.88 0.13 var(--wf-hue)));
+  box-shadow: 0 0 0 1px oklch(1 0 0 / 0.08), 0 0 14px oklch(0.75 0.15 var(--wf-hue) / 0.35), 0 6px 16px oklch(0 0 0 / 0.35);
+  transition: box-shadow 420ms cubic-bezier(0.23, 1, 0.32, 1), filter 420ms ease, transform 420ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.wface-clip {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  overflow: hidden;
+  background: oklch(0.25 0.06 var(--wf-hue));
+}
+.wface-art { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+/* A real (generated) photo is a full card: zoom to the face. */
+img.wface-art { object-fit: cover; object-position: 50% 18%; transform: scale(1.5); transform-origin: 50% 22%; }
+.wface-blank { display: grid; place-items: center; width: 100%; height: 100%; font: 600 14px/1 var(--font-ui); color: white; }
+
+.wface.dim { filter: saturate(0.55) brightness(0.8); }
+.wface.glow {
+  transform: scale(1.08);
+  box-shadow: 0 0 0 1px oklch(1 0 0 / 0.2), 0 0 22px oklch(0.85 0.16 var(--wf-hue) / 0.85), 0 0 56px oklch(0.8 0.16 var(--wf-hue) / 0.55);
+}
+.wface.glow::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 1.5px solid oklch(0.92 0.12 var(--wf-hue) / 0.8);
+  animation: wface-pulse 1.3s cubic-bezier(0.23, 1, 0.32, 1) infinite;
+  pointer-events: none;
+}
+@keyframes wface-pulse {
+  from { transform: scale(0.92); opacity: 1; }
+  to { transform: scale(1.35); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wface.glow::after { animation: none; opacity: 0.6; }
+}
