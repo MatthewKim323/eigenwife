@@ -91,7 +91,7 @@ afterEach(async () => {
   }
 });
 
-async function rig(o: { mode?: FakeMode; gateway?: boolean; openai?: boolean; cap?: number; engine?: "live" | "classic"; savedEngine?: "live" | "classic"; page?: boolean } = {}): Promise<Rig> {
+async function rig(o: { talker?: { starts: number }; mode?: FakeMode; gateway?: boolean; openai?: boolean; cap?: number; engine?: "live" | "classic"; savedEngine?: "live" | "classic"; page?: boolean } = {}): Promise<Rig> {
   const fake = new FakeLiveServer().start();
   fake.mode = o.mode ?? "ok";
   const clock = { t: Date.now() };
@@ -115,6 +115,15 @@ async function rig(o: { mode?: FakeMode; gateway?: boolean; openai?: boolean; ca
       ctx.provide("brains", brains);
       ctx.provide("memory", memory);
       ctx.provide("agency", agency);
+      const talker = o.talker;
+      if (talker)
+        ctx.provide("talker", {
+          available: () => true,
+          start: () => {
+            talker.starts += 1;
+            throw new Error("the cascade talker must not run while live");
+          },
+        });
       ctx.provide("user", { profile: () => profile, merge: async () => profile, herName: () => null });
       ctx.provide("relationship", { get: () => ({ ...DEFAULT_RELATIONSHIP, banter: 0.8 }), nudge: () => DEFAULT_RELATIONSHIP });
     },
@@ -337,6 +346,17 @@ describe("eve live end to end (fake gpt-live-1)", () => {
     await Bun.sleep(100);
     expect(r.speech.said.filter((s) => s.opts?.brain === "persona" && !s.text.includes("greet"))).toEqual([]);
     expect(r.brains.requests.filter((q) => q.userText === "hey what are you up to")).toEqual([]);
+  });
+
+  test("the cascade talker stands down while live (no wasted LLM call per turn)", async () => {
+    const talker = { starts: 0 };
+    const r = await rig({ engine: "live", talker });
+    await r.live();
+    await r.fake.userSays("what do you think about my haircut");
+    await waitFor(() => r.of("reflex.decision").some((e) => e.data.reason?.includes("haircut")), 2000, "reflex decision");
+    await Bun.sleep(60);
+    expect(talker.starts).toBe(0);
+    expect(r.core.ctx.use("talker").available()).toBe(false);
   });
 
   test("delegation round trip: 'play our song' -> reflex ACT -> agency.act music.play -> commentary back to the voice model with the delegation id", async () => {

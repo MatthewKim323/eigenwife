@@ -395,7 +395,28 @@ export class LiveController {
     return sessionConfig(this.cfg, provider, { instructions: buildInstructions(c), input: startupHistory(conversationFor(this.ctx).turns) });
   }
 
+  /**
+   * The cascade talker (packages/core/src/talker) streams an LLM reply in
+   * parallel with Jev the moment he speaks. While the voice model owns her
+   * voice that would be a wasted call per turn, so it reports itself
+   * unavailable (reflex then takes its lazy persona path, which the speech
+   * wrapper drops without pulling). Wrapped on the first live session, when
+   * every module is up; a pass-through otherwise.
+   */
+  private talkerWrapped = false;
+  private wrapTalker() {
+    if (this.talkerWrapped) return;
+    const inner = this.ctx.tryUse("talker");
+    if (!inner) return;
+    this.talkerWrapped = true;
+    this.ctx.provide("talker", {
+      available: () => !this.running() && inner.available(),
+      start: (req) => inner.start(req),
+    });
+  }
+
   private async open() {
+    this.wrapTalker();
     const order = providerOrder(this.cfg).filter((p) => !this.tried.includes(p));
     const provider = order[0];
     if (!provider) return this.noAccess(this.reason ?? NO_ACCESS_REASON);
@@ -833,7 +854,9 @@ export class LiveController {
   }
 
   private isDirectReply(opts: SayOptions): boolean {
-    if (opts.brain !== "persona" || opts.priority !== "high" || !opts.parent) return false;
+    // Reflex's persona reply, or the cascade talker's streamed reply (brain "talker:<run>").
+    const brain = opts.brain ?? "";
+    if ((brain !== "persona" && !brain.startsWith("talker")) || opts.priority !== "high" || !opts.parent) return false;
     const at = this.liveUtterances.get(opts.parent);
     return at !== undefined && this.now() - at < DIRECT_REPLY_MS;
   }
