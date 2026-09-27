@@ -237,7 +237,8 @@ export function createFollowup(ctx: CoreContext, opts: FollowupOptions = {}) {
   }
 
   const agency = () => ctx.tryUse("agency");
-  const location = () => deps.env("EIGEN_LOCATION") || "Irvine, CA";
+  // No hardcoded city: "near me" lets the map use where he actually is, unless he names a place.
+  const location = () => deps.env("EIGEN_LOCATION") || "";
 
   // --- places ------------------------------------------------------------------------
   async function opinion(options: Option[], query: string): Promise<{ pick: number; why: string }> {
@@ -278,12 +279,12 @@ export function createFollowup(ctx: CoreContext, opts: FollowupOptions = {}) {
     return reported(async () => {
       const a = agency();
       if (!a) return { ok: false, summary: "my hands aren't hooked up right now." };
-      const q = /\b(?:in|near|around|by)\s+\w/i.test(query) ? query : `${query} near ${location()}`;
+      const q = /\b(?:in|near|around|by)\s+\w/i.test(query) ? query : `${query} near ${location() || "me"}`;
       const r = await a.act("browser.task", { query: q, maps: o.maps ?? true, goal: `look up ${q}`, budget: 10, followup: false }, { parent: o.parent });
       let options = ((r.data as { options?: Option[] } | undefined)?.options ?? []).slice(0, 5);
       if (options.length < 2) {
         // Her page didn't give a clean list (a captcha, a layout change): the places search is the backup.
-        const ps = await a.act("places.search", { query: q, location: location() }, { parent: o.parent }).catch(() => null);
+        const ps = await a.act("places.search", { query: q, ...(location() ? { location: location() } : {}) }, { parent: o.parent }).catch(() => null);
         const places = ((ps?.data as { places?: { name: string; price?: string; rating?: number; address?: string; url?: string; why?: string; dish?: string }[] } | undefined)?.places ?? []).slice(0, 5);
         if (places.length >= 2)
           options = places.map((p, i) => ({ n: i + 1, name: p.name, rating: p.rating, price: p.price, address: p.address, url: p.url, detail: `${p.name} ${p.why ?? ""} ${p.dish ?? ""} ${p.price ?? ""}`.toLowerCase() }));

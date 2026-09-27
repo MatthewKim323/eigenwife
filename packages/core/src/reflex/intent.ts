@@ -69,6 +69,10 @@ const BROWSE_IN = /^(?:show me|open|pull up|look up|go to|search)\s+(.{2,80}?)\s
 /** "show me ramen places near irvine": web-shaped things, never "show me my resume". */
 const BROWSE_WEB = /^show me\s+(?!my\b)(.{2,80})$/i;
 const WEBBY = /\b(?:restaurants?|places?|spots?|menu|hours|website|site|reviews?|near(?:by| me)?|open now|directions|map|maps)\b|\.(?:com|org|net|io|ai|dev)\b/i;
+/** "look for in n out", "search for ramen in sf", "look up tickets": an explicit web search. Never his own files or accounts. */
+const BROWSE_FIND = /^(?:look (?:for|up)|search(?: for| up)?|google|find(?: me| us)?(?: some)?|get me|pull up)\s+(?!my\b|me\b|the file|a file|files?\b|(?:the |my )?(?:calendar|email|inbox|resume|notes|texts)\b)(.{2,80})$/i;
+/** "nah i want in n out instead", "actually let's do tacos": a new search that replaces the last one. */
+const BROWSE_REDO = /^(?:nah|no|nope|actually|wait)[,\s]+(?:i (?:want|wanna do|'d rather(?: do)?)|let'?s (?:do|get|go with)|make it|how about|what about|try|go with|switch to)\s+(.{2,60}?)(?:\s+instead)?$/i;
 
 export function readBrowse(text: string): UtteranceIntent["browse"] {
   const t = text.trim().replace(/[\s.!?]+$/, "").replace(LEAD, "").trim();
@@ -78,6 +82,19 @@ export function readBrowse(text: string): UtteranceIntent["browse"] {
   if (inb) return /^(?:it|that|this)$/i.test(inb[1]!.trim()) ? {} : { query: inb[1]!.trim() };
   const web = BROWSE_WEB.exec(t);
   if (web && WEBBY.test(web[1]!)) return { query: web[1]!.trim() };
+  // "nah i want in n out, can you look for in n out": an explicit search at the end wins.
+  const tail = /\b(?:look (?:for|up)|search(?: for| up)?|google)\s+(?!my\b)(.{2,60})$/i.exec(t);
+  if (tail && tail.index > 0) return { query: tail[1]!.trim() };
+  const find = BROWSE_FIND.exec(t);
+  // "find" alone is ambiguous (files vs the web): it needs something web shaped or a place ("in sf").
+  // A bare "find" is a quick search only when it's short and has no follow-on step ("...and save it" is a task).
+  const findOk = /^(?:look|search|google|get me|pull up)/i.test(t) || (t.split(/\s+/).length <= 8 && !/\b(?:and|then)\s+(?:save|book|add|send|text|put|schedule|remind)\b/i.test(t));
+  // "in sf" is a place; "in march", "in the morning", "in 10 minutes" are not.
+  const place = /\b(?:in|near|around)\s+(?!(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b|the (?:morning|afternoon|evening|night)\b|a (?:bit|sec|second|minute|while)\b|\d)[a-z]/i;
+  if (find && findOk && (/^(?:look|search|google|get me|pull up)/i.test(t) || WEBBY.test(find[1]!) || place.test(find[1]!)))
+    return { query: find[1]!.trim() };
+  const redo = BROWSE_REDO.exec(t);
+  if (redo) return { query: redo[1]!.trim() };
   return null;
 }
 

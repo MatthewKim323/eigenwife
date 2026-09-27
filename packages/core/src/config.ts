@@ -67,7 +67,8 @@ export function loadConfig(overrides: Partial<CoreConfig> = {}): CoreConfig {
     eveHome: secret("EVE_HOME") || join(homedir(), ".eve"),
     jabbyUrl: secret("JABBY_URL") || "http://127.0.0.1:4632",
     eyeUrl: secret("EYE_URL") || "ws://127.0.0.1:8765/ws",
-    demo: secret("EIGEN_DEMO") !== "0",
+    // Scripted demo paths (canned plans, seeded memories) only when asked: EIGEN_DEMO=1.
+    demo: secret("EIGEN_DEMO") === "1",
     ...overrides,
   };
 }

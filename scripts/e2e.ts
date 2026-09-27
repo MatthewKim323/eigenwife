@@ -18,6 +18,8 @@ const approve = process.argv.includes("--approve");
 const port = Number(process.env.E2E_PORT) || 20000 + Math.floor(Math.random() * 20000);
 const home = mkdtempSync(join(tmpdir(), "eve-e2e-"));
 process.env.EVE_HOME = home;
+// The golden path is the scripted demo (canned plan, seeded memories): deterministic on purpose.
+process.env.EIGEN_DEMO = process.env.EIGEN_DEMO ?? "1";
 // Test runs never spend ElevenLabs characters (pay-as-you-go): Deepgram voices the e2e.
 process.env.EVE_TTS = process.env.E2E_TTS ?? "deepgram";
 process.env.EIGEN_PORT = String(port);
